@@ -1,6 +1,6 @@
 /* ============================================================================
- * auth.js — 認證模組 + 帳號管理 + 入口門禁
- * v8.1
+ * auth.js — 認證模組 + 帳號管理 + 入口門禁（v8.2：移除訪客）
+ * v8.2
  * ========================================================================== */
 (function(){
 'use strict';
@@ -10,11 +10,10 @@ window.SLG = window.SLG || {};
 const {
   state, emit, EVT,
   uid, esc, logSystem,
-  ROLE, ROLE_LABELS, ROLE_CLASS,
+  ROLE, ROLE_LABELS, ROLE_CLASS, ROLE_ORDER,
   saveState, updateModeBar,
 } = window.SLG;
 
-/* 因為 firebase.js 先載入，getDb 已暴露 */
 const getDb = () => window.SLG.getDb();
 
 /* ============================================================
@@ -87,6 +86,14 @@ const Auth = (() => {
     setSession(found.uid, found.data);
     localStorage.setItem(window.SLG.ACCOUNT_UID_KEY, found.uid);
     logSystem(`✅ ${found.data.displayName} 登入成功`);
+
+    /* ★ v8.2：登入後載入個人雲端沙盤 */
+    try{
+      await window.SLG.loadMySandbox();
+    }catch(e){
+      console.warn('載入雲端沙盤失敗', e);
+    }
+
     return found.data;
   }
 
@@ -126,6 +133,14 @@ const Auth = (() => {
     setSession(newUid, entity);
     localStorage.setItem(window.SLG.ACCOUNT_UID_KEY, newUid);
     logSystem(`✅ 註冊成功，${displayName}（${ROLE_LABELS[ROLE.MEMBER]}）`);
+
+    /* ★ v8.2：註冊後建立空白個人沙盤 */
+    try{
+      await window.SLG.saveMySandbox();
+    }catch(e){
+      console.warn('建立初始沙盤失敗', e);
+    }
+
     return entity;
   }
 
@@ -147,6 +162,14 @@ const Auth = (() => {
       }
       setSession(uid, data);
       logSystem(`🔄 已恢復登入：${data.displayName}`);
+
+      /* ★ v8.2：載入個人雲端沙盤 */
+      try{
+        await window.SLG.loadMySandbox();
+      }catch(e){
+        console.warn('載入雲端沙盤失敗', e);
+      }
+
       return true;
     }catch(e){
       console.warn('恢復登入失敗', e);
@@ -156,7 +179,6 @@ const Auth = (() => {
 
   function setSession(uid, data){
     state.auth.signedIn = true;
-    state.auth.isGuest = false;
     state.auth.accountUid = uid;
     state.auth.username = data.username || '';
     state.auth.displayName = data.displayName || '';
@@ -174,9 +196,13 @@ const Auth = (() => {
   }
 
   function logout(){
+    /* ★ v8.2：登出前先儲存個人沙盤 */
+    if(state.auth.signedIn && window.SLG.saveMySandbox){
+      window.SLG.saveMySandbox().catch(e => console.warn('登出前儲存失敗', e));
+    }
+
     state.auth = {
       signedIn: false,
-      isGuest: false,
       accountUid: '',
       username: '',
       displayName: '',
@@ -197,7 +223,6 @@ const Auth = (() => {
 
   async function updateDisplayName(newName){
     if(!state.auth.signedIn) throw new Error('請先登入');
-    if(state.auth.isGuest) throw new Error('訪客模式無法修改');
     if(!newName || newName.length > 12) throw new Error('顯示名稱 1-12 字');
     await accountRef(state.auth.accountUid).update({ displayName: newName });
     state.auth.displayName = newName;
@@ -205,12 +230,17 @@ const Auth = (() => {
       state.commanderName = newName;
     }
     emit(EVT.AUTH, state.auth);
+
+    /* ★ v8.2：同步更新雲端沙盤的 displayName */
+    try{
+      await getDb().ref(`userSandboxes/${state.auth.accountUid}`).update({ displayName: newName });
+    }catch(e){ /* 忽略 */ }
+
     logSystem('✏️ 顯示名稱已更新');
   }
 
   async function updatePassword(oldPwd, newPwd){
     if(!state.auth.signedIn) throw new Error('請先登入');
-    if(state.auth.isGuest) throw new Error('訪客模式無法修改');
     if(!oldPwd || !newPwd) throw new Error('請輸入舊密碼與新密碼');
     if(newPwd.length < 4) throw new Error('新密碼至少 4 字元');
     const snap = await accountRef(state.auth.accountUid).once('value');
@@ -220,38 +250,31 @@ const Auth = (() => {
     logSystem('🔑 密碼已更新');
   }
 
-  function isSuperAdmin(){ return state.auth.role === ROLE.SUPERADMIN && !state.auth.isGuest; }
-  function isAdmin(){ return (state.auth.role === ROLE.ADMIN || isSuperAdmin()) && !state.auth.isGuest; }
-  function isOfficer(){ return (state.auth.role === ROLE.OFFICER || isAdmin()) && !state.auth.isGuest; }
-  function isSignedIn(){ return state.auth.signedIn && !state.auth.isGuest; }
-  function isGuest(){ return !!state.auth.isGuest; }
+  function isSuperAdmin(){ return state.auth.role === ROLE.SUPERADMIN; }
+  function isAdmin(){ return state.auth.role === ROLE.ADMIN || isSuperAdmin(); }
+  function isOfficer(){ return state.auth.role === ROLE.OFFICER || isAdmin(); }
+  function isSignedIn(){ return state.auth.signedIn; }
 
   function canEditData(){
-    if(state.auth.isGuest) return false;
     if(isAdmin()) return true;
     if(state.auth.role === ROLE.OFFICER && state.auth.extraPerms.canEditData) return true;
     return false;
   }
   function canImportExcel(){
-    if(state.auth.isGuest) return false;
     if(isAdmin()) return true;
     if(state.auth.role === ROLE.OFFICER && state.auth.extraPerms.canImportExcel) return true;
     return false;
   }
   function canRunSim(){
-    /* v8.1：所有已登入角色（含成員）都可以本機推演 */
     return isSignedIn();
   }
   function canEditSettings(){
-    if(state.auth.isGuest) return false;
     return isAdmin();
   }
   function canCreateRoom(){
-    if(state.auth.isGuest) return false;
     return isOfficer();
   }
   function canKick(){
-    if(state.auth.isGuest) return false;
     return isOfficer();
   }
 
@@ -259,7 +282,7 @@ const Auth = (() => {
     initFirebaseAuth, getAnonAuthUid,
     login, register, restoreSession, logout,
     updateDisplayName, updatePassword,
-    isSuperAdmin, isAdmin, isOfficer, isSignedIn, isGuest,
+    isSuperAdmin, isAdmin, isOfficer, isSignedIn,
     canEditData, canImportExcel, canRunSim, canEditSettings, canCreateRoom, canKick,
   };
 })();
@@ -294,9 +317,8 @@ const Accounts = (() => {
         return true;
       })
       .sort((a, b) => {
-        const order = { superadmin:0, admin:1, officer:2, member:3 };
-        const oa = order[a.role] ?? 9;
-        const ob = order[b.role] ?? 9;
+        const oa = ROLE_ORDER[a.role] ?? 9;
+        const ob = ROLE_ORDER[b.role] ?? 9;
         if(oa !== ob) return oa - ob;
         return (a.createdAt || 0) - (b.createdAt || 0);
       });
@@ -519,6 +541,11 @@ const Accounts = (() => {
           state.auth.status = data.status || state.auth.status;
           state.auth.extraPerms = Object.assign(state.auth.extraPerms, data.extraPerms || {});
           emit(EVT.AUTH, state.auth);
+
+          /* ★ v8.2：同步更新雲端沙盤 */
+          try{
+            await getDb().ref(`userSandboxes/${editingUid}`).update({ displayName: state.auth.displayName });
+          }catch(e){}
         }
       }
       alert('✅ 已儲存');
@@ -597,7 +624,7 @@ const Accounts = (() => {
 })();
 
 /* ============================================================
-   EntryGate 模組（入口門禁）
+   EntryGate 模組（v8.2：無訪客）
    ============================================================ */
 const EntryGate = (() => {
 
@@ -701,32 +728,6 @@ const EntryGate = (() => {
     }
   }
 
-  function enterAsGuest(){
-    state.auth = {
-      signedIn: true,
-      isGuest: true,
-      accountUid: 'guest_' + Date.now(),
-      username: 'guest',
-      displayName: '訪客',
-      role: 'guest',
-      status: 'active',
-      extraPerms: {
-        canEditData: false,
-        canImportExcel: false,
-        canRunSim: false,
-        canKick: false,
-        canEditSettings: false,
-      },
-    };
-
-    hide();
-    if(typeof window.SLG.renderAuthUI === 'function') window.SLG.renderAuthUI();
-    if(typeof window.SLG.applyPermissions === 'function') window.SLG.applyPermissions();
-    updateModeBar();
-    updateGuestModeBanner(true);
-    logSystem('👻 已以訪客身份進入');
-  }
-
   function init(){
     document.querySelectorAll('.entry-tab').forEach(tab => {
       tab.addEventListener('click', function(){
@@ -753,42 +754,10 @@ const EntryGate = (() => {
         if(e.key === 'Enter') doRegister();
       });
     });
-
-    const btnGuest = document.getElementById('entryBtnGuest');
-    if(btnGuest) btnGuest.addEventListener('click', enterAsGuest);
   }
 
-  return { init, show, hide, showForm, switchView, enterAsGuest };
+  return { init, show, hide, showForm, switchView };
 })();
-
-/* ============================================================
-   訪客模式提示條
-   ============================================================ */
-function updateGuestModeBanner(isGuest){
-  let banner = document.getElementById('guestModeBanner');
-  if(!isGuest){
-    if(banner) banner.remove();
-    return;
-  }
-  if(banner) return;
-
-  const main = document.querySelector('.main-container');
-  if(!main) return;
-
-  banner = document.createElement('div');
-  banner.id = 'guestModeBanner';
-  banner.className = 'guest-mode-banner';
-  banner.innerHTML = `
-    <span>👻 訪客模式 · 所有編輯不會保存，重新整理後將返回登入畫面</span>
-    <button class="btn btn-ghost btn-sm" id="guestExitBtn">離開訪客</button>
-  `;
-  main.insertBefore(banner, main.firstChild);
-
-  const btn = document.getElementById('guestExitBtn');
-  if(btn) btn.addEventListener('click', () => {
-    if(confirm('確定要離開訪客模式嗎？')) location.reload();
-  });
-}
 
 /* ============================================================
    暴露
@@ -797,7 +766,6 @@ Object.assign(window.SLG, {
   Auth,
   Accounts,
   EntryGate,
-  updateGuestModeBanner,
 });
 
 })();

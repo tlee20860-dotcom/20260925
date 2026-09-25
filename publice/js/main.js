@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.1 P6
+ * v8.2
  * ========================================================================== */
 (function(){
 'use strict';
@@ -20,6 +20,8 @@ const {
   computeAllocation,
   DYN_ROUTE_SAMPLE_SEC,
   getWorker, releaseWorker, bumpSimRunId,
+  buildSandboxFileName,
+  timeAgo,
 } = window.SLG;
 
 const Auth = () => window.SLG.Auth;
@@ -40,7 +42,7 @@ function showConfirm(title, msg, cb){
 }
 
 /* ============================================================
-   權限
+   權限工具
    ============================================================ */
 function requirePerm(checkFn, label){
   let ok = false;
@@ -68,46 +70,41 @@ function disableInputs(ids, disabled){
   });
 }
 
-/* 取得「目前環境」的有效編輯權限 */
 function effectiveCanEditData(){
-  if(window.SLG.isInRoom && window.SLG.isInRoom()){
-    return window.SLG.canEditRoomData && window.SLG.canEditRoomData();
-  }
+  if(window.SLG.isInRoom()) return window.SLG.canEditRoomData();
   return Auth() && Auth().canEditData();
 }
 function effectiveCanImportExcel(){
-  if(window.SLG.isInRoom && window.SLG.isInRoom()){
-    return window.SLG.getEffectiveImportExcelPermission &&
-           window.SLG.getEffectiveImportExcelPermission();
-  }
+  if(window.SLG.isInRoom()) return window.SLG.getEffectiveImportExcelPermission();
   return Auth() && Auth().canImportExcel();
 }
 
 function applyPermissions(){
   const signedIn = state.auth.signedIn;
-  const isGuest = state.auth.isGuest;
 
-  /* ── 1. Tab 可見性（v8.1 矩陣） ── */
+  /* ── 1. Tab 可見性（v8.2 最終） ── */
   const guestAllowed  = ['tab-rules'];
   const memberAllowed = [
     'tab-room', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat', 'tab-rules'
+    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+    'tab-sandbox', 'tab-rules'
   ];
   const adminAllowed  = [
     'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat', 'tab-account', 'tab-rules'
+    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+    'tab-sandbox', 'tab-account', 'tab-rules'
   ];
   const superAllowed  = [
     'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat', 'tab-account',
-    'tab-accounts', 'tab-rules'
+    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+    'tab-sandbox', 'tab-account', 'tab-accounts', 'tab-rules'
   ];
 
   document.querySelectorAll('.top-nav button[data-tab]').forEach(btn => {
     const tabId = btn.dataset.tab;
     let allowed = false;
 
-    if(isGuest || !signedIn){
+    if(!signedIn){
       allowed = guestAllowed.includes(tabId);
     } else if(Auth() && Auth().isSuperAdmin()){
       allowed = superAllowed.includes(tabId);
@@ -129,8 +126,7 @@ function applyPermissions(){
   /* ── 2. 房間連線區 ── */
   togglePerm(document.getElementById('btnCreateRoom'),
     Auth() && Auth().canCreateRoom(), '需要幹部以上權限');
-  togglePerm(document.getElementById('btnJoinRoom'),
-    signedIn && !isGuest, '請先登入');
+  togglePerm(document.getElementById('btnJoinRoom'), signedIn, '請先登入');
 
   /* ── 3. 參數 Tab ── */
   const canEditSettings = Auth() && Auth().canEditSettings();
@@ -158,19 +154,16 @@ function applyPermissions(){
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
 
-  /* ── 6. 檔案協作區 ── */
+  /* ── 6. Excel 匯入區 ── */
   const canImportExcel = effectiveCanImportExcel();
   togglePerm(document.getElementById('btnOpenExcelImport'), canImportExcel, '需要 Excel 匯入權限');
-  togglePerm(document.getElementById('btnImportJSON'), canEditData, '需要編輯資料權限');
-  togglePerm(document.getElementById('btnRestoreBackup'), canEditData, '需要編輯資料權限');
-  togglePerm(document.getElementById('btnExportJSON'), signedIn && !isGuest, '請先登入');
-  togglePerm(document.getElementById('btnExportCitiesCSV'), signedIn && !isGuest, '請先登入');
-  togglePerm(document.getElementById('btnExportRoutesCSV'), signedIn && !isGuest, '請先登入');
+  togglePerm(document.getElementById('btnExportCitiesCSV'), signedIn, '請先登入');
+  togglePerm(document.getElementById('btnExportRoutesCSV'), signedIn, '請先登入');
 
   /* ── 7. 聊天室 ── */
-  togglePerm(document.getElementById('btnSendChat'), signedIn && !isGuest, '請先登入');
+  togglePerm(document.getElementById('btnSendChat'), signedIn, '請先登入');
   const chatInputEl = document.getElementById('chatInput');
-  if(chatInputEl) chatInputEl.disabled = !signedIn || isGuest;
+  if(chatInputEl) chatInputEl.disabled = !signedIn;
 
   /* ── 8. 動態生成的編輯/刪除按鈕 ── */
   document.querySelectorAll(
@@ -181,8 +174,9 @@ function applyPermissions(){
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
 
-  /* ── 9. P6：房間編輯申請按鈕 ── */
+  /* ── 9. P6 房間編輯按鈕 / v8.2 房間沙盤按鈕 ── */
   if(window.SLG.updateRoomEditButton) window.SLG.updateRoomEditButton();
+  if(window.SLG.updateRoomSandboxActions) window.SLG.updateRoomSandboxActions();
 }
 
 /* ============================================================
@@ -298,7 +292,6 @@ function executeSimulation(zoneId){
     return;
   }
 
-  /* Worker 不可用 → 主執行緒同步執行 */
   setTimeout(async () => {
     try{
       const result = await window.SLG.runSimulation(
@@ -341,7 +334,7 @@ function handleSimulationDone(result){
   DYN().populateCityFilters();
   saveState();
 
-  if(state.isHost && window.SLG.isConnected && window.SLG.isConnected()){
+  if(state.isHost && window.SLG.isConnected()){
     window.SLG.publish({ type:'viz_payload', data: viz().getAllSnapshots() });
     window.SLG.publish({ type:'dyn_payload', rows: state.dynRows });
     window.SLG.sendSystemChat('⚡ 推演完成');
@@ -359,7 +352,6 @@ function renderEditRequestReview(){
   const modal = document.getElementById('editRequestReviewModal');
   if(!list || !modal) return;
 
-  /* 只有房主 / 管理員可看 */
   const canReview = state.isHost || (Auth() && Auth().isAdmin());
   if(!canReview){
     modal.classList.remove('show');
@@ -372,7 +364,6 @@ function renderEditRequestReview(){
     return;
   }
 
-  /* 隱藏自己送出的申請（管理員不需申請；房主也不會申請） */
   const visibleReqs = reqs.filter(([uid]) => uid !== state.auth.accountUid);
   if(visibleReqs.length === 0){
     modal.classList.remove('show');
@@ -395,7 +386,6 @@ function renderEditRequestReview(){
     </div>`;
   }).join('');
 
-  /* 綁定按鈕事件 */
   list.querySelectorAll('[data-action="approve-edit-req"]').forEach(btn => {
     btn.addEventListener('click', function(){
       const uid = this.dataset.uid;
@@ -417,6 +407,208 @@ function renderEditRequestReview(){
 }
 
 /* ============================================================
+   ★ v8.2：房間空沙盤提示 Modal
+   ============================================================ */
+function showRoomEmptyPrompt(){
+  if(!window.SLG.isInRoom()) return;
+  if(state.roomHasSnapshot) return;
+  if(!window.SLG.canUploadSandboxToRoom()) return;
+  const modal = document.getElementById('roomEmptyPromptModal');
+  if(!modal) return;
+  modal.classList.add('show');
+}
+
+function hideRoomEmptyPrompt(){
+  const modal = document.getElementById('roomEmptyPromptModal');
+  if(modal) modal.classList.remove('show');
+}
+
+/* ============================================================
+   ★ v8.2：上載沙盤至房間
+   ============================================================ */
+async function uploadMySandboxToRoom(){
+  if(!window.SLG.canUploadSandboxToRoom()){
+    alert('您沒有上載沙盤的權限');
+    return;
+  }
+  if(!window.SLG.isConnected()){
+    alert('請先加入房間');
+    return;
+  }
+  const myData = window.SLG.buildSandboxData();
+  const fileName = buildSandboxFileName(state.auth.displayName, Date.now());
+  if(!confirm(`確定要將「我的沙盤」上載到房間嗎？\n\n這會覆蓋房間目前的沙盤。`)) return;
+  try{
+    await window.SLG.uploadSandboxToRoom(myData, fileName);
+    hideRoomEmptyPrompt();
+    alert('✅ 已上載沙盤到房間！');
+    R().renderAll();
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+  }catch(e){
+    console.warn(e);
+  }
+}
+
+/* ============================================================
+   ★ v8.2：從沙盤清單選一個上載到房間
+   ============================================================ */
+async function openSandboxPicker(){
+  const modal = document.getElementById('sandboxPickerModal');
+  const tbody = document.getElementById('sandboxPickerTableBody');
+  if(!modal || !tbody) return;
+
+  modal.classList.add('show');
+  tbody.innerHTML = '<tr><td colspan="5" class="sandbox-empty">載入中...</td></tr>';
+
+  try{
+    const all = await window.SLG.fetchAllSandboxes();
+    const list = Object.entries(all)
+      .map(([uid, sb]) => ({ uid, ...sb }))
+      .filter(sb => window.SLG.canViewSandboxOf(sb.uid, sb.role || 'member'))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    if(list.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5" class="sandbox-empty">無可用沙盤</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = list.map(sb => {
+      const isSelf = sb.uid === state.auth.accountUid;
+      const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
+      const cityCount = sb.data?.cities?.length || 0;
+      return `<tr class="${isSelf ? 'row-self' : ''}">
+        <td class="sandbox-name">${esc(fileName)}${isSelf ? ' <span class="chip" style="font-size:9px;color:var(--neon-yellow);">你</span>' : ''}</td>
+        <td class="sandbox-owner">${esc(sb.displayName || sb.username || '—')}</td>
+        <td class="col-num">${cityCount}</td>
+        <td class="sandbox-time">${esc(timeAgo(sb.updatedAt))}</td>
+        <td class="col-actions">
+          <button class="btn btn-primary btn-sm" data-action="pick-sandbox" data-uid="${sb.uid}">📤 上載到房間</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('[data-action="pick-sandbox"]').forEach(btn => {
+      btn.addEventListener('click', async function(){
+        const uid = this.dataset.uid;
+        const sb = all[uid];
+        if(!sb || !sb.data){
+          alert('沙盤資料為空');
+          return;
+        }
+        const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
+        if(!confirm(`確定要將「${fileName}」上載到房間嗎？\n\n這會覆蓋房間目前的沙盤。`)) return;
+
+        modal.classList.remove('show');
+        try{
+          await window.SLG.uploadSandboxToRoom(sb.data, fileName);
+          hideRoomEmptyPrompt();
+          alert('✅ 已上載沙盤到房間！');
+          R().renderAll();
+          if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+        }catch(e){
+          console.warn(e);
+        }
+      });
+    });
+  }catch(e){
+    tbody.innerHTML = '<tr><td colspan="5" class="sandbox-empty">載入失敗</td></tr>';
+    console.warn(e);
+  }
+}
+
+/* ============================================================
+   ★ v8.2：下載房間沙盤到我的沙盤
+   ============================================================ */
+async function downloadRoomSandbox(){
+  if(!state.roomHasSnapshot || !state.roomSnapshot){
+    alert('房間尚無沙盤');
+    return;
+  }
+
+  const fileName = window.SLG.buildSandboxFileName(state.auth.displayName, Date.now());
+  if(!confirm(`確定要把房間沙盤下載到你的個人沙盤嗎？\n\n這會覆蓋你目前的個人沙盤。`)) return;
+
+  try{
+    /* 先把目前沙盤備份到 localStorage */
+    backupCurrentSandbox();
+
+    window.SLG.applySandboxData(state.roomSnapshot.data);
+    saveState();
+    await window.SLG.saveMySandbox();
+    R().renderAll();
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+    alert('✅ 已下載房間沙盤到你的個人沙盤！');
+  }catch(e){
+    console.warn(e);
+    alert('下載失敗：' + e.message);
+  }
+}
+
+/* ============================================================
+   ★ v8.2：從沙盤清單載入
+   ============================================================ */
+async function loadSandboxFromList(uid){
+  if(!uid) return;
+  try{
+    const sb = await window.SLG.fetchUserSandbox(uid);
+    if(!sb || !sb.data){
+      alert('沙盤資料為空');
+      return;
+    }
+    const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
+
+    /* 顯示確認 */
+    const ok = confirm(
+      `確定要載入「${fileName}」嗎？\n\n` +
+      `這會覆蓋你目前的個人沙盤。\n` +
+      `（原沙盤會自動備份到本機）`
+    );
+    if(!ok) return;
+
+    /* 備份目前沙盤 */
+    backupCurrentSandbox();
+
+    /* 套用並上傳到個人雲端沙盤 */
+    window.SLG.applySandboxData(sb.data);
+    saveState();
+    await window.SLG.saveMySandbox();
+    R().renderAll();
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+    alert(`✅ 已載入「${fileName}」到你的沙盤！`);
+    logSystem(`📥 已載入 ${fileName} 到個人沙盤`);
+  }catch(e){
+    console.warn(e);
+    alert('載入失敗：' + e.message);
+  }
+}
+
+function backupCurrentSandbox(){
+  try{
+    const key = LS_PREFIX + 'sandboxBackup_' + Date.now();
+    const data = {
+      backedUpAt: new Date().toISOString(),
+      settings: JSON.parse(JSON.stringify(state.settings)),
+      alliances: JSON.parse(JSON.stringify(state.alliances)),
+      zones: JSON.parse(JSON.stringify(state.zones)),
+      cities: JSON.parse(JSON.stringify(state.cities)),
+    };
+    localStorage.setItem(key, JSON.stringify(data));
+    logSystem(`💾 已備份目前沙盤（key: ${key}）`);
+
+    /* 清理過舊備份（保留最近 5 個） */
+    const keys = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith(LS_PREFIX + 'sandboxBackup_')) keys.push(k);
+    }
+    keys.sort();
+    while(keys.length > 5){
+      localStorage.removeItem(keys.shift());
+    }
+  }catch(e){ console.warn('備份失敗', e); }
+}
+
+/* ============================================================
    事件綁定
    ============================================================ */
 function bindUI(){
@@ -435,6 +627,10 @@ function bindUI(){
       if(tabId === 'tab-viz') requestAnimationFrame(() => requestAnimationFrame(() => viz().activate()));
       if(tabId === 'tab-params') syncAIParamsToUI();
       if(tabId === 'tab-deploy'){ DEPLOY().populateZoneFilter(); DEPLOY().render(); }
+      if(tabId === 'tab-sandbox'){
+        /* 進入沙盤數據 Tab 時，非同步載入清單 */
+        refreshSandboxList();
+      }
       if(tabId === 'tab-accounts'){
         if(Auth() && (Auth().isSuperAdmin() || Auth().isAdmin())){
           window.SLG.Accounts.refresh();
@@ -454,10 +650,10 @@ function bindUI(){
   const btnSwitchMode = document.getElementById('btnSwitchMode');
   if(btnSwitchMode) btnSwitchMode.addEventListener('click', requestSwitchMode);
 
-  /* ── 帳號 UI 綁定 ── */
+  /* ── 帳號 UI ── */
   if(window.SLG.bindAuthUI) window.SLG.bindAuthUI();
 
-  /* ── 指揮官名稱輸入 ── */
+  /* ── 指揮官名稱 ── */
   const nameInput = document.getElementById('commanderName');
   nameInput.addEventListener('input', function(){
     state.commanderName = this.value.trim();
@@ -490,7 +686,7 @@ function bindUI(){
 
   /* ── 加入房間 ── */
   document.getElementById('btnJoinRoom').addEventListener('click', () => {
-    if(!requirePerm(() => state.auth.signedIn && !state.auth.isGuest, '請先登入才能加入房間')) return;
+    if(!requirePerm(() => state.auth.signedIn, '請先登入才能加入房間')) return;
     const name = nameInput.value.trim();
     if(!name){ alert('請先填寫指揮官名稱'); return; }
     const code = document.getElementById('roomCode').value.trim();
@@ -505,25 +701,84 @@ function bindUI(){
     window.SLG.requestDisconnect();
   });
 
-  /* ── 推送按鈕 ── */
-  const btnRequestPush = document.getElementById('btnRequestPush');
-  if(btnRequestPush) btnRequestPush.addEventListener('click', window.SLG.requestPushToRoom);
+  /* ── 房間沙盤操作 ── */
+  const btnUploadSandbox = document.getElementById('btnUploadSandboxToRoom');
+  if(btnUploadSandbox) btnUploadSandbox.addEventListener('click', uploadMySandboxToRoom);
 
-  const btnApprove = document.getElementById('pushRequestApprove');
-  if(btnApprove) btnApprove.addEventListener('click', window.SLG.approvePush);
-  const btnReject = document.getElementById('pushRequestReject');
-  if(btnReject) btnReject.addEventListener('click', window.SLG.rejectPush);
+  const btnDownloadRoomSandbox = document.getElementById('btnDownloadRoomSandbox');
+  if(btnDownloadRoomSandbox) btnDownloadRoomSandbox.addEventListener('click', downloadRoomSandbox);
 
-  /* ── 退出房間選項 ── */
-  document.querySelectorAll('[data-exit-choice]').forEach(btn => {
+  /* ── P6：申請編輯權限 ── */
+  const btnRequestRoomEdit = document.getElementById('btnRequestRoomEdit');
+  if(btnRequestRoomEdit){
+    btnRequestRoomEdit.addEventListener('click', () => {
+      window.SLG.requestRoomEditAccess();
+    });
+  }
+
+  /* ── P6：審核彈窗關閉 ── */
+  const btnReviewClose = document.getElementById('editRequestReviewClose');
+  if(btnReviewClose){
+    btnReviewClose.addEventListener('click', () => {
+      document.getElementById('editRequestReviewModal').classList.remove('show');
+    });
+  }
+
+  /* ── v8.2：房間空沙盤提示 ── */
+  document.querySelectorAll('[data-room-action]').forEach(btn => {
     btn.addEventListener('click', function(){
-      window.SLG.confirmExit(this.dataset.exitChoice);
+      const action = this.dataset.roomAction;
+      if(action === 'uploadMine'){
+        uploadMySandboxToRoom();
+      } else if(action === 'pickFromList'){
+        hideRoomEmptyPrompt();
+        openSandboxPicker();
+      } else if(action === 'stayEmpty'){
+        hideRoomEmptyPrompt();
+      }
     });
   });
-  const exitCancel = document.getElementById('exitRoomCancel');
-  if(exitCancel) exitCancel.addEventListener('click', () => {
-    document.getElementById('exitRoomModal').classList.remove('show');
+
+  const roomEmptyCancel = document.getElementById('roomEmptyCancel');
+  if(roomEmptyCancel) roomEmptyCancel.addEventListener('click', hideRoomEmptyPrompt);
+
+  /* ── v8.2：沙盤清單選擇彈窗 ── */
+  const sandboxPickerCancel = document.getElementById('sandboxPickerCancel');
+  if(sandboxPickerCancel) sandboxPickerCancel.addEventListener('click', () => {
+    document.getElementById('sandboxPickerModal').classList.remove('show');
   });
+
+  /* ── v8.2：沙盤數據重整 ── */
+  const btnSandboxRefresh = document.getElementById('btnSandboxesRefresh');
+  if(btnSandboxRefresh) btnSandboxRefresh.addEventListener('click', refreshSandboxList);
+
+  /* ── v8.2：救援工具 ── */
+  const btnRescue = document.getElementById('btnRescueRoom');
+  if(btnRescue){
+    btnRescue.addEventListener('click', async () => {
+      const roomCode = document.getElementById('rescueRoomCode').value.trim();
+      const statusEl = document.getElementById('rescueStatus');
+      if(!roomCode || roomCode.length !== 6){
+        alert('請輸入 6 位數房間碼');
+        return;
+      }
+      if(!confirm(`確定要重建房間 ${roomCode} 的沙盤嗎？\n\n⚠️ 這會覆蓋該房間目前的 latestSnapshot！`)) return;
+
+      statusEl.textContent = '⏳ 正在重播事件流...';
+      btnRescue.disabled = true;
+      try{
+        const result = await window.SLG.rescueRoomSnapshot(roomCode);
+        statusEl.innerHTML = `✅ 重建完成：${result.eventsCount} 個事件 / ${result.patchesCount} 個補丁<br>` +
+          `→ 城池 ${result.citiesCount} 座 / 同盟 ${result.alliancesCount} 個`;
+        alert('✅ 救援成功！');
+      }catch(e){
+        statusEl.textContent = '❌ 失敗：' + e.message;
+        alert('❌ 救援失敗：' + e.message);
+      }finally{
+        btnRescue.disabled = false;
+      }
+    });
+  }
 
   /* ── 儲存戰鬥參數 ── */
   document.getElementById('btnSaveSettings').addEventListener('click', () => {
@@ -544,10 +799,23 @@ function bindUI(){
   /* ── 重置所有數據 ── */
   document.getElementById('btnResetAll').addEventListener('click', () => {
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '重置資料')) return;
-    showConfirm('重置所有數據', '⚠️ 這將清除所有資料！確定嗎？', () => {
+    showConfirm('重置所有數據', '⚠️ 這將清除本機所有資料，並重置雲端沙盤！確定嗎？', async () => {
       localStorage.removeItem(LS_PREFIX + 'state');
       localStorage.removeItem(AI_LS_KEY);
-      localStorage.removeItem(LS_PREFIX + 'localBackup');
+      try{
+        /* 清空雲端沙盤 */
+        const db = window.SLG.getDb();
+        if(db && state.auth.accountUid){
+          state.settings = {
+            timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
+            siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1
+          };
+          state.alliances = [];
+          state.zones = [];
+          state.cities = [];
+          await window.SLG.saveMySandbox();
+        }
+      }catch(e){}
       location.reload();
     });
   });
@@ -751,26 +1019,6 @@ function bindUI(){
     confirmCb = null;
   });
 
-  /* ── 檔案協作 ── */
-  document.getElementById('btnExportJSON').addEventListener('click', window.SLG.exportSandboxJSON);
-  document.getElementById('btnImportJSON').addEventListener('click', () => {
-    document.getElementById('importFileInput').click();
-  });
-  document.getElementById('importFileInput').addEventListener('change', function(){
-    if (this.files && this.files[0]) window.SLG.importSandboxJSON(this.files[0]);
-    this.value = '';
-  });
-  document.getElementById('btnGenerateShareLink').addEventListener('click', window.SLG.generateShareLink);
-  document.getElementById('btnCopyShareLink').addEventListener('click', window.SLG.copyShareLink);
-  document.getElementById('importModeOverwrite').addEventListener('click', () => window.SLG.applyImport('overwrite'));
-  document.getElementById('importModeMerge').addEventListener('click', () => window.SLG.applyImport('merge'));
-  document.getElementById('importModeCancel').addEventListener('click', () => {
-    document.getElementById('importModal').classList.remove('show');
-  });
-
-  const btnRestore = document.getElementById('btnRestoreBackup');
-  if(btnRestore) btnRestore.addEventListener('click', window.SLG.restoreLocalBackup);
-
   /* ── Excel ── */
   const btnOpenExcel = document.getElementById('btnOpenExcelImport');
   if(btnOpenExcel) btnOpenExcel.addEventListener('click', () => {
@@ -845,7 +1093,7 @@ function bindUI(){
   const chatInput = document.getElementById('chatInput');
   const btnSendChat = document.getElementById('btnSendChat');
   function doSendChat(){
-    if(!requirePerm(() => state.auth.signedIn && !state.auth.isGuest, '請先登入才能聊天')) return;
+    if(!requirePerm(() => state.auth.signedIn, '請先登入才能聊天')) return;
     const text = chatInput.value.trim();
     if(!text) return;
     window.SLG.sendChatMessage(text);
@@ -870,31 +1118,35 @@ function bindUI(){
     });
   }
 
-  /* ── ★ P6：申請編輯權限按鈕 ── */
-  const btnRequestRoomEdit = document.getElementById('btnRequestRoomEdit');
-  if(btnRequestRoomEdit){
-    btnRequestRoomEdit.addEventListener('click', () => {
-      window.SLG.requestRoomEditAccess();
-    });
-  }
-
-  /* ── ★ P6：審核彈窗關閉 ── */
-  const btnReviewClose = document.getElementById('editRequestReviewClose');
-  if(btnReviewClose){
-    btnReviewClose.addEventListener('click', () => {
-      document.getElementById('editRequestReviewModal').classList.remove('show');
-    });
-  }
-
-  /* ── 卸載時釋放 ── */
-  window.addEventListener('beforeunload', saveState);
+  /* ── 卸載 ── */
   window.addEventListener('beforeunload', () => {
+    /* ★ v8.2：關閉前先嘗試儲存個人沙盤 */
+    if(state.auth.signedIn && window.SLG.saveMySandbox){
+      try{ window.SLG.saveMySandbox(); }catch(e){}
+    }
+    saveState();
     try{ releaseWorker(); }catch(e){}
   });
 
   /* ── 初始化子模組 ── */
   DEPLOY().init();
   if(window.SLG.Accounts) window.SLG.Accounts.init();
+}
+
+/* ============================================================
+   ★ v8.2：非同步載入沙盤清單
+   ============================================================ */
+async function refreshSandboxList(){
+  if(!state.auth.signedIn) return;
+  try{
+    const all = await window.SLG.fetchAllSandboxes();
+    state.sandboxesList = all || {};
+    emit(EVT.SANDBOXES_LIST_UPDATED);
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+    logSystem(`📊 已載入 ${Object.keys(state.sandboxesList).length} 個沙盤`);
+  }catch(e){
+    console.warn('載入沙盤清單失敗', e);
+  }
 }
 
 /* ============================================================
@@ -906,7 +1158,6 @@ function bindEvents(){
   on(EVT.AUTH, () => {
     if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
     applyPermissions();
-    if(window.SLG.updateGuestModeBanner) window.SLG.updateGuestModeBanner(state.auth.isGuest);
     updateModeBar();
   });
 
@@ -914,8 +1165,15 @@ function bindEvents(){
     R().renderHealth();
     R().renderHost();
     updateModeBar();
-    /* ★ P6：連線狀態變更 → 重新套用權限（進出房間需刷新編輯按鈕） */
     applyPermissions();
+    /* ★ v8.2：連線後 1 秒檢查是否需要顯示空沙盤提示 */
+    if(window.SLG.isConnected() && !state.roomHasSnapshot){
+      setTimeout(() => {
+        if(window.SLG.isInRoom() && !state.roomHasSnapshot){
+          showRoomEmptyPrompt();
+        }
+      }, 1500);
+    }
   });
 
   on(EVT.MEMBERS, () => R().renderMembers());
@@ -923,13 +1181,11 @@ function bindEvents(){
   on(EVT.HOST, () => {
     R().renderHost();
     updateModeBar();
-    /* ★ P6：成為房主 → 重新套用權限 */
     applyPermissions();
   });
 
   on(EVT.MODE, () => {
     updateModeBar();
-    /* ★ P6：模式變更 → 重新套用權限 */
     applyPermissions();
   });
 
@@ -950,6 +1206,8 @@ function bindEvents(){
     document.getElementById('globalMaxLossRatio').value = Math.round(state.settings.maxLossRatio * 100);
     document.getElementById('globalMinLossRatio').value = Math.round(state.settings.minLossRatio * 100);
     if (document.getElementById('tab-deploy').classList.contains('active')) DEPLOY().render();
+    /* ★ v8.2：沙盤摘要更新 */
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
   });
 
   on(EVT.DYN_RESULT, () => {
@@ -967,7 +1225,7 @@ function bindEvents(){
     }
   });
 
-  /* ── ★ P6：房間編輯授權變更 ── */
+  /* ── P6：房間編輯授權變更 ── */
   on(EVT.ROOM_GRANTS, () => {
     if(window.SLG.updateRoomEditButton) window.SLG.updateRoomEditButton();
     applyPermissions();
@@ -976,9 +1234,27 @@ function bindEvents(){
     R().renderZones();
   });
 
-  /* ── ★ P6：待審核申請變更 ── */
+  /* ── P6：待審核申請變更 ── */
   on(EVT.ROOM_PENDING, () => {
     renderEditRequestReview();
+  });
+
+  /* ── v8.2：房間沙盤更新 ── */
+  on(EVT.ROOM_SNAPSHOT_UPDATED, () => {
+    if(window.SLG.updateRoomSandboxActions) window.SLG.updateRoomSandboxActions();
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+    /* 房間有沙盤了 → 隱藏提示 */
+    if(state.roomHasSnapshot) hideRoomEmptyPrompt();
+  });
+
+  /* ── v8.2：個人沙盤更新 ── */
+  on(EVT.MY_SANDBOX_UPDATED, () => {
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+  });
+
+  /* ── v8.2：沙盤清單更新 ── */
+  on(EVT.SANDBOXES_LIST_UPDATED, () => {
+    if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
   });
 }
 
@@ -1004,38 +1280,25 @@ function boot(){
   /* 3. 初始化 Firebase */
   window.SLG.initFirebase();
 
-  /* 4. 初始化入口門禁（入口遮罩顯示） */
+  /* 4. 初始化入口門禁 */
   if(window.SLG.EntryGate){
     window.SLG.EntryGate.init();
     window.SLG.EntryGate.show();
   }
 
-  /* 5. 非同步初始化認證 */
-  (async () => {
-    let ok = false;
-    if(window.SLG.Auth){
-      ok = await window.SLG.Auth.initFirebaseAuth();
+  /* 5. 註冊雲端同步函式 */
+  window.SLG.registerCloudSync(() => {
+    if(state.auth.signedIn){
+      window.SLG.saveMySandbox().catch(e => console.warn('雲端同步失敗', e));
     }
-    let loggedIn = false;
-    if(ok){
-      loggedIn = await window.SLG.Auth.restoreSession();
+  });
+  window.SLG.registerRoomSnapshotSync(() => {
+    if(state.isHost){
+      window.SLG.publishRoomSnapshot().catch(e => console.warn('房間快照同步失敗', e));
     }
+  });
 
-    if(loggedIn){
-      if(window.SLG.EntryGate) window.SLG.EntryGate.hide();
-      if(window.SLG.updateGuestModeBanner) window.SLG.updateGuestModeBanner(false);
-      if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
-      applyPermissions();
-      R().renderAll();
-      logSystem('🚪 已自動登入，跳過入口');
-    } else {
-      if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
-      if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
-      applyPermissions();
-    }
-  })();
-
-  /* 6. 註冊 sender（補丁上傳） */
+  /* 6. 註冊 sender */
   window.SLG.registerSender(patches => {
     if(!state.connected) return;
     window.SLG.publish({
@@ -1064,19 +1327,39 @@ function boot(){
   R().renderChatBadge();
   R().renderProgress(0);
   DEPLOY().populateZoneFilter();
-  if(window.SLG.updatePushButtonState) window.SLG.updatePushButtonState();
   updateModeBar();
   if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
   applyPermissions();
 
-  /* 10. 分享連結載入 */
-  if (window.SLG.loadFromShareLink && window.SLG.loadFromShareLink()){
-    R().renderAll();
-    DYN().populateCityFilters();
-    DEPLOY().populateZoneFilter();
-  }
+  /* 10. 非同步初始化認證 */
+  (async () => {
+    let ok = false;
+    if(window.SLG.Auth){
+      ok = await window.SLG.Auth.initFirebaseAuth();
+    }
+    let loggedIn = false;
+    if(ok){
+      loggedIn = await window.SLG.Auth.restoreSession();
+    }
 
-  console.log('%c[沙盤 v8.1 P6] 7 模組架構 + 房間編輯權限（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+    if(loggedIn){
+      if(window.SLG.EntryGate) window.SLG.EntryGate.hide();
+      if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
+      applyPermissions();
+      R().renderAll();
+      logSystem('🚪 已自動登入，跳過入口');
+      /* 載入沙盤清單（若在沙盤數據 Tab） */
+      if(document.getElementById('tab-sandbox')?.classList.contains('active')){
+        refreshSandboxList();
+      }
+    } else {
+      if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
+      if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
+      applyPermissions();
+    }
+  })();
+
+  console.log('%c[沙盤 v8.2] 雲端個人沙盤 + 房間沙盤（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 if(document.readyState === 'loading'){

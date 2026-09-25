@@ -1,6 +1,6 @@
 /* ============================================================================
- * ui.js — 所有渲染（viz / R / DYN / DEPLOY）+ 城池/同盟表單 + 房間編輯按鈕
- * v8.1 P6
+ * ui.js — 所有渲染（viz / R / DYN / DEPLOY）+ 表單 + 沙盤數據頁
+ * v8.2
  * ========================================================================== */
 (function(){
 'use strict';
@@ -16,6 +16,8 @@ const {
   PERCENT_OPTIONS, ATTACK_RULES, DEFEND_RULES, SIDE_LABELS,
   VIZ_SNAPSHOT_INTERVAL, DYN_ROUTE_SAMPLE_SEC,
   AI,
+  ROLE, ROLE_ORDER,
+  timeAgo, buildSandboxFileName,
 } = window.SLG;
 
 const Auth = () => window.SLG.Auth;
@@ -411,8 +413,9 @@ const R = (() => {
     }).join('');
     renderMatrix();
     if(hasTogglePerm() && Auth()){
+      const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
       document.querySelectorAll('[data-action="edit-alliance"],[data-action="del-alliance"]').forEach(b => {
-        window.SLG.togglePerm(b, Auth().canEditData(), '需要編輯資料權限');
+        window.SLG.togglePerm(b, canEdit, '需要編輯資料權限');
       });
     }
   }
@@ -467,8 +470,9 @@ const R = (() => {
       sim.value = cur || 'all';
     }
     if(hasTogglePerm() && Auth()){
+      const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
       document.querySelectorAll('[data-action="del-zone"]').forEach(b => {
-        window.SLG.togglePerm(b, Auth().canEditData(), '需要編輯資料權限');
+        window.SLG.togglePerm(b, canEdit, '需要編輯資料權限');
       });
     }
   }
@@ -532,8 +536,9 @@ const R = (() => {
     }
     el.innerHTML = html;
     if(hasTogglePerm() && Auth()){
+      const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
       document.querySelectorAll('[data-action="edit-city"],[data-action="del-city"]').forEach(b => {
-        window.SLG.togglePerm(b, Auth().canEditData(), '需要編輯資料權限');
+        window.SLG.togglePerm(b, canEdit, '需要編輯資料權限');
       });
     }
   }
@@ -606,25 +611,22 @@ const R = (() => {
 })();
 
 /* ============================================================
-   ★ P6：房間編輯按鈕狀態渲染
+   ★ P6：房間編輯按鈕
    ============================================================ */
 function updateRoomEditButton(){
   const btn = document.getElementById('btnRequestRoomEdit');
   if(!btn) return;
 
-  /* 只在房間模式且已登入非訪客時顯示 */
-  if(!window.SLG.isInRoom() || !state.auth.signedIn || state.auth.isGuest){
+  if(!window.SLG.isInRoom() || !state.auth.signedIn){
     btn.style.display = 'none';
     return;
   }
 
-  /* 房主 / 管理員 / 超管 → 不顯示按鈕（不需申請） */
   if(window.SLG.canEditRoomData()){
     btn.style.display = 'none';
     return;
   }
 
-  /* 顯示按鈕 */
   btn.style.display = '';
 
   if(state.myEditRequestStatus === 'pending'){
@@ -639,8 +641,142 @@ function updateRoomEditButton(){
 }
 
 /* ============================================================
-   ★ 3-1 段結束：暴露 viz + R + updateRoomEditButton
-   ★ 注意：這裡「不」關閉 IIFE，3-2 段會接續
+   ★ v8.2：房間沙盤操作按鈕
+   ============================================================ */
+function updateRoomSandboxActions(){
+  const row = document.getElementById('roomSandboxActions');
+  const btnUpload = document.getElementById('btnUploadSandboxToRoom');
+  const btnDownload = document.getElementById('btnDownloadRoomSandbox');
+  if(!row) return;
+
+  /* 只在房間模式顯示 */
+  if(!window.SLG.isInRoom()){
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+
+  /* 上載按鈕：需有權限（房主/幹部/管理員/超管） */
+  if(btnUpload){
+    const canUpload = window.SLG.canUploadSandboxToRoom();
+    btnUpload.style.display = canUpload ? '' : 'none';
+    btnUpload.disabled = !canUpload;
+  }
+
+  /* 下載按鈕：房間有沙盤才顯示 */
+  if(btnDownload){
+    const hasRoom = !!state.roomHasSnapshot;
+    btnDownload.style.display = hasRoom ? '' : 'none';
+    btnDownload.disabled = !hasRoom;
+  }
+}
+
+/* ============================================================
+   ★ v8.2：沙盤數據頁渲染
+   ============================================================ */
+function renderSandboxData(){
+  /* 1. 我的沙盤摘要 */
+  const meName = document.getElementById('sandboxMeName');
+  const meTime = document.getElementById('sandboxMeTime');
+  const meStats = document.getElementById('sandboxMeStats');
+  if(meName){
+    if(state.auth.signedIn){
+      meName.textContent = state.auth.displayName || state.auth.username || '—';
+    } else {
+      meName.textContent = '未登入';
+    }
+  }
+  if(meTime){
+    const ts = state.mySandbox.updatedAt;
+    meTime.textContent = ts ? `最後更新：${timeAgo(ts)}` : '尚未同步';
+  }
+  if(meStats){
+    const c = state.cities.length;
+    const a = state.alliances.length;
+    const z = state.zones.length;
+    meStats.innerHTML = `🏰 城池 <b>${c}</b> · 🤝 同盟 <b>${a}</b> · 🗺️ 戰區 <b>${z}</b>`;
+  }
+
+  /* 2. 個人沙盤清單 */
+  const tbody = document.getElementById('sandboxTableBody');
+  if(tbody){
+    const list = Object.entries(state.sandboxesList || {})
+      .map(([uid, sb]) => ({ uid, ...sb }))
+      .filter(sb => {
+        /* 權限過濾 */
+        const isSelf = sb.uid === state.auth.accountUid;
+        if(isSelf) return true;
+        const role = sb.role || 'member';   /* 沙盤沒存 role，用帳號資訊判斷 */
+        if(!window.SLG.canViewSandboxOf(sb.uid, role)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        /* 自己排最上面 */
+        if(a.uid === state.auth.accountUid) return -1;
+        if(b.uid === state.auth.accountUid) return 1;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      });
+
+    if(list.length === 0){
+      tbody.innerHTML = '<tr><td colspan="7" class="sandbox-empty">尚無沙盤資料</td></tr>';
+    } else {
+      tbody.innerHTML = list.map(sb => {
+        const isSelf = sb.uid === state.auth.accountUid;
+        const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
+        const cityCount = sb.data?.cities?.length || 0;
+        const allianceCount = sb.data?.alliances?.length || 0;
+        const zoneCount = sb.data?.zones?.length || 0;
+        return `<tr class="${isSelf ? 'row-self' : ''}">
+          <td class="sandbox-name">${esc(fileName)}${isSelf ? ' <span class="chip" style="font-size:9px;color:var(--neon-yellow);">你</span>' : ''}</td>
+          <td class="sandbox-owner">${esc(sb.displayName || sb.username || '—')}</td>
+          <td class="col-num">${cityCount}</td>
+          <td class="col-num">${allianceCount}</td>
+          <td class="col-num">${zoneCount}</td>
+          <td class="sandbox-time">${esc(timeAgo(sb.updatedAt))}</td>
+          <td class="col-actions">
+            <button class="btn btn-primary btn-sm" data-action="load-sandbox" data-uid="${sb.uid}" ${isSelf?'disabled':''}>📥 載入</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
+  /* 3. 房間沙盤清單（僅幹部+） */
+  const roomCard = document.getElementById('roomSandboxCard');
+  const roomTbody = document.getElementById('roomSandboxTableBody');
+  if(roomCard){
+    if(window.SLG.canViewRoomSandboxes()){
+      roomCard.style.display = '';
+      /* 由 main.js 非同步載入資料後填入，這裡先判斷是否為空 */
+      if(roomTbody && (!state.roomSnapshotsList || state.roomSnapshotsList.length === 0)){
+        roomTbody.innerHTML = '<tr><td colspan="6" class="sandbox-empty">尚無房間沙盤資料</td></tr>';
+      }
+    } else {
+      roomCard.style.display = 'none';
+    }
+  }
+
+  /* 4. 救援工具（僅管理員/超管） */
+  const rescueCard = document.getElementById('rescueCard');
+  if(rescueCard){
+    rescueCard.style.display = window.SLG.canUseRescueTool() ? '' : 'none';
+  }
+
+  /* 5. 綁定「載入沙盤」按鈕 */
+  if(tbody){
+    tbody.querySelectorAll('[data-action="load-sandbox"]').forEach(btn => {
+      btn.addEventListener('click', function(){
+        const uid = this.dataset.uid;
+        if(typeof window.SLG.loadSandboxFromList === 'function'){
+          window.SLG.loadSandboxFromList(uid);
+        }
+      });
+    });
+  }
+}
+
+/* ============================================================
+   ★ 3-1 段結尾：暴露
    ============================================================ */
 Object.assign(window.SLG, {
   viz,
@@ -655,6 +791,8 @@ Object.assign(window.SLG, {
   renderNarrative: R.renderNarrative,
   renderDebug: R.renderDebug,
   updateRoomEditButton,
+  updateRoomSandboxActions,
+  renderSandboxData,
 });
 
 /* ⚠️ 不要在此行下方加 })(); —— 3-2 段會接續 */
@@ -1549,7 +1687,9 @@ const DEPLOY = (() => {
         infoPanel.style.display = 'none';
       });
       g.addEventListener('click', () => {
-        if(Auth() && !Auth().canEditData()) return;
+        if(typeof window.SLG.canEditRoomData === 'function' && window.SLG.isInRoom()){
+          if(!window.SLG.canEditRoomData()) return;
+        } else if(Auth() && !Auth().canEditData()) return;
         if(typeof window.SLG.openCityModal === 'function') window.SLG.openCityModal(cityId);
       });
     });
@@ -1627,11 +1767,14 @@ const DEPLOY = (() => {
     renderSummary(cities, conflictMap);
     document.querySelectorAll('[data-deploy-edit]').forEach(btn => {
       btn.addEventListener('click', function(){
-        if(Auth() && !Auth().canEditData()) return;
+        if(window.SLG.isInRoom()){
+          if(!window.SLG.canEditRoomData()) return;
+        } else if(Auth() && !Auth().canEditData()) return;
         if(typeof window.SLG.openCityModal === 'function') window.SLG.openCityModal(this.dataset.deployEdit);
       });
       if(hasTogglePerm() && Auth()){
-        window.SLG.togglePerm(btn, Auth().canEditData(), '需要編輯資料權限');
+        const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
+        window.SLG.togglePerm(btn, canEdit, '需要編輯資料權限');
       }
     });
   }
@@ -2035,13 +2178,12 @@ function saveCityFromModal(){
 }
 
 /* ============================================================
-   DEPLOY 便捷函式（給 data.js 呼叫）
+   DEPLOY 便捷函式
    ============================================================ */
 function deployRender(){ DEPLOY.render(); }
 
 /* ============================================================
-   ★ 3-2 段結尾：暴露 DYN + DEPLOY + 表單函式
-   ★ 並關閉 IIFE
+   ★ 3-2 段結尾：暴露 + 關閉 IIFE
    ============================================================ */
 Object.assign(window.SLG, {
   DYN,

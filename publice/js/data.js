@@ -1,6 +1,6 @@
 /* ============================================================================
- * data.js — Excel/CSV 匯入匯出、JSON 匯入匯出、分享連結
- * v8.1
+ * data.js — Excel/CSV 匯入匯出（v8.2：移除 JSON 匯入匯出與分享連結）
+ * v8.2
  * ========================================================================== */
 (function(){
 'use strict';
@@ -12,15 +12,9 @@ const {
   uid, esc, logSystem,
   SIDE_LABELS,
   clamp,
-  LS_PREFIX,
   markDirty, tickLamport, flushPatches,
   saveState,
-  upsertEntity,
-  buildFullSnapshot,
-  applyFullSnapshot,
 } = window.SLG;
-
-const getDb = () => window.SLG.getDb();
 
 /* ============================================================
    通用：解析分隔符文字（自動偵測逗號或 Tab）
@@ -497,7 +491,7 @@ function executeExcelImport(cityResult, routeResult, mode){
 }
 
 /* ============================================================
-   下載 CSV / 匯出
+   下載 CSV
    ============================================================ */
 function downloadCSV(csv, filename){
   const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8;'});
@@ -589,209 +583,6 @@ function downloadExcelTemplate(){
 }
 
 /* ============================================================
-   本機備份 / JSON 匯出 / 匯入
-   ============================================================ */
-function backupLocalBeforeJoin(){
-  try{
-    const hasData = state.alliances.length || state.zones.length || state.cities.length;
-    if(!hasData) return;
-    const key = LS_PREFIX + 'localBackup';
-    if(localStorage.getItem(key)){
-      logSystem('💾 已有本機備份，略過');
-      return;
-    }
-    const backup = {
-      backedUpAt: new Date().toISOString(),
-      settings: {...state.settings},
-      alliances: JSON.parse(JSON.stringify(state.alliances)),
-      zones: JSON.parse(JSON.stringify(state.zones)),
-      cities: JSON.parse(JSON.stringify(state.cities)),
-    };
-    localStorage.setItem(key, JSON.stringify(backup));
-    logSystem(`💾 本機資料已備份（${backup.cities.length} 座城）`);
-  }catch(e){ console.warn('備份失敗', e); }
-}
-
-function exportSandboxJSON(){
-  const data = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    exportedBy: state.commanderName || '匿名',
-    settings: { ...state.settings },
-    alliances: JSON.parse(JSON.stringify(state.alliances)),
-    zones: JSON.parse(JSON.stringify(state.zones)),
-    cities: JSON.parse(JSON.stringify(state.cities)),
-  };
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const safeName = (state.commanderName || '匿名').replace(/[\\/:*?"<>|]/g, '_');
-  a.href = url;
-  a.download = `沙盤_${new Date().toISOString().slice(0,10)}_${safeName}.json`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  logSystem(`📤 已匯出沙盤`);
-  alert('✅ 匯出成功！檔案已下載。');
-}
-
-let pendingImportData = null;
-
-function importSandboxJSON(file){
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try{
-      const data = JSON.parse(e.target.result);
-      if (!data.alliances || !data.zones || !data.cities){
-        alert('❌ 檔案格式錯誤');
-        return;
-      }
-      pendingImportData = data;
-      const info = 
-        `匯入者：${data.exportedBy || '未知'}\n` +
-        `匯出時間：${data.exportedAt ? new Date(data.exportedAt).toLocaleString() : '未知'}\n\n` +
-        `同盟：${data.alliances.length} 個\n` +
-        `戰區：${data.zones.length} 個\n` +
-        `城池：${data.cities.length} 座\n\n` +
-        `請選擇匯入模式：`;
-      document.getElementById('importModalInfo').textContent = info;
-      document.getElementById('importModal').classList.add('show');
-    }catch(err){
-      alert('❌ 檔案解析失敗：' + err.message);
-    }
-  };
-  reader.readAsText(file);
-}
-
-function applyImport(mode){
-  if (!pendingImportData) return;
-  const data = pendingImportData;
-  if (mode === 'overwrite'){
-    state.alliances = data.alliances || [];
-    state.zones = data.zones || [];
-    state.cities = data.cities || [];
-    if (data.settings) Object.assign(state.settings, data.settings);
-  } else {
-    const mergeById = (local, incoming) => {
-      const map = new Map(local.map(x => [x.id, x]));
-      for(const ent of incoming) map.set(ent.id, ent);
-      return [...map.values()];
-    };
-    state.alliances = mergeById(state.alliances, data.alliances || []);
-    state.zones = mergeById(state.zones, data.zones || []);
-    state.cities = mergeById(state.cities, data.cities || []);
-  }
-  const ensureRev = (kind, arr) => {
-    for(const ent of arr){ if (!state.entityRev[kind][ent.id]) state.entityRev[kind][ent.id] = 0; }
-  };
-  ensureRev('alliance', state.alliances);
-  ensureRev('zone', state.zones);
-  ensureRev('city', state.cities);
-  saveState();
-
-  if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
-  if(typeof window.SLG.populateCityFilters === 'function') window.SLG.populateCityFilters();
-  if(typeof window.SLG.populateZoneFilter === 'function') window.SLG.populateZoneFilter();
-  if(typeof window.SLG.deployRender === 'function'
-     && document.getElementById('tab-deploy').classList.contains('active')){
-    window.SLG.deployRender();
-  }
-
-  document.getElementById('importModal').classList.remove('show');
-  pendingImportData = null;
-  logSystem(`📥 已匯入沙盤（${mode === 'overwrite' ? '覆蓋' : '合併'}）`);
-  alert('✅ 匯入完成！');
-}
-
-/* ============================================================
-   分享連結
-   ============================================================ */
-function generateShareLink(){
-  const data = { v: 1, s: state.settings, a: state.alliances, z: state.zones, c: state.cities };
-  const json = JSON.stringify(data);
-  const compressed = LZString.compressToEncodedURIComponent(json);
-  const baseUrl = location.origin + location.pathname;
-  const url = baseUrl + '#sandbox=' + compressed;
-  document.getElementById('shareLinkDisplay').value = url;
-  logSystem(`🔗 已生成分享連結（長度 ${url.length} 字元）`);
-  if (url.length > 8000){ alert('⚠️ 連結過長，建議改用「檔案協作」。'); }
-}
-
-function copyShareLink(){
-  const el = document.getElementById('shareLinkDisplay');
-  if (!el.value){ alert('請先點擊「生成分享連結」'); return; }
-  const fallbackCopy = (inputEl) => {
-    inputEl.select();
-    try{ document.execCommand('copy'); alert('📋 已複製連結！'); }
-    catch(e){ alert('❌ 複製失敗，請手動複製'); }
-  };
-  if (navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(el.value).then(() => alert('📋 已複製連結！')).catch(() => fallbackCopy(el));
-  } else {
-    fallbackCopy(el);
-  }
-}
-
-function loadFromShareLink(){
-  const hash = location.hash;
-  if (!hash.startsWith('#sandbox=')) return false;
-  const compressed = hash.slice('#sandbox='.length);
-  try{
-    const json = LZString.decompressFromEncodedURIComponent(compressed);
-    if (!json){ logSystem('⚠️ 分享連結解析失敗'); return false; }
-    const data = JSON.parse(json);
-    if (!data.a || !data.z || !data.c){ logSystem('⚠️ 分享連結格式錯誤'); return false; }
-    state.alliances = data.a;
-    state.zones = data.z;
-    state.cities = data.c;
-    if (data.s) Object.assign(state.settings, data.s);
-    const ensureRev = (kind, arr) => {
-      for(const ent of arr){ if(!state.entityRev[kind][ent.id]) state.entityRev[kind][ent.id] = 0; }
-    };
-    ensureRev('alliance', state.alliances);
-    ensureRev('zone', state.zones);
-    ensureRev('city', state.cities);
-    saveState();
-    logSystem(`🔗 已從分享連結載入沙盤`);
-    history.replaceState(null, '', location.pathname + location.search);
-    return true;
-  }catch(e){
-    console.warn(e);
-    return false;
-  }
-}
-
-/* ============================================================
-   恢復本機備份
-   ============================================================ */
-function restoreLocalBackup(){
-  const raw = localStorage.getItem(LS_PREFIX + 'localBackup');
-  if(!raw){ alert('沒有本機備份可恢復'); return; }
-  let backup;
-  try{ backup = JSON.parse(raw); }catch(e){ alert('備份檔損毀'); return; }
-
-  const doRestore = () => {
-    state.alliances = backup.alliances || [];
-    state.zones     = backup.zones     || [];
-    state.cities    = backup.cities    || [];
-    if(backup.settings) Object.assign(state.settings, backup.settings);
-    saveState();
-    if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
-    if(typeof window.SLG.populateCityFilters === 'function') window.SLG.populateCityFilters();
-    if(typeof window.SLG.populateZoneFilter === 'function') window.SLG.populateZoneFilter();
-    logSystem('♻️ 已恢復本機備份');
-  };
-
-  if(typeof window.SLG.showConfirm === 'function'){
-    window.SLG.showConfirm('恢復本機備份',
-      `將本機資料換回 ${backup.backedUpAt} 的備份（${(backup.cities||[]).length} 座城）。\n目前房間資料將被覆蓋，確定嗎？`,
-      doRestore);
-  } else if(confirm('確定要恢復本機備份嗎？')) {
-    doRestore();
-  }
-}
-
-/* ============================================================
    暴露
    ============================================================ */
 Object.assign(window.SLG, {
@@ -800,10 +591,6 @@ Object.assign(window.SLG, {
   updateExcelPreview, openExcelImportModal, closeExcelImportModal,
   doExcelImport, executeExcelImport,
   downloadCSV, exportCitiesCSV, exportRoutesCSV, downloadExcelTemplate,
-  backupLocalBeforeJoin,
-  exportSandboxJSON, importSandboxJSON, applyImport,
-  generateShareLink, copyShareLink, loadFromShareLink,
-  restoreLocalBackup,
 });
 
 })();

@@ -1,6 +1,6 @@
 /* ============================================================================
- * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI、房間權限判斷
- * v8.1 P6
+ * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI
+ * v8.2
  * ========================================================================== */
 (function(){
 'use strict';
@@ -16,11 +16,16 @@ const {
 /* ============================================================
    常量
    ============================================================ */
-const LS_PREFIX = 'slg_sandtable_v75_';
+const LS_PREFIX = 'slg_sandtable_v82_';            /* ★ v8.2 升級 key */
+const LS_LEGACY_PREFIX = 'slg_sandtable_v75_';     /* 舊 key 前綴（一次性遷移用） */
 const AI_LS_KEY = 'slg_ai_params';
-const ACCOUNT_UID_KEY = 'slg_sandtable_v75_accountUid';
+const ACCOUNT_UID_KEY = 'slg_sandtable_v82_accountUid';
 const HOST_TIMEOUT = 15000;
 const EDIT_LOCK_TTL = 30000;
+
+/* ★ v8.2 雲端同步 debounce */
+const SANDBOX_SYNC_DEBOUNCE = 1500;
+const ROOM_SNAPSHOT_DEBOUNCE = 2000;
 
 const PERCENT_OPTIONS = [0, 17, 33, 50, 67, 84, 100];
 
@@ -54,6 +59,7 @@ const ROLE_CLASS = {
   member: 'role-member',
   guest: 'role-guest',
 };
+const ROLE_ORDER = { superadmin:0, admin:1, officer:2, member:3, guest:4 };
 
 const EVT = {
   MEMBERS:'members', LOCKS:'locks', DATA:'data',
@@ -61,12 +67,14 @@ const EVT = {
   SIM_TRIGGER:'sim:trigger', DEBUG:'debug',
   VIZ_SNAPSHOTS:'viz:snapshots', VIZ_RESET:'viz:reset',
   DYN_RESULT:'dyn:result',
-  PUSH_REQUEST:'push:request',
-  PUSH_RESPONSE:'push:response',
   MODE:'mode',
   AUTH:'auth',
   ROOM_GRANTS:'room:grants',
   ROOM_PENDING:'room:pending',
+  /* ★ v8.2：沙盤事件 */
+  MY_SANDBOX_UPDATED:'sandbox:mine',
+  SANDBOXES_LIST_UPDATED:'sandbox:list',
+  ROOM_SNAPSHOT_UPDATED:'room:snapshot',
 };
 
 /* ============================================================
@@ -86,6 +94,33 @@ const sideClass = s => (s==='self') ? 'self'
   : (s==='enemy'||s==='common_enemy') ? 'enemy'
   : 'npc';
 const logSystem = text => console.log('[系統] ' + text);
+
+/* ★ v8.2：時間格式化 YYYYMMDD */
+function formatDateCompact(ts){
+  const d = ts ? new Date(ts) : new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}${m}${day}`;
+}
+
+/* ★ v8.2：相對時間 */
+function timeAgo(ts){
+  if(!ts) return '—';
+  const diff = Date.now() - ts;
+  if(diff < 60000) return '剛剛';
+  if(diff < 3600000) return Math.floor(diff/60000) + ' 分前';
+  if(diff < 86400000) return Math.floor(diff/3600000) + ' 小時前';
+  if(diff < 604800000) return Math.floor(diff/86400000) + ' 天前';
+  const d = new Date(ts);
+  return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* ★ v8.2：組裝沙盤檔案名稱 */
+function buildSandboxFileName(displayName, updatedAt){
+  const safe = (displayName || '匿名').replace(/[\\/:*?"<>|]/g, '_');
+  return `${safe}_${formatDateCompact(updatedAt)}`;
+}
 
 /* ============================================================
    AI 佈兵助手
@@ -191,7 +226,6 @@ const state = {
 
   auth: {
     signedIn: false,
-    isGuest: false,
     accountUid: '',
     username: '',
     displayName: '',
@@ -225,12 +259,23 @@ const state = {
   narrativeLines: [],
   chatMessages: [],
   unreadChat: 0,
-  pushRequestStatus: 'idle',
-  pendingPushRequest: null,
+
   /* ★ P6：房間編輯權限 */
   roomEditGrants: {},
   pendingEditRequests: {},
   myEditRequestStatus: 'idle',
+
+  /* ★ v8.2：沙盤系統 */
+  mySandbox: {
+    loading: false,
+    loaded: false,
+    updatedAt: 0,
+    saving: false,
+  },
+  sandboxesList: {},              /* uid -> { username, displayName, updatedAt, data } */
+  roomSnapshot: null,             /* 目前房間的 latestSnapshot */
+  roomHasSnapshot: false,
+  pendingUploadSandbox: null,     /* 準備上載到房間的沙盤資料 */
 };
 
 /* ============================================================
@@ -267,28 +312,59 @@ function clearDirty(){
 }
 
 /* ============================================================
-   持久化
+   持久化（本機 localStorage）
+   ★ v8.2：不再限制訪客（訪客功能取消）
+   ★ v8.2：本機只存「當前活躍資料」，雲端才是權威
    ============================================================ */
+let cloudSyncTimer = null;
+let cloudSyncFn = null;   /* 由 firebase.js 註冊 */
+
+function registerCloudSync(fn){
+  cloudSyncFn = fn;
+}
+
+function triggerCloudSync(delay){
+  if(!cloudSyncFn) return;
+  if(!state.auth.signedIn) return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => {
+    try{ cloudSyncFn(); }catch(e){ console.warn('雲端同步失敗', e); }
+  }, delay || SANDBOX_SYNC_DEBOUNCE);
+}
+
 function saveState(){
-  if(state.auth && state.auth.isGuest) return;
   try{
     localStorage.setItem(LS_PREFIX+'state', JSON.stringify({
-      commanderName:state.commanderName, roomCode:state.roomCode,
-      settings:state.settings, settingsRev:state.settingsRev, lamport:state.lamport,
-      entityRev:state.entityRev,
-      roomEpoch:state.roomEpoch,
-      alliances:state.alliances, zones:state.zones, cities:state.cities,
+      commanderName: state.commanderName,
+      roomCode: state.roomCode,
+      settings: state.settings,
+      settingsRev: state.settingsRev,
+      lamport: state.lamport,
+      entityRev: state.entityRev,
+      roomEpoch: state.roomEpoch,
+      alliances: state.alliances,
+      zones: state.zones,
+      cities: state.cities,
       dynRows: state.dynRows.slice(-5000),
       narrativeLines: state.narrativeLines.slice(-1000),
       chatMessages: state.chatMessages.slice(-200),
-      pushRequestStatus: state.pushRequestStatus,
     }));
   }catch(e){ console.warn('儲存失敗', e); }
+  /* ★ v8.2：觸發雲端個人沙盤同步 */
+  if(state.mode === 'local'){
+    triggerCloudSync();
+  }
+  /* ★ v8.2：房間內編輯 → 觸發房間快照同步 */
+  if(state.mode === 'room' && state.isHost){
+    triggerRoomSnapshotSync();
+  }
 }
 
 function loadState(){
-  if(state.auth && state.auth.isGuest) return;
   try{
+    /* 一次性遷移：舊 key → 新 key */
+    migrateLegacyState();
+
     const raw = localStorage.getItem(LS_PREFIX+'state');
     if(!raw) return;
     const d = JSON.parse(raw);
@@ -342,10 +418,19 @@ function loadState(){
     if(Array.isArray(d.dynRows)) state.dynRows = d.dynRows.slice(-5000);
     if(Array.isArray(d.narrativeLines)) state.narrativeLines = d.narrativeLines.slice(-1000);
     if(Array.isArray(d.chatMessages)) state.chatMessages = d.chatMessages.slice(-200);
-    if(d.pushRequestStatus && ['idle','pending','rejected'].includes(d.pushRequestStatus)){
-      state.pushRequestStatus = d.pushRequestStatus;
-    }
   }catch(e){ console.warn('讀取失敗', e); }
+}
+
+function migrateLegacyState(){
+  try{
+    const newKey = LS_PREFIX + 'state';
+    if(localStorage.getItem(newKey)) return;   /* 已有新 key，不遷移 */
+    const oldKey = LS_LEGACY_PREFIX + 'state';
+    const oldRaw = localStorage.getItem(oldKey);
+    if(!oldRaw) return;
+    localStorage.setItem(newKey, oldRaw);
+    console.log('[遷移] 已將舊 key 資料遷移到 v8.2 key');
+  }catch(e){ console.warn('遷移失敗', e); }
 }
 
 /* ============================================================
@@ -464,7 +549,23 @@ function flushPatches(){
     if(patches.length === 0) return;
     sender(patches);
     clearDirty();
+    /* ★ v8.2：房間內編輯後，觸發房間快照同步 */
+    triggerRoomSnapshotSync();
   }, 60);
+}
+
+/* ★ v8.2：房間快照同步（debounce 2 秒） */
+let roomSnapshotTimer = null;
+let roomSnapshotFn = null;
+function registerRoomSnapshotSync(fn){ roomSnapshotFn = fn; }
+function triggerRoomSnapshotSync(){
+  if(!roomSnapshotFn) return;
+  if(state.mode !== 'room') return;
+  if(!window.SLG.canEditRoomData || !window.SLG.canEditRoomData()) return;
+  clearTimeout(roomSnapshotTimer);
+  roomSnapshotTimer = setTimeout(() => {
+    try{ roomSnapshotFn(); }catch(e){ console.warn('房間快照同步失敗', e); }
+  }, ROOM_SNAPSHOT_DEBOUNCE);
 }
 
 /* ============================================================
@@ -509,6 +610,36 @@ function applyFullSnapshot(snap){
   return true;
 }
 
+/* ★ v8.2：組裝「沙盤資料」物件（雲端存檔用） */
+function buildSandboxData(){
+  return {
+    settings: JSON.parse(JSON.stringify(state.settings)),
+    alliances: JSON.parse(JSON.stringify(state.alliances)),
+    zones: JSON.parse(JSON.stringify(state.zones)),
+    cities: JSON.parse(JSON.stringify(state.cities)),
+  };
+}
+
+/* ★ v8.2：套用「沙盤資料」到 state */
+function applySandboxData(data){
+  if(!data) return false;
+  if(data.settings) Object.assign(state.settings, data.settings);
+  state.alliances = JSON.parse(JSON.stringify(data.alliances || []));
+  state.zones     = JSON.parse(JSON.stringify(data.zones     || []));
+  state.cities    = JSON.parse(JSON.stringify(data.cities    || []));
+  state.entityRev = { alliance:{}, zone:{}, city:{} };
+  for(const [kind, arr] of [
+    ['alliance', state.alliances],
+    ['zone',     state.zones],
+    ['city',     state.cities]
+  ]){
+    for(const ent of arr){
+      state.entityRev[kind][ent.id] = 1;
+    }
+  }
+  return true;
+}
+
 /* ============================================================
    模式管理
    ============================================================ */
@@ -535,9 +666,7 @@ function updateModeBar(){
 
   const a = state.auth;
   let userLabel = '';
-  if(a.isGuest){
-    userLabel = '👻 訪客';
-  } else if(a.signedIn){
+  if(a.signedIn){
     const roleIcon = (ROLE_LABELS[a.role] || '').split(' ')[0] || '';
     userLabel = `${a.displayName || a.username}${roleIcon ? ' ' + roleIcon : ''}`;
   }
@@ -588,14 +717,13 @@ function requestSwitchMode(){
 }
 
 /* ============================================================
-   ★ P6：房間編輯權限判斷
+   ★ P6：房間編輯權限判斷（沿用）
    ============================================================ */
 function isInRoom(){
   return state.mode === 'room' && state.connected;
 }
 function canEditRoomData(){
   if(!state.auth.signedIn) return false;
-  if(state.auth.isGuest) return false;
   if(window.SLG.Auth && window.SLG.Auth.isAdmin()) return true;
   if(state.isHost) return true;
   if(state.roomEditGrants[state.auth.accountUid]) return true;
@@ -615,6 +743,49 @@ function resetRoomEditState(){
   state.roomEditGrants = {};
   state.pendingEditRequests = {};
   state.myEditRequestStatus = 'idle';
+}
+
+/* ============================================================
+   ★ v8.2：沙盤權限判斷（新）
+   ============================================================ */
+
+/* 誰可以查看沙盤列表？ */
+function canViewSandboxes(){
+  if(!state.auth.signedIn) return false;
+  return true;   /* 所有已登入使用者都可以看到清單（但範圍不同） */
+}
+
+/* 是否可以查看某個帳號的沙盤？ */
+function canViewSandboxOf(targetUid, targetRole){
+  if(!state.auth.signedIn) return false;
+  /* 自己永遠可以看 */
+  if(targetUid === state.auth.accountUid) return true;
+  /* 幹部+ 可看所有 */
+  if(window.SLG.Auth && (window.SLG.Auth.isAdmin() || state.auth.role === ROLE.OFFICER)){
+    return true;
+  }
+  /* 成員：只看得到「成員角色」的沙盤 */
+  if(state.auth.role === ROLE.MEMBER && targetRole === ROLE.MEMBER) return true;
+  return false;
+}
+
+/* 是否可以查看房間沙盤清單？ */
+function canViewRoomSandboxes(){
+  if(!state.auth.signedIn) return false;
+  return window.SLG.Auth && (window.SLG.Auth.isAdmin() || state.auth.role === ROLE.OFFICER);
+}
+
+/* 是否可以上載沙盤到房間？ */
+function canUploadSandboxToRoom(){
+  if(!isInRoom()) return false;
+  if(!state.auth.signedIn) return false;
+  return window.SLG.Auth && (window.SLG.Auth.isAdmin() || window.SLG.Auth.isOfficer());
+}
+
+/* 是否可以使用救援工具？ */
+function canUseRescueTool(){
+  if(!state.auth.signedIn) return false;
+  return window.SLG.Auth && window.SLG.Auth.isAdmin();
 }
 
 /* ============================================================
@@ -659,13 +830,16 @@ function readAIParamsFromUI(){
    ============================================================ */
 Object.assign(window.SLG, {
   /* 常量 */
-  LS_PREFIX, AI_LS_KEY, ACCOUNT_UID_KEY, HOST_TIMEOUT, EDIT_LOCK_TTL,
+  LS_PREFIX, LS_LEGACY_PREFIX, AI_LS_KEY, ACCOUNT_UID_KEY,
+  HOST_TIMEOUT, EDIT_LOCK_TTL,
+  SANDBOX_SYNC_DEBOUNCE, ROOM_SNAPSHOT_DEBOUNCE,
   PERCENT_OPTIONS,
   ATTACK_RULES, DEFEND_RULES, SIDE_LABELS, ALLIANCE_SIDE_LABELS,
-  ROLE, ROLE_LABELS, ROLE_CLASS, EVT,
+  ROLE, ROLE_LABELS, ROLE_CLASS, ROLE_ORDER, EVT,
 
   /* 工具 */
   uid, nowTime, esc, sideLabel, allianceSideLabel, sideClass, logSystem,
+  formatDateCompact, timeAgo, buildSandboxFileName,
 
   /* AI */
   AI,
@@ -677,13 +851,16 @@ Object.assign(window.SLG, {
   tickLamport, isNewer, markDirty, clearDirty,
 
   /* 持久化 */
-  saveState, loadState,
+  saveState, loadState, migrateLegacyState,
+  registerCloudSync, triggerCloudSync,
+  registerRoomSnapshotSync, triggerRoomSnapshotSync,
 
   /* 補丁 / 快照 */
   buildSettingsPatch, buildEntityPatch, buildDeletePatch, collectDirtyPatches,
   upsertEntity, deleteEntity, updateSettings, applyPatch,
   registerSender, flushPatches,
   buildFullSnapshot, applyFullSnapshot,
+  buildSandboxData, applySandboxData,
 
   /* 模式管理 */
   enterRoomMode, exitRoomMode, updateModeBar, requestSwitchMode,
@@ -694,6 +871,13 @@ Object.assign(window.SLG, {
   getEffectiveEditPermission,
   getEffectiveImportExcelPermission,
   resetRoomEditState,
+
+  /* v8.2：沙盤權限 */
+  canViewSandboxes,
+  canViewSandboxOf,
+  canViewRoomSandboxes,
+  canUploadSandboxToRoom,
+  canUseRescueTool,
 
   /* AI 參數 UI */
   syncAIParamsToUI, readAIParamsFromUI,
