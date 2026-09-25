@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.1</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+<link rel="stylesheet" href="style.css?v=20260926">
+</head>
+<body>
+
+<!-- ============ v8.1 P5：入口門禁 ============ -->
+<div class="entry-gate" id="entryGate">
+  <div class="entry-card">
+    <!-- 載入中狀態 -->
+    <div id="entryLoading" class="entry-loading">
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.1</span></div>
+      <div class="entry-loading-spinner"></div>
+      <div class="entry-loading-text">載入中...</div>
+    </div>
+
+    <!-- 登入/註冊表單 -->
+    <div id="entryMain" style="display:none;">
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.1</span></div>
+
+      <div class="entry-tabs">
+        <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
+        <button class="entry-tab" data-entry-view="register">📝 註冊</button>
+      </div>
+
+      <div id="entryLoginView" class="entry-view">
+        <div class="entry-field">
+          <label>帳號</label>
+          <input type="text" id="entryLoginUsername" placeholder="輸入帳號" maxlength="20" autocomplete="username">
+        </div>
+        <div class="entry-field">
+          <label>密碼</label>
+          <input type="password" id="entryLoginPassword" placeholder="輸入密碼" maxlength="64" autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary btn-block" id="entryBtnLogin">登入</button>
+        <div class="entry-error" id="entryLoginError"></div>
+      </div>
+
+      <div id="entryRegisterView" class="entry-view" style="display:none;">
+        <div class="entry-field">
+          <label>帳號（3-20 字元，英數底線）</label>
+          <input type="text" id="entryRegUsername" placeholder="登入時使用，不可修改" maxlength="20" autocomplete="username">
+        </div>
+        <div class="entry-field">
+          <label>顯示名稱（1-12 字）</label>
+          <input type="text" id="entryRegDisplayName" placeholder="其他人看到的名稱" maxlength="12">
+        </div>
+        <div class="entry-field">
+          <label>密碼（至少 4 字元）</label>
+          <input type="password" id="entryRegPassword" placeholder="輸入密碼" maxlength="64" autocomplete="new-password">
+        </div>
+        <div class="entry-field">
+          <label>確認密碼</label>
+          <input type="password" id="entryRegPassword2" placeholder="再輸入一次" maxlength="64" autocomplete="new-password">
+        </div>
+        <button class="btn btn-success btn-block" id="entryBtnRegister">註冊</button>
+        <div class="entry-error" id="entryRegError"></div>
+      </div>
+
+      <div class="entry-divider"><span>或</span></div>
+
+      <button class="btn btn-ghost btn-block entry-guest-btn" id="entryBtnGuest">
+        👻 以訪客身份進入
+      </button>
+      <div class="entry-guest-hint">
+        ＊訪客模式可以試用所有功能，但<b>不會保存任何資料</b>，重新整理後需重新進入。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 頂部狀態條 ============ -->
+<div class="sticky-header" id="stickyHeader">
+  <div class="mode-bar local" id="modeBar">
+    <div class="mode-bar-inner">
+      <span class="mode-indicator" id="modeIndicator">🖥️ 本機模式</span>
+      <span class="mode-detail" id="modeDetail">尚未進入房間</span>
+      <button class="btn btn-sm btn-mode" id="btnSwitchMode">進入房間</button>
+    </div>
+  </div>
+  <nav class="top-nav" id="topNav">
+    <button data-tab="tab-room" class="active">🔗 房間連線</button>
+    <button data-tab="tab-params">⚙️ 參數設定</button>
+    <button data-tab="tab-alliances">🤝 參戰盟</button>
+    <button data-tab="tab-cities">🏰 城池數據</button>
+    <button data-tab="tab-deploy">📋 佈兵總覽</button>
+    <button data-tab="tab-viz">🗺️ 態勢圖</button>
+    <button data-tab="tab-dyn">📈 動態戰報</button>
+    <button data-tab="tab-narrative">📜 戰報敘事</button>
+    <button data-tab="tab-chat">💬 作戰聊天室 <span class="badge" id="chatBadge"></span></button>
+    <button data-tab="tab-account">👤 帳號</button>
+    <button data-tab="tab-accounts">👥 帳號管理</button>
+    <button data-tab="tab-rules">📖 戰鬥規則</button>
+  </nav>
+</div>
+
+<div class="main-container">
+
+<!-- ============ 房間連線 ============ -->
+<section id="tab-room" class="tab-content active">
+  <div class="card">
+    <div class="card-title">📁 檔案協作（推薦）</div>
+    <div class="text-dim" style="margin-bottom:10px;">
+      ＊不需網路、不需伺服器。各自編輯後匯出檔案，用 LINE / Discord 傳給朋友合併。
+    </div>
+    <div class="flex-row">
+      <button class="btn btn-primary" id="btnExportJSON">📤 匯出沙盤檔案</button>
+      <button class="btn btn-success" id="btnImportJSON">📥 匯入沙盤檔案</button>
+    </div>
+    <input type="file" id="importFileInput" accept=".json" style="display:none;">
+    <div class="text-dim mt-8">
+      ＊「匯出」會下載一個 .json 檔案，包含所有同盟、戰區、城池資料。<br>
+      ＊「匯入」可選擇「覆蓋」或「合併」，合併時以匯入的資料為優先。
+    </div>
+
+    <div class="card-title mt-12" style="color:var(--neon-green);">📊 Excel 協作</div>
+    <div class="text-dim" style="margin-bottom:8px;">
+      ＊用 Excel 批次填寫城池/路線資料 → 另存 CSV → 上傳；或直接從 Excel 複製表格貼上。
+    </div>
+    <div class="flex-row">
+      <button class="btn btn-primary" id="btnOpenExcelImport">📊 匯入城池 / 路線</button>
+      <button class="btn btn-warning" id="btnExportCitiesCSV">📤 匯出城池表</button>
+      <button class="btn btn-warning" id="btnExportRoutesCSV">📤 匯出路線表</button>
+    </div>
+    <button class="btn btn-ghost btn-sm mt-8" id="btnDownloadTemplate">📋 下載 Excel 範本說明</button>
+
+    <button class="btn btn-warning btn-sm mt-8" id="btnRestoreBackup">♻️ 恢復本機備份</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔗 分享連結（適合小量資料）</div>
+    <div class="text-dim" style="margin-bottom:10px;">
+      ＊把整份沙盤壓縮成一串網址，複製後貼給朋友，他們打開即載入同一份資料。
+    </div>
+    <div class="flex-row">
+      <button class="btn btn-primary" id="btnGenerateShareLink">🔗 生成分享連結</button>
+      <button class="btn btn-ghost" id="btnCopyShareLink">📋 複製連結</button>
+    </div>
+    <input type="text" id="shareLinkDisplay" readonly placeholder="尚未生成" style="margin-top:8px;">
+    <div class="text-dim mt-8">
+      ＊資料量過大時連結會很長，若超過 8000 字元請改用「檔案協作」。
+    </div>
+  </div>
+
+  <<div class="card">
+  <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+    <span>📡 Firebase 即時連線（進階）</span>
+    <button class="btn btn-warning btn-sm" id="btnRequestRoomEdit" style="display:none;">📝 申請編輯此房間資料</button>
+  </div>
+    <div class="param-item">
+      <label>您的指揮官名稱</label>
+      <input type="text" id="commanderName" placeholder="輸入名稱..." maxlength="12">
+      <div class="param-hint">顯示給同房間的其他玩家，最多 12 字。</div>
+    </div>
+    <div class="param-item">
+      <label>房間碼（6 位數）</label>
+      <input type="text" id="roomCode" placeholder="123456" maxlength="6" inputmode="numeric">
+      <div class="param-hint">創建房間時系統會隨機產生；加入房間時輸入盟友提供的 6 位數字。</div>
+    </div>
+    <div class="flex-row mt-8">
+      <button class="btn btn-primary btn-sm" id="btnCreateRoom">🏠 創建房間</button>
+      <button class="btn btn-success btn-sm" id="btnJoinRoom">🔗 加入盟友房間</button>
+      <button class="btn btn-danger btn-sm" id="btnDisconnect">🔌 中斷連線</button>
+    </div>
+    <div class="flex-row mt-8" id="pushRequestRow" style="display:none;">
+      <button class="btn btn-warning btn-block" id="btnRequestPush">📤 申請推送本機資料到房間</button>
+    </div>
+    <div class="flex-row mt-8" style="justify-content:space-between;">
+      <span class="health-indicator"><span class="health-dot red" id="healthDot"></span><span id="healthText">未連線</span></span>
+      <span class="text-dim" id="hostDisplay"></span>
+    </div>
+    <div class="debug-log mt-8" id="debugLog"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">👥 在線盟友</div>
+    <div id="onlineMembers" class="flex-row"><span class="text-dim">尚未連線</span></div>
+  </div>
+</section>
+
+<!-- ============ 參數設定 ============ -->
+<section id="tab-params" class="tab-content">
+  <div class="card">
+    <div class="card-title">⚙️ 戰鬥參數</div>
+    <div class="param-section">
+      <div class="param-section-title">🕐 時間與節奏</div>
+      <div class="param-grid">
+        <div class="param-item">
+          <label>城戰總時間限制（分鐘）</label>
+          <input type="number" id="globalTimeLimit" value="120" min="1">
+          <div class="param-hint">從防守開始時間起算，超過此時間戰鬥強制結束。</div>
+        </div>
+        <div class="param-item">
+          <label>行軍時間（秒）</label>
+          <input type="number" id="globalMarchTimeSec" value="0" min="0" step="1">
+          <div class="param-hint">進攻/協防部隊從母城到目標城所需時間。戰敗後亦需此時間才能回母城。</div>
+        </div>
+      </div>
+    </div>
+    <div class="param-section">
+      <div class="param-section-title">⚔️ 消耗與攻城</div>
+      <div class="param-grid">
+        <div class="param-item">
+          <label>每線每分鐘最小消耗隊數</label>
+          <input type="number" id="globalConsumeMinPerMin" value="10" min="0" step="0.1">
+          <div class="param-hint">每條路線每分鐘可抽取的最小消耗值。</div>
+        </div>
+        <div class="param-item">
+          <label>每線每分鐘最大消耗隊數</label>
+          <input type="number" id="globalConsumeMaxPerMin" value="30" min="0" step="0.1">
+          <div class="param-hint">每條路線每分鐘可抽取的最大消耗值。</div>
+        </div>
+        <div class="param-item">
+          <label>攻城效率</label>
+          <input type="number" id="globalSiegeEfficiency" value="1" min="0.1" step="0.1">
+          <div class="param-hint">每 30 秒結算時，每 1 隊兵力對城牆造成的傷害倍數。</div>
+        </div>
+      </div>
+    </div>
+    <div class="param-section">
+      <div class="param-section-title">🎲 戰敗比例鉗制</div>
+      <div class="param-grid">
+        <div class="param-item">
+          <label>最大戰敗比例（%）</label>
+          <input type="number" id="globalMaxLossRatio" value="90" min="1" max="100" step="1">
+          <div class="param-hint">單次結算時，任一方損失比例的上限。</div>
+        </div>
+        <div class="param-item">
+          <label>最小戰敗比例（%）</label>
+          <input type="number" id="globalMinLossRatio" value="10" min="0" max="100" step="1">
+          <div class="param-hint">單次結算時，任一方損失比例的下限。</div>
+        </div>
+      </div>
+    </div>
+    <div class="flex-row mt-8">
+      <button class="btn btn-primary btn-sm" id="btnSaveSettings">💾 儲存戰鬥參數</button>
+      <button class="btn btn-danger btn-sm" id="btnResetAll">🗑️ 重置所有數據</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🤖 AI 佈兵參數</div>
+    <div class="text-dim" style="margin-bottom:10px;">
+      ＊這些參數會影響城池編輯時「🤖 建議 XX%」的計算。調整後按「儲存」即可生效。
+    </div>
+    <div class="param-section">
+      <div class="param-section-title">📊 戰力比分段建議（我方均戰 ÷ 目標均戰）</div>
+      <div class="param-grid">
+        <div class="param-item"><label>戰力比 ≥ 2.5 時派兵%</label><input type="number" id="aiR25" value="25" min="0" max="100"><div class="param-hint">壓倒性優勢。</div></div>
+        <div class="param-item"><label>戰力比 ≥ 2.0 時派兵%</label><input type="number" id="aiR20" value="33" min="0" max="100"><div class="param-hint">極大優勢。</div></div>
+        <div class="param-item"><label>戰力比 ≥ 1.5 時派兵%</label><input type="number" id="aiR15" value="50" min="0" max="100"><div class="param-hint">明顯優勢。</div></div>
+        <div class="param-item"><label>戰力比 ≥ 1.2 時派兵%</label><input type="number" id="aiR12" value="60" min="0" max="100"><div class="param-hint">小優勢。</div></div>
+        <div class="param-item"><label>戰力比 ≥ 1.0 時派兵%</label><input type="number" id="aiR10" value="70" min="0" max="100"><div class="param-hint">勢均力敵。</div></div>
+        <div class="param-item"><label>戰力比 ≥ 0.8 時派兵%</label><input type="number" id="aiR08" value="84" min="0" max="100"><div class="param-hint">小劣勢。</div></div>
+        <div class="param-item"><label>戰力比 ≥ 0.6 時派兵%</label><input type="number" id="aiR06" value="95" min="0" max="100"><div class="param-hint">明顯劣勢。</div></div>
+        <div class="param-item"><label>戰力比 &lt; 0.6 時派兵%</label><input type="number" id="aiR00" value="100" min="0" max="100"><div class="param-hint">極度劣勢。</div></div>
+      </div>
+    </div>
+    <div class="param-section">
+      <div class="param-section-title">🔧 修正係數</div>
+      <div class="param-grid">
+        <div class="param-item"><label>兵力比修正係數</label><input type="number" id="aiTeamFactor" value="0.4" min="0" max="2" step="0.05"><div class="param-hint">目標兵力多於我方時提升比例。</div></div>
+        <div class="param-item"><label>城牆 &gt; 30 分 乘數</label><input type="number" id="aiWallFactor1" value="1.10" min="1" max="2" step="0.01"><div class="param-hint">城牆超過 30 分鐘時需求乘數。</div></div>
+        <div class="param-item"><label>城牆 &gt; 60 分 乘數</label><input type="number" id="aiWallFactor2" value="1.15" min="1" max="2" step="0.01"><div class="param-hint">城牆超過 60 分鐘時需求乘數。</div></div>
+        <div class="param-item"><label>協防修正乘數</label><input type="number" id="aiDefendFactor" value="0.70" min="0.1" max="1.5" step="0.05"><div class="param-hint">協防時建議派兵量的乘數。</div></div>
+        <div class="param-item"><label>縮放下限 %</label><input type="number" id="aiMinPct" value="17" min="0" max="100"><div class="param-hint">多目標總和超 100% 時的最低下限。</div></div>
+      </div>
+    </div>
+    <div class="flex-row mt-8" style="gap:6px;">
+      <button class="btn btn-ghost btn-sm" id="btnAIReset">🔄 恢復預設</button>
+      <button class="btn btn-primary btn-sm" id="btnAISave">💾 儲存 AI 參數</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 參戰盟 ============ -->
+<section id="tab-alliances" class="tab-content">
+  <div class="card">
+    <div class="card-title">🤝 同盟清單</div>
+    <div class="ally-table-wrap">
+      <table class="ally-table">
+        <thead><tr><th>盟名稱</th><th>陣營</th><th class="col-num">總人數</th><th class="col-num">總戰力</th><th class="col-num">平均戰力</th><th class="col-actions">操作</th></tr></thead>
+        <tbody id="allianceTableBody">
+          <tr><td colspan="6" class="ally-table-empty">尚無同盟資料</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card-title mt-12" id="allyFormTitle">➕ 新增同盟</div>
+    <div class="form-row">
+      <div style="flex:0 0 80px;"><label>盟徽</label><input type="text" id="allyIcon" placeholder="🌌" maxlength="8" style="text-align:center;font-size:18px;"></div>
+      <div style="flex:2;"><label>盟名稱</label><input type="text" id="allyName" placeholder="同盟名稱" maxlength="20"></div>
+      <div style="flex:1.2;"><label>陣營</label>
+        <select id="allySide"><option value="self">本方（唯一）</option><option value="ally">同盟</option><option value="enemy">敵方</option></select>
+      </div>
+      <div style="flex:1;"><label>總人數</label><input type="number" id="allyMemberCount" placeholder="100" value="100" min="1"></div>
+      <div style="flex:1;"><label>總戰力</label><input type="number" id="allyTotalPower" placeholder="20000" value="20000" min="0"></div>
+      <div style="flex:1;"><label>平均戰力（自動）</label><input type="text" id="allyAvgPower" readonly value="200"></div>
+      <div style="flex:0 0 auto;">
+        <button class="btn btn-primary btn-sm" id="btnSaveAlliance">💾 儲存</button>
+        <button class="btn btn-ghost btn-sm" id="btnCancelAllianceEdit" style="display:none;margin-left:4px;">取消</button>
+      </div>
+    </div>
+    <div class="icon-quick-row">
+      <span class="icon-quick-label">快速選擇盟徽：</span>
+      <button type="button" class="icon-quick" data-icon="🌌">🌌</button>
+      <button type="button" class="icon-quick" data-icon="⚔️">⚔️</button>
+      <button type="button" class="icon-quick" data-icon="🛡️">🛡️</button>
+      <button type="button" class="icon-quick" data-icon="🏹">🏹</button>
+      <button type="button" class="icon-quick" data-icon="🗡️">🗡️</button>
+      <button type="button" class="icon-quick" data-icon="🔥">🔥</button>
+      <button type="button" class="icon-quick" data-icon="⚡">⚡</button>
+      <button type="button" class="icon-quick" data-icon="❄️">❄️</button>
+      <button type="button" class="icon-quick" data-icon="🌊">🌊</button>
+      <button type="button" class="icon-quick" data-icon="🏰">🏰</button>
+      <button type="button" class="icon-quick" data-icon="🚩">🚩</button>
+      <button type="button" class="icon-quick" data-icon="👑">👑</button>
+      <button type="button" class="icon-quick" data-icon="🐉">🐉</button>
+      <button type="button" class="icon-quick" data-icon="🦅">🦅</button>
+      <button type="button" class="icon-quick" data-icon="🐺">🐺</button>
+      <button type="button" class="icon-quick" data-icon="🦁">🦁</button>
+      <button type="button" class="icon-quick" data-icon="💀">💀</button>
+      <button type="button" class="icon-quick" data-icon="🌟">🌟</button>
+      <button type="button" class="icon-quick" data-icon="💎">💎</button>
+      <button type="button" class="icon-quick" data-icon="🎖️">🎖️</button>
+      <button type="button" class="icon-quick icon-clear" data-icon="" title="清除盟徽">✕</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">📊 盟對盟獨立消耗比例矩陣</div>
+    <div class="text-dim" style="margin-bottom:8px;">單元格 = (X軸平均戰力 / (Y軸戰力 + X軸平均戰力)) × 每分鐘總消耗隊數。</div>
+    <div class="matrix-wrap" id="matrixWrap"></div>
+  </div>
+</section>
+
+<!-- ============ 城池數據 ============ -->
+<section id="tab-cities" class="tab-content">
+  <div class="card">
+    <div class="card-title">🗺️ 戰區管理</div>
+    <div id="zoneList" class="flex-row"></div>
+    <div class="form-row mt-8">
+      <input type="text" id="newZoneName" placeholder="新戰區名稱">
+      <button class="btn btn-primary btn-sm" id="btnAddZone">＋ 新增戰區</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">➕ 新增城池</div>
+    <button class="btn btn-primary btn-block" id="btnOpenNewCity">🏰 開啟城池編輯表單</button>
+    <div class="text-dim mt-8">每條路線獨立設定「戰前派兵%」、「復活後派兵%」與「優先順序」。</div>
+  </div>
+  <div id="cityList"></div>
+  <div class="card">
+    <div class="card-title">🎯 推演啟動</div>
+    <label>選擇單獨推演沙盤的戰區</label>
+    <select id="simZoneSelect"><option value="all">🌐 全戰區同時推演</option></select>
+    <button class="btn btn-success btn-block mt-8" id="btnSimulate">⚡ 一鍵模擬到結束</button>
+    <div class="sim-progress"><div class="sim-progress-bar" id="simProgress"></div></div>
+  </div>
+</section>
+
+<!-- ============ 佈兵總覽 ============ -->
+<section id="tab-deploy" class="tab-content">
+  <div class="card">
+    <div class="card-title">📋 佈兵總覽</div>
+    <div class="text-dim" style="margin-bottom:10px;">＊此頁面為純查閱用途，編輯請點擊各行右側「✏️」按鈕。</div>
+    <div class="deploy-tabs">
+      <button class="deploy-tab active" data-view="attack">⚔️ 出兵視角</button>
+      <button class="deploy-tab" data-view="defend">🎯 受擊視角</button>
+      <button class="deploy-tab" data-view="matrix">📊 矩陣視角</button>
+      <button class="deploy-tab" data-view="graph">🕸️ 連線圖</button>
+    </div>
+    <div class="deploy-filter">
+      <div><label>戰區</label><select id="deployZone"><option value="all">全部</option></select></div>
+      <div><label>陣營</label>
+        <select id="deploySide"><option value="all">全部</option><option value="self">本方</option><option value="ally">同盟</option><option value="enemy">敵方</option><option value="common_enemy">共同敵方</option><option value="npc">NPC</option></select>
+      </div>
+      <div><label>顯示條件</label>
+        <select id="deployFilter"><option value="all">全部城池</option><option value="hasAction">僅有派兵/被攻擊的城</option><option value="overdraft">僅超額派兵的城</option><option value="conflict">僅有衝堂警示的城</option></select>
+      </div>
+      <div><label>排序</label>
+        <select id="deploySort"><option value="default">預設順序</option><option value="totalTeams">總隊數（多→少）</option><option value="deployed">派出兵力（多→少）</option><option value="reserve">留守兵力（少→多）</option><option value="incoming">受兵量（多→少）</option></select>
+      </div>
+      <div id="deployLayoutCtrl" style="display:none;">
+        <label>佈局模式</label>
+        <select id="deployLayout"><option value="circle">⭕ 圓形佈局</option><option value="force">🌌 力導向佈局</option><option value="zone">🗺️ 戰區群組佈局</option></select>
+      </div>
+      <div style="flex:0 0 auto;min-width:auto;">
+        <label>&nbsp;</label>
+        <button class="btn btn-primary btn-sm" id="btnDeployExport">📥 匯出 CSV</button>
+      </div>
+    </div>
+    <div id="deployTableWrap"></div>
+    <div class="deploy-summary" id="deploySummary"></div>
+  </div>
+</section>
+
+<!-- ============ 態勢圖 ============ -->
+<section id="tab-viz" class="tab-content">
+  <div class="card">
+    <div class="card-title">🗺️ 戰場態勢圖</div>
+    <div id="vizContainer" class="viz-container">
+      <canvas id="vizStatic" class="viz-canvas"></canvas>
+      <canvas id="vizLive" class="viz-canvas viz-canvas-live"></canvas>
+    </div>
+    <div class="viz-timeline">
+      <input type="range" id="vizSlider" min="0" max="0" value="0" disabled>
+      <div class="viz-time-label" id="vizTimeLabel">尚未推演</div>
+    </div>
+    <div class="text-dim mt-8">⚔️ 紅箭頭 = 進攻；🛡️ 綠箭頭 = 協防；✕ = 已淪陷；👑 = 首都；⚡ = 被圍攻</div>
+  </div>
+  <div class="card">
+    <div class="card-title">📊 瞬間清算（隨時間軸更新）</div>
+    <div class="clear-panel" id="clearPanel"><div class="text-dim">尚未推演</div></div>
+  </div>
+</section>
+
+<!-- ============ 動態戰報 ============ -->
+<section id="tab-dyn" class="tab-content">
+  <div class="card">
+    <div class="card-title">📈 動態戰報表（路線級）</div>
+    <div class="dyn-filter">
+      <div><label>時間粒度</label>
+        <select id="dynGranularity"><option value="0.5">每 30 秒</option><option value="1">每 1 分鐘</option><option value="5" selected>每 5 分鐘</option><option value="10">每 10 分鐘</option></select>
+      </div>
+      <div><label>行動類別</label>
+        <select id="dynAction"><option value="all">全部</option><option value="attack">⚔️ 進攻</option><option value="defend">🛡️ 協防</option></select>
+      </div>
+      <div><label>出兵城</label><select id="dynSrcCity"><option value="all">全部</option></select></div>
+      <div><label>目標城</label><select id="dynTgtCity"><option value="all">全部</option></select></div>
+      <div style="flex:0 0 auto;min-width:auto;"><label>&nbsp;</label><button class="btn btn-primary btn-sm" id="btnDynCopy">📋 複製表格</button></div>
+    </div>
+    <div class="text-dim mb-8" id="dynSummary" style="margin-bottom:8px;">尚未推演</div>
+    <div class="dyn-table-wrap">
+      <table class="dyn-table" id="dynTable">
+        <thead><tr>
+          <th>時間點</th><th>進攻方</th><th>行動</th><th>防守方</th><th>本分鐘消耗</th>
+          <th>進攻方剩餘</th><th>進攻方待復活<br><span style="font-weight:400;font-size:9px;">冷卻+行軍</span></th>
+          <th>防守方剩餘</th><th>防守方待復活<br><span style="font-weight:400;font-size:9px;">冷卻+行軍</span></th>
+          <th>城牆剩餘</th>
+        </tr></thead>
+        <tbody id="dynTableBody">
+          <tr><td colspan="10" style="text-align:center;color:var(--text-dim);padding:20px;">尚未推演</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 戰報敘事 ============ -->
+<section id="tab-narrative" class="tab-content">
+  <div class="card">
+    <div class="card-title">📜 文字戰報</div>
+    <div class="text-dim" style="margin-bottom:8px;">此戰報記錄推演過程中的關鍵事件（抵達、交戰、淪陷、復活）。</div>
+    <div class="report-output" id="narrativeOutput">等待推演指令...</div>
+  </div>
+</section>
+
+<!-- ============ 作戰聊天室 ============ -->
+<section id="tab-chat" class="tab-content">
+  <div class="card">
+    <div class="flex-row" style="justify-content:space-between;">
+      <span class="health-indicator"><span class="health-dot red" id="chatHealthDot"></span><span id="chatHealthText">未連線</span></span>
+      <span class="text-dim" id="chatRoomDisplay"></span>
+    </div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;height:420px;">
+    <div class="chat-messages" id="chatMessages"></div>
+  </div>
+  <div class="card" style="padding:8px;">
+    <div class="form-row" style="margin-bottom:0;">
+      <input type="text" id="chatInput" placeholder="輸入訊息..." maxlength="200" style="flex:1;">
+      <button class="btn btn-primary btn-sm" id="btnSendChat" style="flex:0;">發送</button>
+    </div>
+    <div class="flex-row mt-8" style="justify-content:flex-end;">
+      <button class="btn btn-danger btn-sm" id="btnClearChat">🗑️ 清空聊天室（僅本機）</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 帳號 ============ -->
+<section id="tab-account" class="tab-content">
+  <div id="authGuestPanel">
+    <div class="card">
+      <div class="card-title">👤 我的帳號</div>
+      <div class="text-dim">請從上方入口遮罩登入，或重新整理頁面。</div>
+    </div>
+  </div>
+
+  <div id="authUserPanel" style="display:none;">
+    <div class="card">
+      <div class="card-title">👤 我的帳號</div>
+      <div class="auth-profile">
+        <div class="auth-avatar" id="authAvatar">👤</div>
+        <div class="auth-info">
+          <div class="auth-name" id="authDisplayName">—</div>
+          <div class="auth-username text-dim" id="authUsername">@—</div>
+          <div class="auth-role-chip" id="authRoleChip">—</div>
+        </div>
+      </div>
+      <div class="auth-meta" id="authMeta"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚙️ 帳號設定</div>
+      <div class="param-item">
+        <label>顯示名稱</label>
+        <div class="flex-row" style="gap:6px;">
+          <input type="text" id="editDisplayName" placeholder="新顯示名稱" maxlength="12" style="flex:1;">
+          <button class="btn btn-primary btn-sm" id="btnUpdateDisplayName">更新</button>
+        </div>
+      </div>
+      <div class="param-item">
+        <label>修改密碼</label>
+        <div class="flex-row" style="gap:6px;">
+          <input type="password" id="editOldPassword" placeholder="目前密碼" maxlength="64" style="flex:1;">
+          <input type="password" id="editNewPassword" placeholder="新密碼" maxlength="64" style="flex:1;">
+          <button class="btn btn-warning btn-sm" id="btnUpdatePassword">更新</button>
+        </div>
+      </div>
+      <div class="flex-row mt-8">
+        <button class="btn btn-danger btn-sm" id="btnLogout">🚪 登出</button>
+      </div>
+    </div>
+
+    <div class="card" id="authAdminHint" style="display:none;">
+      <div class="card-title">🛡️ 管理權限</div>
+      <div class="text-dim" id="authAdminHintText"></div>
+      <button class="btn btn-primary btn-sm mt-8" id="btnGotoAccounts">👥 前往帳號管理</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 帳號管理 ============ -->
+<section id="tab-accounts" class="tab-content">
+  <div class="card">
+    <div class="card-title">👥 帳號管理</div>
+    <div class="flex-row" style="margin-bottom:10px;">
+      <button class="btn btn-ghost btn-sm" id="btnAccountsRefresh">🔄 重新整理</button>
+      <button class="btn btn-warning btn-sm" id="btnAccountsExportCSV">📥 匯出 CSV</button>
+      <span class="text-dim" id="accountsMeta" style="margin-left:auto;"></span>
+    </div>
+    <div class="accounts-filter">
+      <div>
+        <label>搜尋</label>
+        <input type="text" id="accountsSearch" placeholder="帳號 / 顯示名">
+      </div>
+      <div>
+        <label>角色</label>
+        <select id="accountsFilterRole">
+          <option value="all">全部</option>
+          <option value="superadmin">👑 超管</option>
+          <option value="admin">🛡️ 管理員</option>
+          <option value="officer">⚔️ 幹部</option>
+          <option value="member">🙋 成員</option>
+        </select>
+      </div>
+      <div>
+        <label>狀態</label>
+        <select id="accountsFilterStatus">
+          <option value="all">全部</option>
+          <option value="active">啟用</option>
+          <option value="suspended">停用</option>
+        </select>
+      </div>
+    </div>
+    <div class="accounts-table-wrap">
+      <table class="accounts-table">
+        <thead>
+          <tr>
+            <th>帳號</th>
+            <th>顯示名稱</th>
+            <th>角色</th>
+            <th class="superadmin-only-col">密碼</th>
+            <th>狀態</th>
+            <th>建立時間</th>
+            <th>最後登入</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="accountsTableBody">
+          <tr><td colspan="8" class="accounts-empty">載入中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="text-dim mt-8" id="accountsHint"></div>
+  </div>
+</section>
+
+<!-- ============ 戰鬥規則 ============ -->
+<section id="tab-rules" class="tab-content">
+  <div class="card">
+    <div class="card-title">📖 城戰計算規則（v8.1）</div>
+    <div class="rules-doc">
+      <h2>一、對戰節奏</h2>
+      <div class="rule-card ok">
+        <b>每 30 秒結算一次對撞</b>，每分鐘抽取一次消耗值。<br>
+        <b>消耗抽取</b>：每條路線獨立，在 <code>[最小, 最大]</code> 之間抽取。<br>
+        <b>機率偏向</b>：戰力越接近 → 越易抽到最小值；戰力差距越大 → 越易抽到最大值。
+      </div>
+      <h2>二、出兵指示</h2>
+      <ul>
+        <li><b>戰前派兵佔比</b>：開局時派出的兵力（%）。</li>
+        <li><b>復活後派兵佔比</b>：部隊復活後分配給該路線的佔比（%）。</li>
+        <li><b>優先順序</b>：數字越小越優先。</li>
+      </ul>
+      <h2>三、行軍模型</h2>
+      <ul>
+        <li>戰敗後行軍回母城，抵達時才開始冷卻。</li>
+        <li>冷卻結束後，再行軍至目標城參戰。</li>
+        <li>防守方原地留守，不受行軍影響。</li>
+      </ul>
+      <h2>四、城牆與淪陷</h2>
+      <ul>
+        <li>城牆每 30 秒結算一次，由「未分配到守方兵力的攻方兵力」造成傷害。</li>
+        <li>城牆歸零 → 城池淪陷，所有相關路線立刻終止。</li>
+      </ul>
+      <h2>五、協作模式</h2>
+      <ul>
+        <li><b>本機模式 / 房間模式</b>：狀態條明確顯示當前位置。</li>
+        <li><b>Firebase 即時連線</b>：透過 Google Firebase 即時同步。</li>
+        <li><b>成員推送申請</b>：成員可申請把本機資料覆蓋房間，房主審核。</li>
+        <li><b>Excel 協作</b>：用 CSV 或複製貼上批次匯入城池與路線。</li>
+        <li><b>檔案協作</b>：匯出 JSON 檔案傳給朋友，合併編輯。</li>
+        <li><b>分享連結</b>：將沙盤壓縮成網址，貼給朋友載入。</li>
+        <li><b>作戰聊天室</b>：即時聊天，附未讀計數。</li>
+      </ul>
+      <h2>六、帳號與權限</h2>
+      <ul>
+        <li><b>超級管理員</b>：最高權限，可查閱密碼、修改他人角色。</li>
+        <li><b>管理員</b>：可停用帳號、修改 extraPerms、查閱清單（不含密碼）。</li>
+        <li><b>幹部</b>：可創建房間、執行推演、踢人，編輯權限由超管開啟。</li>
+        <li><b>成員</b>：可本機推演、加入房間。</li>
+        <li><b>訪客</b>：僅能瀏覽戰鬥規則，資料不保存。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<!-- ============ 確認對話框 ============ -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-box">
+    <h3 id="modalTitle">⚠️ 確認操作</h3>
+    <p id="modalMessage">確定要執行此操作嗎？</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modalCancel">取消</button>
+      <button class="btn btn-danger" id="modalConfirm">確認執行</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 推送申請對話框 ============ -->
+<div class="modal-overlay" id="pushRequestModal">
+  <div class="modal-box">
+    <h3>📤 收到推送申請</h3>
+    <div id="pushRequestInfo" style="white-space:pre-line;font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.7;"></div>
+    <div class="text-warn" style="margin-bottom:14px;">⚠️ 接受後，房間內現有資料將被完全覆蓋，請確認後再操作。</div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="pushRequestReject">拒絕</button>
+      <button class="btn btn-success" id="pushRequestApprove">接受並覆蓋</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 退出房間對話框 ============ -->
+<div class="modal-overlay" id="exitRoomModal">
+  <div class="modal-box" style="max-width:420px;">
+    <h3>🚪 離開房間</h3>
+    <p style="margin-bottom:12px;">您即將離開房間。請選擇要保留哪一份資料到本機：</p>
+    <div class="exit-options">
+      <button class="exit-option" data-exit-choice="keep">
+        <div class="exit-icon">🔒</div>
+        <div class="exit-body">
+          <div class="exit-title">保留房間資料</div>
+          <div class="exit-desc">把目前房間內的資料存到本機</div>
+        </div>
+      </button>
+      <button class="exit-option" data-exit-choice="restore">
+        <div class="exit-icon">↩️</div>
+        <div class="exit-body">
+          <div class="exit-title">恢復進入前的資料</div>
+          <div class="exit-desc" id="exitRestoreDesc">還原成加入房間前的本機資料</div>
+        </div>
+      </button>
+    </div>
+    <div class="modal-actions" style="justify-content:center;margin-top:8px;">
+      <button class="btn btn-ghost btn-block" id="exitRoomCancel">取消，繼續留在房間</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ JSON 匯入對話框 ============ -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal-box">
+    <h3>📥 匯入沙盤</h3>
+    <p id="importModalInfo" style="white-space:pre-wrap;"></p>
+    <div class="modal-actions" style="flex-direction:column;gap:8px;">
+      <button class="btn btn-danger btn-block" id="importModeOverwrite">🔄 覆蓋現有資料</button>
+      <button class="btn btn-primary btn-block" id="importModeMerge">➕ 合併（匯入資料優先）</button>
+      <button class="btn btn-ghost btn-block" id="importModeCancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Excel 匯入對話框 ============ -->
+<div class="modal-overlay" id="excelImportModal">
+  <div class="modal-box modal-lg">
+    <h3>📊 匯入城池 / 路線</h3>
+    <div class="modal-scroll">
+      <div class="text-dim" style="margin-bottom:10px;">
+        ＊可只填一個區塊（例如只匯入城池）。<br>
+        ＊支援 CSV 檔案或直接從 Excel 複製貼上。<br>
+        ＊第一列為表頭，欄位順序不拘（程式會自動識別）。
+      </div>
+
+      <div class="section-label" style="color:var(--neon-blue);">🏰 城池表</div>
+      <div class="flex-row" style="gap:6px;">
+        <button class="btn btn-ghost btn-sm" data-excel-upload="cities">📁 上傳 CSV</button>
+        <button class="btn btn-ghost btn-sm" data-excel-clear="cities">🗑️ 清空</button>
+        <span class="text-dim" id="excelCitiesStatus">尚未填入</span>
+      </div>
+      <input type="file" id="excelCitiesFile" accept=".csv,.txt" style="display:none;">
+      <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,總戰力,總隊數,冷卻,城牆,防守開始,首都&#10;主城,北境,我方盟,本方,100000,100,5,30,19:00,是&#10;敵城1,北境,敵盟A,敵方,80000,80,5,20,19:00,"></textarea>
+
+      <div class="section-label" style="color:var(--neon-green);">🛣️ 路線表（可選）</div>
+      <div class="flex-row" style="gap:6px;">
+        <button class="btn btn-ghost btn-sm" data-excel-upload="routes">📁 上傳 CSV</button>
+        <button class="btn btn-ghost btn-sm" data-excel-clear="routes">🗑️ 清空</button>
+        <span class="text-dim" id="excelRoutesStatus">尚未填入</span>
+      </div>
+      <input type="file" id="excelRoutesFile" accept=".csv,.txt" style="display:none;">
+      <textarea id="excelRoutesText" class="excel-textarea" placeholder="出兵城,目標城,類型,戰前%,復活%,順序&#10;主城,敵城1,攻,50,50,1&#10;友城A,敵城1,防,30,30,1"></textarea>
+
+      <div class="section-label">⚙️ 匯入模式</div>
+      <div class="excel-mode-row">
+        <label class="excel-mode-opt">
+          <input type="radio" name="excelMode" value="overwrite">
+          <div>
+            <div class="excel-mode-title">🔄 覆蓋</div>
+            <div class="excel-mode-desc">清空現有城池與路線，全部換成匯入的</div>
+          </div>
+        </label>
+        <label class="excel-mode-opt">
+          <input type="radio" name="excelMode" value="merge" checked>
+          <div>
+            <div class="excel-mode-title">➕ 合併（推薦）</div>
+            <div class="excel-mode-desc">同名的以匯入為準，其他的保留</div>
+          </div>
+        </label>
+        <label class="excel-mode-opt">
+          <input type="radio" name="excelMode" value="append">
+          <div>
+            <div class="excel-mode-title">📌 追加</div>
+            <div class="excel-mode-desc">只新增不覆蓋，同名衝突時報錯</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="excel-preview" id="excelPreview">
+        <span class="text-dim">請在任一區塊填入資料</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="excelImportCancel">取消</button>
+      <button class="btn btn-primary" id="excelImportConfirm">📥 開始匯入</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 城池編輯 ============ -->
+<div class="modal-overlay" id="cityModal">
+  <div class="modal-box modal-lg">
+    <h3 id="cityModalTitle">🏰 新增城池</h3>
+    <div class="modal-scroll">
+      <div class="form-row">
+        <div><label>城池名稱</label><input type="text" id="cm_name" placeholder="城池名稱" maxlength="20"></div>
+        <div><label>分配至戰區</label><select id="cm_zone"></select></div>
+      </div>
+      <div class="form-row">
+        <div><label>所屬同盟</label><select id="cm_alliance"></select></div>
+        <div><label>陣營關係</label>
+          <select id="cm_side">
+            <option value="self">本方</option><option value="ally">同盟</option><option value="enemy">敵方</option>
+            <option value="common_enemy">共同敵方</option><option value="npc">NPC</option>
+          </select>
+        </div>
+      </div>
+      <div class="section-label">⚔️ 兵力數據</div>
+      <div class="form-row">
+        <div><label>總戰力</label><input type="number" id="cm_totalPower" value="100000" min="0"></div>
+        <div><label>總隊數</label><input type="number" id="cm_totalTeams" value="100" min="0"></div>
+        <div><label>平均戰力（自動）</label><input type="number" id="cm_avgPower" readonly value="1000"></div>
+      </div>
+      <div class="form-row">
+        <div><label>冷卻復活（分鐘）</label><input type="number" id="cm_cooldownMin" value="5" min="0" step="0.5"></div>
+        <div><label>城牆耐久（分鐘）</label><input type="number" id="cm_wallMin" value="30" min="0" step="0.5"></div>
+        <div><label>防守開始時間 (HH:MM)</label><input type="time" id="cm_defStartTime" value="19:00"></div>
+      </div>
+      <div class="form-row">
+        <div style="display:flex;align-items:flex-end;padding-bottom:2px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;padding:8px 0;">
+            <input type="checkbox" id="cm_isCapital" style="width:auto;accent-color:#ffcc00;">
+            <span style="color:var(--neon-yellow);font-weight:600;font-size:11px;">👑 設為本聯盟首都</span>
+          </label>
+        </div>
+      </div>
+      <div class="alloc-panel" id="cm_allocPanel">
+        <div class="alloc-row"><span class="label">總隊數</span><span class="val" id="cm_allocTotal">100</span></div>
+        <div class="alloc-row"><span class="label">⚔️ 戰前派兵合計</span><span class="val" id="cm_allocAtk">0</span></div>
+        <div class="alloc-row"><span class="label">🛡️ 戰前協防合計</span><span class="val" id="cm_allocDef">0</span></div>
+        <div class="alloc-row"><span class="label">🏰 留守隊數（自動）</span><span class="val" id="cm_allocReserve">100</span></div>
+        <div id="cm_allocWarning" class="text-warn" style="margin-top:4px;display:none;">⚠️ 戰前派兵總和已超過總隊數，系統將按比例縮減。</div>
+      </div>
+      <div class="section-label enemy" id="attackSectionLabel">⚔️ 選擇進攻的城池</div>
+      <div id="cm_attackList" class="target-list"><div class="empty-hint">載入中...</div></div>
+      <div class="section-label ally" id="defendSectionLabel">🛡️ 選擇協防的城池</div>
+      <div id="cm_defendList" class="target-list"><div class="empty-hint">載入中...</div></div>
+      <div class="text-dim mt-8">＊每條路線獨立設定：戰前派兵%、復活後派兵%、優先順序。</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cityModalCancel">取消</button>
+      <button class="btn btn-success" id="cityModalAI">🤖 AI 建議佈兵</button>
+      <button class="btn btn-primary" id="cityModalSave">💾 儲存城池</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 帳號編輯對話框 ============ -->
+<div class="modal-overlay" id="accountEditModal">
+  <div class="modal-box modal-lg">
+    <h3 id="accountEditTitle">✏️ 編輯帳號</h3>
+    <div class="modal-scroll">
+      <div class="param-item">
+        <label>帳號（登入用，不可改）</label>
+        <input type="text" id="ae_username" readonly>
+      </div>
+      <div class="param-item">
+        <label>顯示名稱</label>
+        <input type="text" id="ae_displayName" maxlength="12">
+      </div>
+      <div class="param-item">
+        <label>角色</label>
+        <select id="ae_role">
+          <option value="member">🙋 成員</option>
+          <option value="officer">⚔️ 幹部</option>
+          <option value="admin">🛡️ 管理員</option>
+          <option value="superadmin">👑 超級管理員</option>
+        </select>
+      </div>
+      <div class="param-item">
+        <label>狀態</label>
+        <select id="ae_status">
+          <option value="active">✅ 啟用</option>
+          <option value="suspended">⏸️ 停用</option>
+        </select>
+      </div>
+      <div class="section-label">⚙️ 額外權限（extraPerms）</div>
+      <div class="ae-perms">
+        <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditData"><span>可編輯資料（同盟 / 城池 / 戰區 / 路線）</span></label>
+        <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canImportExcel"><span>可 Excel 匯入</span></label>
+        <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canRunSim"><span>可執行推演</span></label>
+        <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canKick"><span>可踢人</span></label>
+        <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditSettings"><span>可修改戰鬥參數</span></label>
+      </div>
+      <div class="section-label">🔑 修改密碼</div>
+      <div class="param-item">
+        <label>新密碼（留空表示不修改）</label>
+        <input type="password" id="ae_newPassword" placeholder="留空不修改" maxlength="64">
+      </div>
+      <div class="param-item">
+        <label>備註</label>
+        <input type="text" id="ae_note" maxlength="50" placeholder="管理員可見">
+      </div>
+      <div class="text-dim mt-8" id="accountEditHint"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="ae_cancel">取消</button>
+      <button class="btn btn-primary" id="ae_save">💾 儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 編輯權限申請審核對話框 ============ -->
+<div class="modal-overlay" id="editRequestReviewModal">
+  <div class="modal-box modal-lg">
+    <h3>📝 編輯權限申請審核</h3>
+    <div class="text-dim" style="margin-bottom:10px;">
+      以下成員申請編輯此房間的資料，請審核：
+    </div>
+    <div id="editRequestList" class="edit-request-list"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="editRequestReviewClose">稍後處理</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 拆分後載入 7 個 JS 檔案 ============ -->
+<script src="js/simulation.js?v=20260926"></script>
+<script src="js/core.js?v=20260926"></script>
+<script src="js/firebase.js?v=20260926"></script>
+<script src="js/auth.js?v=20260926"></script>
+<script src="js/data.js?v=20260926"></script>
+<script src="js/ui.js?v=20260926"></script>
+<script src="js/main.js?v=20260926"></script>
+</body>
+</html>
