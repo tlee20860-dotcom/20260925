@@ -9,10 +9,123 @@ body{background:var(--bg-deep);color:var(--text-primary);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","Microsoft JhengHei",sans-serif;
   font-size:13px;line-height:1.5;min-height:100vh;overflow-x:hidden;}
 
-/* ============ P1：sticky 包裹層 ============ */
+/* ============ 入口門禁（v8.2：訪客已移除） ============ */
+.entry-gate{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  z-index:9999;
+  background:radial-gradient(circle at 50% 30%, #1a2a4a 0%, #0a0e17 70%);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;overflow-y:auto;
+  animation:entryFadeIn .35s ease-out;
+}
+@keyframes entryFadeIn{from{opacity:0;}to{opacity:1;}}
+.entry-gate.hidden{display:none;}
+
+.entry-card{
+  width:100%;max-width:380px;
+  background:rgba(26,35,50,.95);
+  border:1px solid var(--border-glow);
+  border-radius:14px;
+  padding:28px 24px 24px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6), 0 0 40px rgba(59,130,246,.15);
+  backdrop-filter:blur(12px);
+  animation:entryCardIn .5s cubic-bezier(.16,1,.3,1);
+}
+@keyframes entryCardIn{
+  from{opacity:0;transform:translateY(20px) scale(.96);}
+  to{opacity:1;transform:translateY(0) scale(1);}
+}
+
+.entry-title{
+  text-align:center;
+  font-size:20px;
+  font-weight:700;
+  color:var(--text-primary);
+  margin-bottom:24px;
+  letter-spacing:1px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  white-space:nowrap;
+}
+.entry-version{
+  font-size:11px;
+  font-weight:400;
+  color:var(--text-dim);
+  padding:2px 8px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  letter-spacing:.5px;
+}
+
+.entry-tabs{
+  display:flex;gap:4px;margin-bottom:16px;
+  border-bottom:1px solid var(--border);padding-bottom:10px;
+}
+.entry-tab{
+  flex:1;background:transparent;color:var(--text-secondary);
+  border:none;border-radius:var(--radius-sm);padding:10px 12px;
+  font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+  transition:all .15s;
+}
+.entry-tab:hover{color:var(--text-primary);background:rgba(68,170,255,.06);}
+.entry-tab.active{
+  color:var(--neon-blue);background:rgba(68,170,255,.12);
+  box-shadow:inset 0 -2px 0 var(--neon-blue);
+}
+
+.entry-view{padding:4px 0 8px;}
+.entry-field{margin-bottom:12px;}
+.entry-field label{
+  font-size:11px;color:var(--text-secondary);
+  display:block;margin-bottom:4px;font-weight:600;
+}
+.entry-field input{
+  width:100%;background:var(--bg-input);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text-primary);padding:10px 12px;
+  font-size:13px;font-family:inherit;outline:none;
+  transition:border-color .2s;
+}
+.entry-field input:focus{
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 3px rgba(68,170,255,.15);
+}
+
+.entry-error{
+  color:var(--neon-red);font-size:11px;margin-top:8px;
+  min-height:14px;font-weight:600;text-align:center;line-height:1.4;
+}
+
+.entry-footer-hint{
+  font-size:10px;
+  color:var(--text-dim);
+  text-align:center;
+  margin-top:16px;
+  line-height:1.6;
+}
+
+/* 載入中 */
+.entry-loading{
+  display:flex;flex-direction:column;align-items:center;
+  padding:20px 0 10px;
+}
+.entry-loading-spinner{
+  width:32px;height:32px;margin:24px 0 12px;
+  border:3px solid var(--border);
+  border-top-color:var(--neon-blue);
+  border-radius:50%;
+  animation:entrySpin .8s linear infinite;
+}
+@keyframes entrySpin{to{transform:rotate(360deg);}}
+.entry-loading-text{
+  font-size:11px;color:var(--text-dim);letter-spacing:1px;
+}
+
+/* ============ sticky 包裹層 ============ */
 .sticky-header{position:sticky;top:0;z-index:100;}
 
-/* 模式狀態條 */
 .mode-bar{
   display:flex;align-items:center;
   padding:6px 12px;
@@ -45,7 +158,6 @@ body{background:var(--bg-deep);color:var(--text-primary);
 .btn-mode:hover{background:rgba(255,255,255,.18);}
 .btn-mode:active{transform:scale(.96);}
 
-/* 本機模式：藍色系 */
 .mode-bar.local{
   background:linear-gradient(90deg,rgba(30,58,95,.92),rgba(42,74,111,.92));
   color:#9ed2ff;
@@ -54,7 +166,6 @@ body{background:var(--bg-deep);color:var(--text-primary);
 .mode-bar.local .mode-indicator{color:#7cc5ff;}
 .mode-bar.local .btn-mode{color:#9ed2ff;}
 
-/* 房間模式：綠色系 */
 .mode-bar.room{
   background:linear-gradient(90deg,rgba(5,80,55,.92),rgba(16,140,100,.92));
   color:#a7ffcf;
@@ -63,13 +174,12 @@ body{background:var(--bg-deep);color:var(--text-primary);
 .mode-bar.room .mode-indicator{color:#22ff88;}
 .mode-bar.room .btn-mode{color:#a7ffcf;}
 
-/* 未連線但房間模式遺留（少見） */
 .mode-bar.idle{
   background:linear-gradient(90deg,rgba(50,50,60,.92),rgba(70,70,85,.92));
   color:var(--text-secondary);
 }
 
-/* ============ 原 top-nav（移除 sticky，改由 sticky-header 承擔） ============ */
+/* ============ top-nav ============ */
 .top-nav{
   background:rgba(10,14,23,.95);backdrop-filter:blur(12px);
   border-bottom:1px solid var(--border);padding:6px 8px;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;
@@ -363,9 +473,6 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .alliance-icon{font-size:14px;margin-right:4px;display:inline-block;vertical-align:middle;}
 .chip .alliance-icon{font-size:11px;margin-right:2px;}
 
-/* 分享連結輸入框 */
-#shareLinkDisplay{font-family:"SF Mono","Consolas",monospace;font-size:10px;color:var(--text-dim);background:#060a10;border-style:dashed;}
-
 /* 退出房間選項 */
 .exit-options{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
 .exit-option{display:flex;align-items:center;gap:12px;width:100%;padding:12px;background:#0a101a;
@@ -376,7 +483,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .exit-option .exit-body{flex:1;min-width:0;}
 .exit-option .exit-title{font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:2px;}
 .exit-option .exit-desc{font-size:10px;color:var(--text-dim);line-height:1.4;}
-.exit-option[data-exit-choice="keep"]:hover{border-color:var(--neon-green);background:rgba(34,255,136,.08);}
+.exit-option[data-exit-choice="keepRoom"]:hover{border-color:var(--neon-green);background:rgba(34,255,136,.08);}
 .exit-option[data-exit-choice="restore"]:hover{border-color:var(--neon-yellow);background:rgba(255,204,0,.08);}
 
 /* Excel 匯入 */
@@ -421,23 +528,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .badge{display:none;position:absolute;top:-4px;right:-4px;background:var(--neon-red);color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;align-items:center;justify-content:center;padding:0 4px;}
 .badge.show{display:inline-flex;}
 
-@media (max-width:600px){
-  .form-row{gap:6px;}
-  .form-row > [style*="0 0 auto"]{
-    flex:0 0 100% !important;
-    min-width:0 !important;
-    margin-top:4px;
-  }
-  .viz-timeline{flex-wrap:wrap;}
-  .viz-time-label{min-width:auto;width:100%;text-align:center;margin-top:4px;}
-  .param-grid{grid-template-columns:1fr;}
-  /* P1：手機模式條縮排 */
-  .mode-bar{padding:5px 10px;font-size:11px;}
-  .mode-bar-inner{gap:8px;}
-  .mode-detail{font-size:10px;}
-  .btn-mode{padding:3px 10px;font-size:10px;}
-}
-/* ============ P2：帳號系統 ============ */
+/* ============ ★ v8.2 新增：帳號系統樣式 ============ */
 .auth-tabs{
   display:flex;gap:4px;margin-bottom:12px;
   border-bottom:1px solid var(--border);padding-bottom:8px;
@@ -526,8 +617,9 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .auth-meta .row{
   display:flex;justify-content:space-between;
   padding:2px 0;
-  
-/* ============ P3：權限控制 ============ */
+}
+
+/* ============ ★ v8.2 新增：權限控制 ============ */
 .perm-disabled{
   opacity:.35 !important;
   cursor:not-allowed !important;
@@ -545,7 +637,6 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 }
 .perm-disabled *{pointer-events:none !important;}
 
-/* 唯讀欄位視覺 */
 input:disabled,select:disabled,textarea:disabled{
   background:#0a0d15 !important;
   color:var(--text-dim) !important;
@@ -553,36 +644,7 @@ input:disabled,select:disabled,textarea:disabled{
   cursor:not-allowed;
 }
 
-/* 未登入提示橫幅 */
-.auth-required-banner{
-  display:flex;align-items:center;gap:10px;
-  background:linear-gradient(90deg,rgba(220,38,38,.15),rgba(239,68,68,.08));
-  border:1px solid rgba(239,68,68,.35);
-  border-radius:var(--radius-sm);
-  padding:10px 14px;
-  margin-bottom:10px;
-  font-size:12px;
-  color:#ff8fa3;
-  font-weight:600;
-  animation:pulse 2s infinite;
-}
-.auth-required-banner .icon{font-size:18px;flex:0 0 auto;}
-.auth-required-banner .btn{
-  margin-left:auto;flex:0 0 auto;
-  padding:4px 12px;font-size:11px;
-}
-
-/* 權限徽章（卡片角落） */
-.perm-badge{
-  display:inline-flex;align-items:center;gap:4px;
-  padding:2px 8px;border-radius:10px;
-  font-size:9px;font-weight:700;
-  color:var(--neon-yellow);
-  background:rgba(255,204,0,.12);
-  border:1px solid rgba(255,204,0,.35);
-  margin-left:6px;
-}
-/* ============ P4：帳號管理 ============ */
+/* ============ ★ v8.2 新增：帳號管理 ============ */
 .accounts-filter{
   display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
   background:#0a101a;border:1px solid var(--border);
@@ -647,7 +709,6 @@ input:disabled,select:disabled,textarea:disabled{
   color:var(--text-dim);font-style:italic;
 }
 
-/* 編輯彈窗的額外權限 */
 .ae-perms{
   display:flex;flex-direction:column;gap:4px;
   background:#0a101a;border:1px dashed var(--border);
@@ -667,7 +728,7 @@ input:disabled,select:disabled,textarea:disabled{
 .ae-perm-item input[type=checkbox]:disabled{cursor:not-allowed;opacity:.5;}
 .ae-perm-item span{flex:1;}
 
-/* ============ P6：房間編輯權限 ============ */
+/* ============ ★ v8.2 新增：房間編輯權限 ============ */
 #btnRequestRoomEdit{
   font-size:11px;
   padding:4px 10px;
@@ -735,6 +796,193 @@ input:disabled,select:disabled,textarea:disabled{
   flex:0 0 auto;
 }
 
+/* ============ ★ v8.2 新增：沙盤數據 Tab ============ */
+.sandbox-me-panel{
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:12px 14px;
+}
+.sandbox-me-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:6px;
+  flex-wrap:wrap;
+}
+.sandbox-me-name{
+  font-size:14px;
+  font-weight:700;
+  color:var(--neon-blue);
+}
+.sandbox-me-time{
+  font-size:11px;
+  color:var(--text-dim);
+  font-family:"SF Mono","Consolas",monospace;
+}
+.sandbox-me-stats{
+  font-size:12px;
+  color:var(--text-secondary);
+  display:flex;
+  gap:16px;
+  flex-wrap:wrap;
+}
+.sandbox-me-stats b{
+  color:var(--neon-green);
+  font-weight:700;
+}
+
+.sandbox-table-wrap{
+  overflow:auto;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:#060a10;
+  -webkit-overflow-scrolling:touch;
+  max-height:60vh;
+}
+.sandbox-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:11px;
+  min-width:700px;
+}
+.sandbox-table th{
+  position:sticky;top:0;
+  background:#0f1a2a;
+  color:var(--neon-blue);
+  font-weight:700;font-size:10px;
+  padding:8px 10px;
+  text-align:left;
+  border-bottom:2px solid var(--border);
+  border-right:1px solid var(--border);
+  white-space:nowrap;z-index:2;
+}
+.sandbox-table td{
+  padding:8px 10px;
+  border-bottom:1px solid #0f1a2a;
+  border-right:1px solid #0f1a2a;
+  white-space:nowrap;
+  color:var(--text-secondary);
+  vertical-align:middle;
+}
+.sandbox-table tr:hover td{background:rgba(59,130,246,.05);}
+.sandbox-table tr.row-self td{background:rgba(255,204,0,.04);}
+.sandbox-table .col-actions{text-align:right;white-space:nowrap;}
+.sandbox-table .col-num{
+  text-align:right;
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:11px;
+}
+.sandbox-table .sandbox-name{
+  color:var(--text-primary);
+  font-weight:700;
+  font-family:"SF Mono","Consolas",monospace;
+}
+.sandbox-table .sandbox-owner{
+  color:var(--neon-blue);
+  font-weight:600;
+}
+.sandbox-table .sandbox-time{
+  font-size:10px;
+  color:var(--text-dim);
+  font-family:"SF Mono","Consolas",monospace;
+}
+.sandbox-empty{
+  padding:24px!important;
+  text-align:center;
+  color:var(--text-dim);
+  font-style:italic;
+}
+
+/* ============ ★ v8.2 新增：房間空沙盤提示 Modal ============ */
+.empty-room-options{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.empty-room-option{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  width:100%;
+  padding:12px 14px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  cursor:pointer;
+  font-family:inherit;
+  text-align:left;
+  transition:all .15s;
+}
+.empty-room-option:hover{
+  border-color:var(--neon-blue);
+  background:rgba(68,170,255,.08);
+  transform:translateX(2px);
+}
+.empty-room-option .empty-room-icon{
+  font-size:24px;
+  flex:0 0 auto;
+  width:36px;
+  text-align:center;
+}
+.empty-room-option .empty-room-body{flex:1;min-width:0;}
+.empty-room-option .empty-room-title{
+  font-size:13px;
+  font-weight:700;
+  color:var(--text-primary);
+  margin-bottom:2px;
+}
+.empty-room-option .empty-room-desc{
+  font-size:10px;
+  color:var(--text-dim);
+  line-height:1.4;
+}
+.empty-room-option[data-room-action="uploadMine"]:hover{
+  border-color:var(--neon-green);
+  background:rgba(34,255,136,.08);
+}
+.empty-room-option[data-room-action="pickFromList"]:hover{
+  border-color:var(--neon-blue);
+  background:rgba(68,170,255,.08);
+}
+.empty-room-option[data-room-action="stayEmpty"]:hover{
+  border-color:var(--neon-yellow);
+  background:rgba(255,204,0,.06);
+}
+
+/* ============ ★ v8.2 新增：救援工具 ============ */
+#rescueCard{
+  border-color:rgba(255,68,102,.3);
+}
+#rescueCard .card-title{
+  color:var(--neon-red);
+}
+#btnRescueRoom{
+  white-space:nowrap;
+}
+
+/* ============ 響應式 ============ */
+@media (max-width:600px){
+  .form-row{gap:6px;}
+  .form-row > [style*="0 0 auto"]{
+    flex:0 0 100% !important;
+    min-width:0 !important;
+    margin-top:4px;
+  }
+  .viz-timeline{flex-wrap:wrap;}
+  .viz-time-label{min-width:auto;width:100%;text-align:center;margin-top:4px;}
+  .param-grid{grid-template-columns:1fr;}
+  .mode-bar{padding:5px 10px;font-size:11px;}
+  .mode-bar-inner{gap:8px;}
+  .mode-detail{font-size:10px;}
+  .btn-mode{padding:3px 10px;font-size:10px;}
+
+  /* v8.2 沙盤數據：手機折行 */
+  .sandbox-me-row{flex-direction:column;align-items:flex-start;gap:4px;}
+  .sandbox-me-stats{font-size:11px;gap:10px;}
+}
+
 @media (max-width:480px){
   .main-container{padding:8px}.card{padding:10px}.form-row{gap:6px}
   .top-nav button{padding:6px 11px;font-size:11px}.modal-lg{padding:12px}
@@ -746,4 +994,8 @@ input:disabled,select:disabled,textarea:disabled{
   .target-config-row input[type=number]{width:42px;}
   .deploy-filter > div{min-width:90px;}
   .graph-legend{font-size:9px;gap:8px;padding:6px 8px;}
+
+  /* v8.2 帳號表格手機優化 */
+  .accounts-table th,.accounts-table td{padding:6px 6px;font-size:10px;}
+  .sandbox-table th,.sandbox-table td{padding:6px 8px;font-size:10px;}
 }

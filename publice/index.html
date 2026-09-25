@@ -3,28 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.1</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.2</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-<link rel="stylesheet" href="style.css?v=20260926">
+<link rel="stylesheet" href="style.css?v=20260927">
 </head>
 <body>
 
-<!-- ============ v8.1 P5：入口門禁 ============ -->
+<!-- ============ 入口門禁（全屏，未登入時顯示） ============ -->
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
-    <!-- 載入中狀態 -->
+    <!-- 載入中 -->
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.1</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.2</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <!-- 登入/註冊表單 -->
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.1</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.2</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -65,13 +65,8 @@
         <div class="entry-error" id="entryRegError"></div>
       </div>
 
-      <div class="entry-divider"><span>或</span></div>
-
-      <button class="btn btn-ghost btn-block entry-guest-btn" id="entryBtnGuest">
-        👻 以訪客身份進入
-      </button>
-      <div class="entry-guest-hint">
-        ＊訪客模式可以試用所有功能，但<b>不會保存任何資料</b>，重新整理後需重新進入。
+      <div class="entry-footer-hint">
+        ＊所有使用者必須註冊登入後才能使用完整功能。
       </div>
     </div>
   </div>
@@ -96,6 +91,7 @@
     <button data-tab="tab-dyn">📈 動態戰報</button>
     <button data-tab="tab-narrative">📜 戰報敘事</button>
     <button data-tab="tab-chat">💬 作戰聊天室 <span class="badge" id="chatBadge"></span></button>
+    <button data-tab="tab-sandbox">📊 沙盤數據</button>
     <button data-tab="tab-account">👤 帳號</button>
     <button data-tab="tab-accounts">👥 帳號管理</button>
     <button data-tab="tab-rules">📖 戰鬥規則</button>
@@ -106,22 +102,10 @@
 
 <!-- ============ 房間連線 ============ -->
 <section id="tab-room" class="tab-content active">
-  <div class="card">
-    <div class="card-title">📁 檔案協作（推薦）</div>
-    <div class="text-dim" style="margin-bottom:10px;">
-      ＊不需網路、不需伺服器。各自編輯後匯出檔案，用 LINE / Discord 傳給朋友合併。
-    </div>
-    <div class="flex-row">
-      <button class="btn btn-primary" id="btnExportJSON">📤 匯出沙盤檔案</button>
-      <button class="btn btn-success" id="btnImportJSON">📥 匯入沙盤檔案</button>
-    </div>
-    <input type="file" id="importFileInput" accept=".json" style="display:none;">
-    <div class="text-dim mt-8">
-      ＊「匯出」會下載一個 .json 檔案，包含所有同盟、戰區、城池資料。<br>
-      ＊「匯入」可選擇「覆蓋」或「合併」，合併時以匯入的資料為優先。
-    </div>
 
-    <div class="card-title mt-12" style="color:var(--neon-green);">📊 Excel 協作</div>
+  <!-- 📊 Excel 協作（保留） -->
+  <div class="card">
+    <div class="card-title" style="color:var(--neon-green);">📊 Excel 協作</div>
     <div class="text-dim" style="margin-bottom:8px;">
       ＊用 Excel 批次填寫城池/路線資料 → 另存 CSV → 上傳；或直接從 Excel 複製表格貼上。
     </div>
@@ -131,30 +115,14 @@
       <button class="btn btn-warning" id="btnExportRoutesCSV">📤 匯出路線表</button>
     </div>
     <button class="btn btn-ghost btn-sm mt-8" id="btnDownloadTemplate">📋 下載 Excel 範本說明</button>
-
-    <button class="btn btn-warning btn-sm mt-8" id="btnRestoreBackup">♻️ 恢復本機備份</button>
   </div>
 
+  <!-- 📡 Firebase 即時連線 -->
   <div class="card">
-    <div class="card-title">🔗 分享連結（適合小量資料）</div>
-    <div class="text-dim" style="margin-bottom:10px;">
-      ＊把整份沙盤壓縮成一串網址，複製後貼給朋友，他們打開即載入同一份資料。
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span>📡 Firebase 即時連線（進階）</span>
+      <button class="btn btn-warning btn-sm" id="btnRequestRoomEdit" style="display:none;">📝 申請編輯此房間資料</button>
     </div>
-    <div class="flex-row">
-      <button class="btn btn-primary" id="btnGenerateShareLink">🔗 生成分享連結</button>
-      <button class="btn btn-ghost" id="btnCopyShareLink">📋 複製連結</button>
-    </div>
-    <input type="text" id="shareLinkDisplay" readonly placeholder="尚未生成" style="margin-top:8px;">
-    <div class="text-dim mt-8">
-      ＊資料量過大時連結會很長，若超過 8000 字元請改用「檔案協作」。
-    </div>
-  </div>
-
-  <<div class="card">
-  <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-    <span>📡 Firebase 即時連線（進階）</span>
-    <button class="btn btn-warning btn-sm" id="btnRequestRoomEdit" style="display:none;">📝 申請編輯此房間資料</button>
-  </div>
     <div class="param-item">
       <label>您的指揮官名稱</label>
       <input type="text" id="commanderName" placeholder="輸入名稱..." maxlength="12">
@@ -170,8 +138,10 @@
       <button class="btn btn-success btn-sm" id="btnJoinRoom">🔗 加入盟友房間</button>
       <button class="btn btn-danger btn-sm" id="btnDisconnect">🔌 中斷連線</button>
     </div>
-    <div class="flex-row mt-8" id="pushRequestRow" style="display:none;">
-      <button class="btn btn-warning btn-block" id="btnRequestPush">📤 申請推送本機資料到房間</button>
+    <!-- 房間沙盤操作按鈕（在房間內才顯示） -->
+    <div class="flex-row mt-8" id="roomSandboxActions" style="display:none;">
+      <button class="btn btn-primary btn-sm" id="btnUploadSandboxToRoom">📤 上載我的沙盤到房間</button>
+      <button class="btn btn-success btn-sm" id="btnDownloadRoomSandbox">📥 下載房間沙盤到我的沙盤</button>
     </div>
     <div class="flex-row mt-8" style="justify-content:space-between;">
       <span class="health-indicator"><span class="health-dot red" id="healthDot"></span><span id="healthText">未連線</span></span>
@@ -484,16 +454,96 @@
   </div>
 </section>
 
+<!-- ============ 📊 沙盤數據 ============ -->
+<section id="tab-sandbox" class="tab-content">
+  <div class="card">
+    <div class="card-title">👤 我的沙盤</div>
+    <div class="sandbox-me-panel" id="sandboxMePanel">
+      <div class="sandbox-me-row">
+        <div class="sandbox-me-name" id="sandboxMeName">—</div>
+        <div class="sandbox-me-time" id="sandboxMeTime">—</div>
+      </div>
+      <div class="sandbox-me-stats" id="sandboxMeStats">—</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>📊 個人沙盤清單</span>
+      <button class="btn btn-ghost btn-sm" id="btnSandboxesRefresh" style="margin-left:auto;">🔄 重整</button>
+    </div>
+    <div class="text-dim" style="margin-bottom:8px;" id="sandboxListViewHint">
+      ＊點「載入」會先備份你目前的雲端沙盤，再覆蓋為該沙盤。
+    </div>
+    <div class="sandbox-table-wrap">
+      <table class="sandbox-table">
+        <thead>
+          <tr>
+            <th>檔案名稱</th>
+            <th>擁有者</th>
+            <th class="col-num">城池</th>
+            <th class="col-num">同盟</th>
+            <th class="col-num">戰區</th>
+            <th>更新時間</th>
+            <th class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="sandboxTableBody">
+          <tr><td colspan="7" class="sandbox-empty">載入中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" id="roomSandboxCard" style="display:none;">
+    <div class="card-title">📡 房間沙盤清單</div>
+    <div class="text-dim" style="margin-bottom:8px;">
+      ＊點「載入」會把該房間沙盤下載到你的個人沙盤。
+    </div>
+    <div class="sandbox-table-wrap">
+      <table class="sandbox-table">
+        <thead>
+          <tr>
+            <th>房間</th>
+            <th>城池</th>
+            <th class="col-num">同盟</th>
+            <th class="col-num">戰區</th>
+            <th>更新時間</th>
+            <th class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="roomSandboxTableBody">
+          <tr><td colspan="6" class="sandbox-empty">載入中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 🛟 救援工具（僅管理員/超管） -->
+  <div class="card" id="rescueCard" style="display:none;">
+    <div class="card-title" style="color:var(--neon-red);">🛟 資料救援工具</div>
+    <div class="text-dim" style="margin-bottom:8px;">
+      ＊從房間的 events 事件流重播歷史，重建 latestSnapshot。<br>
+      ＊僅管理員及超級管理員可操作。
+    </div>
+    <div class="flex-row">
+      <input type="text" id="rescueRoomCode" placeholder="房間碼（6 位）" maxlength="6" inputmode="numeric" style="max-width:200px;">
+      <button class="btn btn-danger btn-sm" id="btnRescueRoom">🛟 重建房間沙盤</button>
+    </div>
+    <div class="text-dim mt-8" id="rescueStatus"></div>
+  </div>
+</section>
+
 <!-- ============ 帳號 ============ -->
 <section id="tab-account" class="tab-content">
-  <div id="authGuestPanel">
+  <div id="authGuestPanel" style="display:none;">
     <div class="card">
       <div class="card-title">👤 我的帳號</div>
       <div class="text-dim">請從上方入口遮罩登入，或重新整理頁面。</div>
     </div>
   </div>
 
-  <div id="authUserPanel" style="display:none;">
+  <div id="authUserPanel">
     <div class="card">
       <div class="card-title">👤 我的帳號</div>
       <div class="auth-profile">
@@ -596,7 +646,7 @@
 <!-- ============ 戰鬥規則 ============ -->
 <section id="tab-rules" class="tab-content">
   <div class="card">
-    <div class="card-title">📖 城戰計算規則（v8.1）</div>
+    <div class="card-title">📖 城戰計算規則（v8.2）</div>
     <div class="rules-doc">
       <h2>一、對戰節奏</h2>
       <div class="rule-card ok">
@@ -621,23 +671,22 @@
         <li>城牆每 30 秒結算一次，由「未分配到守方兵力的攻方兵力」造成傷害。</li>
         <li>城牆歸零 → 城池淪陷，所有相關路線立刻終止。</li>
       </ul>
-      <h2>五、協作模式</h2>
+      <h2>五、協作模式（v8.2）</h2>
       <ul>
-        <li><b>本機模式 / 房間模式</b>：狀態條明確顯示當前位置。</li>
-        <li><b>Firebase 即時連線</b>：透過 Google Firebase 即時同步。</li>
-        <li><b>成員推送申請</b>：成員可申請把本機資料覆蓋房間，房主審核。</li>
+        <li><b>個人雲端沙盤</b>：每個帳號一份，即時自動同步到雲端。</li>
+        <li><b>房間雲端沙盤</b>：每個房間一份，由房主/幹部+手動上載。</li>
+        <li><b>不再自動推送</b>：任何進入房間的人都不會自動覆蓋房間沙盤。</li>
+        <li><b>手動上載</b>：房主、幹部、管理員、超管可手動上載沙盤到房間。</li>
+        <li><b>沙盤數據 Tab</b>：可查看所有（有權限的）沙盤，載入到自己的沙盤。</li>
         <li><b>Excel 協作</b>：用 CSV 或複製貼上批次匯入城池與路線。</li>
-        <li><b>檔案協作</b>：匯出 JSON 檔案傳給朋友，合併編輯。</li>
-        <li><b>分享連結</b>：將沙盤壓縮成網址，貼給朋友載入。</li>
-        <li><b>作戰聊天室</b>：即時聊天，附未讀計數。</li>
       </ul>
-      <h2>六、帳號與權限</h2>
+      <h2>六、帳號與權限（v8.2）</h2>
       <ul>
         <li><b>超級管理員</b>：最高權限，可查閱密碼、修改他人角色。</li>
         <li><b>管理員</b>：可停用帳號、修改 extraPerms、查閱清單（不含密碼）。</li>
-        <li><b>幹部</b>：可創建房間、執行推演、踢人，編輯權限由超管開啟。</li>
-        <li><b>成員</b>：可本機推演、加入房間。</li>
-        <li><b>訪客</b>：僅能瀏覽戰鬥規則，資料不保存。</li>
+        <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
+        <li><b>成員</b>：可本機推演、加入房間、查看成員沙盤。</li>
+        <li><b>訪客</b>：已取消，所有使用者必須註冊登入。</li>
       </ul>
     </div>
   </div>
@@ -657,37 +706,24 @@
   </div>
 </div>
 
-<!-- ============ 推送申請對話框 ============ -->
-<div class="modal-overlay" id="pushRequestModal">
-  <div class="modal-box">
-    <h3>📤 收到推送申請</h3>
-    <div id="pushRequestInfo" style="white-space:pre-line;font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.7;"></div>
-    <div class="text-warn" style="margin-bottom:14px;">⚠️ 接受後，房間內現有資料將被完全覆蓋，請確認後再操作。</div>
-    <div class="modal-actions">
-      <button class="btn btn-danger" id="pushRequestReject">拒絕</button>
-      <button class="btn btn-success" id="pushRequestApprove">接受並覆蓋</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ 退出房間對話框 ============ -->
+<!-- ============ 退出房間對話框（v8.2） ============ -->
 <div class="modal-overlay" id="exitRoomModal">
   <div class="modal-box" style="max-width:420px;">
     <h3>🚪 離開房間</h3>
-    <p style="margin-bottom:12px;">您即將離開房間。請選擇要保留哪一份資料到本機：</p>
+    <p style="margin-bottom:12px;">您即將離開房間。請選擇要如何處理目前的沙盤：</p>
     <div class="exit-options">
-      <button class="exit-option" data-exit-choice="keep">
-        <div class="exit-icon">🔒</div>
+      <button class="exit-option" data-exit-choice="keepRoom">
+        <div class="exit-icon">💾</div>
         <div class="exit-body">
           <div class="exit-title">保留房間資料</div>
-          <div class="exit-desc">把目前房間內的資料存到本機</div>
+          <div class="exit-desc">把目前房間內的沙盤寫入我的個人雲端沙盤</div>
         </div>
       </button>
       <button class="exit-option" data-exit-choice="restore">
         <div class="exit-icon">↩️</div>
         <div class="exit-body">
-          <div class="exit-title">恢復進入前的資料</div>
-          <div class="exit-desc" id="exitRestoreDesc">還原成加入房間前的本機資料</div>
+          <div class="exit-title">恢復進入前的沙盤</div>
+          <div class="exit-desc" id="exitRestoreDesc">還原成加入房間前的個人沙盤</div>
         </div>
       </button>
     </div>
@@ -697,15 +733,79 @@
   </div>
 </div>
 
-<!-- ============ JSON 匯入對話框 ============ -->
-<div class="modal-overlay" id="importModal">
-  <div class="modal-box">
-    <h3>📥 匯入沙盤</h3>
-    <p id="importModalInfo" style="white-space:pre-wrap;"></p>
-    <div class="modal-actions" style="flex-direction:column;gap:8px;">
-      <button class="btn btn-danger btn-block" id="importModeOverwrite">🔄 覆蓋現有資料</button>
-      <button class="btn btn-primary btn-block" id="importModeMerge">➕ 合併（匯入資料優先）</button>
-      <button class="btn btn-ghost btn-block" id="importModeCancel">取消</button>
+<!-- ============ 編輯權限申請審核對話框 ============ -->
+<div class="modal-overlay" id="editRequestReviewModal">
+  <div class="modal-box modal-lg">
+    <h3>📝 編輯權限申請審核</h3>
+    <div class="text-dim" style="margin-bottom:10px;">
+      以下成員申請編輯此房間的資料，請審核：
+    </div>
+    <div id="editRequestList" class="edit-request-list"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="editRequestReviewClose">稍後處理</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 房間空沙盤提示 Modal ============ -->
+<div class="modal-overlay" id="roomEmptyPromptModal">
+  <div class="modal-box" style="max-width:460px;">
+    <h3>📡 房間尚無沙盤</h3>
+    <p style="margin-bottom:14px;">此房間目前沒有任何沙盤資料。請選擇一種方式開始：</p>
+    <div class="empty-room-options">
+      <button class="empty-room-option" data-room-action="uploadMine">
+        <div class="empty-room-icon">📤</div>
+        <div class="empty-room-body">
+          <div class="empty-room-title">上載我的沙盤</div>
+          <div class="empty-room-desc">把我目前的個人沙盤上載到這個房間</div>
+        </div>
+      </button>
+      <button class="empty-room-option" data-room-action="pickFromList">
+        <div class="empty-room-icon">📁</div>
+        <div class="empty-room-body">
+          <div class="empty-room-title">從沙盤清單選一個</div>
+          <div class="empty-room-desc">開啟沙盤清單，選擇要上載的沙盤</div>
+        </div>
+      </button>
+      <button class="empty-room-option" data-room-action="stayEmpty">
+        <div class="empty-room-icon">✏️</div>
+        <div class="empty-room-body">
+          <div class="empty-room-title">保持空白，我手動輸入</div>
+          <div class="empty-room-desc">房間維持空白，由我慢慢建立</div>
+        </div>
+      </button>
+    </div>
+    <div class="modal-actions" style="margin-top:10px;">
+      <button class="btn btn-ghost" id="roomEmptyCancel">稍後決定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 沙盤清單選擇 Modal（上載到房間用） ============ -->
+<div class="modal-overlay" id="sandboxPickerModal">
+  <div class="modal-box modal-lg">
+    <h3>📁 選擇要上載到房間的沙盤</h3>
+    <div class="text-dim" style="margin-bottom:10px;">
+      ＊選擇後會把該沙盤的內容寫入目前房間的沙盤。
+    </div>
+    <div class="sandbox-table-wrap" style="max-height:50vh;">
+      <table class="sandbox-table">
+        <thead>
+          <tr>
+            <th>檔案名稱</th>
+            <th>擁有者</th>
+            <th class="col-num">城池</th>
+            <th>更新時間</th>
+            <th class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="sandboxPickerTableBody">
+          <tr><td colspan="5" class="sandbox-empty">載入中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="sandboxPickerCancel">取消</button>
     </div>
   </div>
 </div>
@@ -888,27 +988,13 @@
   </div>
 </div>
 
-<!-- ============ 編輯權限申請審核對話框 ============ -->
-<div class="modal-overlay" id="editRequestReviewModal">
-  <div class="modal-box modal-lg">
-    <h3>📝 編輯權限申請審核</h3>
-    <div class="text-dim" style="margin-bottom:10px;">
-      以下成員申請編輯此房間的資料，請審核：
-    </div>
-    <div id="editRequestList" class="edit-request-list"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="editRequestReviewClose">稍後處理</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ 拆分後載入 7 個 JS 檔案 ============ -->
-<script src="js/simulation.js?v=20260926"></script>
-<script src="js/core.js?v=20260926"></script>
-<script src="js/firebase.js?v=20260926"></script>
-<script src="js/auth.js?v=20260926"></script>
-<script src="js/data.js?v=20260926"></script>
-<script src="js/ui.js?v=20260926"></script>
-<script src="js/main.js?v=20260926"></script>
+<!-- ============ 載入 7 個 JS 檔案 ============ -->
+<script src="js/simulation.js?v=20260927"></script>
+<script src="js/core.js?v=20260927"></script>
+<script src="js/firebase.js?v=20260927"></script>
+<script src="js/auth.js?v=20260927"></script>
+<script src="js/data.js?v=20260927"></script>
+<script src="js/ui.js?v=20260927"></script>
+<script src="js/main.js?v=20260927"></script>
 </body>
 </html>
