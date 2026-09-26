@@ -714,9 +714,30 @@ if(btnLogout){
   });
 
   /* ── 中斷連線 ── */
-  document.getElementById('btnDisconnect').addEventListener('click', () => {
-    window.SLG.requestDisconnect();
+document.getElementById('btnDisconnect').addEventListener('click', () => {
+  window.SLG.requestDisconnect();
+});
+
+/* ── ★ v8.3：離開房間對話框按鈕綁定 ── */
+document.querySelectorAll('[data-exit-choice]').forEach(btn => {
+  if(!btn.dataset.bound){
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', function(){
+      const choice = this.dataset.exitChoice;
+      if(typeof window.SLG.confirmExit === 'function'){
+        window.SLG.confirmExit(choice);
+      }
+    });
+  }
+});
+
+const exitRoomCancel = document.getElementById('exitRoomCancel');
+if(exitRoomCancel && !exitRoomCancel.dataset.bound){
+  exitRoomCancel.dataset.bound = '1';
+  exitRoomCancel.addEventListener('click', () => {
+    document.getElementById('exitRoomModal').classList.remove('show');
   });
+}
 
   /* ── 房間沙盤操作 ── */
   const btnUploadSandbox = document.getElementById('btnUploadSandboxToRoom');
