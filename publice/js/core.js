@@ -639,6 +639,17 @@ function applySandboxData(data){
   return true;
 }
 
+/* ★ v8.4：取得盟的已分配戰力 / 餘下戰力 */
+function getAllianceDist(allianceId){
+  const allocatedPower = state.cities
+    .filter(c => c.allianceId === allianceId)
+    .reduce((s, c) => s + (Number(c.totalPower) || 0), 0);
+  const allocatedTeams = state.cities
+    .filter(c => c.allianceId === allianceId)
+    .reduce((s, c) => s + (Number(c.totalTeams) || 0), 0);
+  return { allocatedPower, allocatedTeams };
+}
+
 /* ============================================================
    模式管理
    ============================================================ */
@@ -828,6 +839,7 @@ function readAIParamsFromUI(){
    暴露到全域
    ============================================================ */
 Object.assign(window.SLG, {
+    ,
   /* 常量 */
   LS_PREFIX, LS_LEGACY_PREFIX, AI_LS_KEY, ACCOUNT_UID_KEY,
   HOST_TIMEOUT, EDIT_LOCK_TTL,
@@ -880,6 +892,8 @@ Object.assign(window.SLG, {
 
   /* AI 參數 UI */
   syncAIParamsToUI, readAIParamsFromUI,
+  
+  getAllianceDist,
 });
 
 })();

@@ -1,6 +1,6 @@
 /* ============================================================================
- * ui.js — 所有渲染（viz / R / DYN / DEPLOY）+ 表單 + 沙盤數據頁
- * v8.2
+ * ui.js — 所有渲染（viz / R / DYN / DEPLOY / CityManager / WarManager / DeployInstr）+ 表單 + 沙盤
+ * v8.4
  * ========================================================================== */
 (function(){
 'use strict';
@@ -388,30 +388,39 @@ const R = (() => {
     const tbody = document.getElementById('allianceTableBody');
     if(!tbody) return;
     if(state.alliances.length === 0){
-      tbody.innerHTML = '<tr><td colspan="6" class="ally-table-empty">尚無同盟資料</td></tr>';
-      renderMatrix();
+      tbody.innerHTML = '<tr><td colspan="8" class="ally-table-empty">尚無同盟資料</td></tr>';
       return;
     }
     tbody.innerHTML = state.alliances.map(a => {
-      const cap = state.cities.find(c => c.allianceId === a.id && c.isCapital);
+      const cap = state.cities.find(c => c.id === a.id);
       const tagCls = a.side === 'self' ? 'tag-self' : (a.side === 'ally' ? 'tag-ally' : 'tag-enemy');
       const chipCls = a.side === 'self' ? 'self' : (a.side === 'ally' ? 'ally' : 'enemy');
-      const avg = getAllianceAvgPowerLocal(a);
-      const isEditing = state.editingAllianceId === a.id;
       const icon = a.icon || '';
+      const isEditing = state.editingAllianceId === a.id;
+
+      /* 計算已分配 / 餘下 */
+      const myCities = state.cities.filter(c => c.allianceId === a.id);
+      const allocatedPower = myCities.reduce((s, c) => s + (Number(c.totalPower) || 0), 0);
+      const totalPower = Number(a.totalPower) || 0;
+      const remain = totalPower - allocatedPower;
+      const pct = totalPower > 0 ? Math.round(allocatedPower / totalPower * 100) : 0;
+      const remainColor = remain < 0 ? 'var(--neon-red)' : 'var(--neon-green)';
+
       return `<tr${isEditing ? ' style="background:rgba(255,204,0,.08);"' : ''}>
         <td class="col-name"><span class="alliance-tag ${tagCls}"></span>${icon ? `<span class="alliance-icon">${icon}</span>` : ''}${esc(a.name)}${isEditing ? '<span class="editing-badge">編輯中</span>' : ''}${cap ? ` <span style="color:var(--neon-yellow);font-size:10px;">👑 ${esc(cap.name)}</span>` : ''}</td>
         <td><span class="chip ${chipCls}">${allianceSideLabel(a.side)}</span></td>
         <td class="col-num">${(a.memberCount||0).toLocaleString()}</td>
-        <td class="col-num">${(a.totalPower||0).toLocaleString()}</td>
-        <td class="col-num" style="color:var(--neon-green);font-weight:700;">${avg.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td class="col-num">${totalPower.toLocaleString()}</td>
+        <td class="col-num">${allocatedPower.toLocaleString()}</td>
+        <td class="col-num" style="color:${remainColor};">${remain.toLocaleString()}</td>
+        <td class="col-num">${pct}%</td>
         <td class="col-actions">
-          <button class="btn btn-primary btn-sm" data-action="edit-alliance" data-id="${a.id}">✏️ 編輯</button>
-          <button class="btn btn-danger btn-sm" data-action="del-alliance" data-id="${a.id}">🗑️ 刪除</button>
+          <button class="btn btn-primary btn-sm" data-action="edit-alliance" data-id="${a.id}">✏️</button>
+          <button class="btn btn-danger btn-sm" data-action="del-alliance" data-id="${a.id}">🗑️</button>
         </td>
       </tr>`;
     }).join('');
-    renderMatrix();
+
     if(hasTogglePerm() && Auth()){
       const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
       document.querySelectorAll('[data-action="edit-alliance"],[data-action="del-alliance"]').forEach(b => {
@@ -509,9 +518,9 @@ const R = (() => {
           html += `<div class="text-dim" style="margin-bottom:4px;">同盟：${allianceIcon ? `<span class="alliance-icon">${allianceIcon}</span>` : ''}${esc(alliance.name)}</div>`;
         }
         html += `<div class="flex-row" style="margin-bottom:4px;"><span class="chip time">🕐 ${esc(defStart)} – ${esc(defEnd)}</span></div>`;
-        html += `<div class="flex-row" style="font-size:11px;color:var(--text-secondary);gap:12px;"><span>總戰力 ${(c.totalPower||0).toLocaleString()}</span><span>總隊數 ${c.totalTeams}</span><span>均戰 ${c.avgPower}</span></div>`;
+        html += `<div class="flex-row" style="font-size:11px;color:var(--text-secondary);gap:12px;"><span>戰力 ${(c.totalPower||0).toLocaleString()}</span><span>隊數 ${c.totalTeams}</span><span>均戰 ${c.avgPower}</span></div>`;
         if(alloc.over){
-          html += `<div class="flex-row" style="font-size:11px;margin-top:4px;"><span class="text-warn">⚠️ 戰前派兵合計 ${alloc.allocated} 隊 ＞ 總隊數 ${alloc.totalTeams} 隊（推演時將按比例縮減）</span></div>`;
+          html += `<div class="flex-row" style="font-size:11px;margin-top:4px;"><span class="text-warn">⚠️ 戰前派兵合計 ${alloc.allocated} 隊 ＞ 總隊數 ${alloc.totalTeams} 隊</span></div>`;
         } else {
           html += `<div class="flex-row" style="font-size:11px;gap:12px;margin-top:4px;"><span style="color:#ff8fa3;">⚔️ 戰前 ${alloc.atkSum} 隊</span><span style="color:#8fffb0;">🛡️ 協防 ${alloc.defSum} 隊</span><span style="color:#8ecbff;">🏰 留守 ${alloc.reserve} 隊</span></div>`;
         }
@@ -610,192 +619,6 @@ const R = (() => {
   };
 })();
 
-/* ============================================================
-   ★ P6：房間編輯按鈕
-   ============================================================ */
-function updateRoomEditButton(){
-  const btn = document.getElementById('btnRequestRoomEdit');
-  if(!btn) return;
-
-  if(!window.SLG.isInRoom() || !state.auth.signedIn){
-    btn.style.display = 'none';
-    return;
-  }
-
-  if(window.SLG.canEditRoomData()){
-    btn.style.display = 'none';
-    return;
-  }
-
-  btn.style.display = '';
-
-  if(state.myEditRequestStatus === 'pending'){
-    btn.textContent = '⏳ 已申請，等待審核';
-    btn.className = 'btn btn-sm pending';
-    btn.disabled = true;
-  } else {
-    btn.textContent = '📝 申請編輯此房間資料';
-    btn.className = 'btn btn-warning btn-sm';
-    btn.disabled = false;
-  }
-}
-
-/* ============================================================
-   ★ v8.2：房間沙盤操作按鈕
-   ============================================================ */
-function updateRoomSandboxActions(){
-  const row = document.getElementById('roomSandboxActions');
-  const btnUpload = document.getElementById('btnUploadSandboxToRoom');
-  const btnDownload = document.getElementById('btnDownloadRoomSandbox');
-  if(!row) return;
-
-  /* 只在房間模式顯示 */
-  if(!window.SLG.isInRoom()){
-    row.style.display = 'none';
-    return;
-  }
-  row.style.display = '';
-
-  /* 上載按鈕：需有權限（房主/幹部/管理員/超管） */
-  if(btnUpload){
-    const canUpload = window.SLG.canUploadSandboxToRoom();
-    btnUpload.style.display = canUpload ? '' : 'none';
-    btnUpload.disabled = !canUpload;
-  }
-
-  /* 下載按鈕：房間有沙盤才顯示 */
-  if(btnDownload){
-    const hasRoom = !!state.roomHasSnapshot;
-    btnDownload.style.display = hasRoom ? '' : 'none';
-    btnDownload.disabled = !hasRoom;
-  }
-}
-
-/* ============================================================
-   ★ v8.2：沙盤數據頁渲染
-   ============================================================ */
-function renderSandboxData(){
-  /* 1. 我的沙盤摘要 */
-  const meName = document.getElementById('sandboxMeName');
-  const meTime = document.getElementById('sandboxMeTime');
-  const meStats = document.getElementById('sandboxMeStats');
-  if(meName){
-    if(state.auth.signedIn){
-      meName.textContent = state.auth.displayName || state.auth.username || '—';
-    } else {
-      meName.textContent = '未登入';
-    }
-  }
-  if(meTime){
-    const ts = state.mySandbox.updatedAt;
-    meTime.textContent = ts ? `最後更新：${timeAgo(ts)}` : '尚未同步';
-  }
-  if(meStats){
-    const c = state.cities.length;
-    const a = state.alliances.length;
-    const z = state.zones.length;
-    meStats.innerHTML = `🏰 城池 <b>${c}</b> · 🤝 同盟 <b>${a}</b> · 🗺️ 戰區 <b>${z}</b>`;
-  }
-
-  /* 2. 個人沙盤清單 */
-  const tbody = document.getElementById('sandboxTableBody');
-  if(tbody){
-    const list = Object.entries(state.sandboxesList || {})
-      .map(([uid, sb]) => ({ uid, ...sb }))
-      .filter(sb => {
-        /* 權限過濾 */
-        const isSelf = sb.uid === state.auth.accountUid;
-        if(isSelf) return true;
-        const role = sb.role || 'member';   /* 沙盤沒存 role，用帳號資訊判斷 */
-        if(!window.SLG.canViewSandboxOf(sb.uid, role)) return false;
-        return true;
-      })
-      .sort((a, b) => {
-        /* 自己排最上面 */
-        if(a.uid === state.auth.accountUid) return -1;
-        if(b.uid === state.auth.accountUid) return 1;
-        return (b.updatedAt || 0) - (a.updatedAt || 0);
-      });
-
-    if(list.length === 0){
-      tbody.innerHTML = '<tr><td colspan="7" class="sandbox-empty">尚無沙盤資料</td></tr>';
-    } else {
-      tbody.innerHTML = list.map(sb => {
-        const isSelf = sb.uid === state.auth.accountUid;
-        const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
-        const cityCount = sb.data?.cities?.length || 0;
-        const allianceCount = sb.data?.alliances?.length || 0;
-        const zoneCount = sb.data?.zones?.length || 0;
-        return `<tr class="${isSelf ? 'row-self' : ''}">
-          <td class="sandbox-name">${esc(fileName)}${isSelf ? ' <span class="chip" style="font-size:9px;color:var(--neon-yellow);">你</span>' : ''}</td>
-          <td class="sandbox-owner">${esc(sb.displayName || sb.username || '—')}</td>
-          <td class="col-num">${cityCount}</td>
-          <td class="col-num">${allianceCount}</td>
-          <td class="col-num">${zoneCount}</td>
-          <td class="sandbox-time">${esc(timeAgo(sb.updatedAt))}</td>
-          <td class="col-actions">
-            <button class="btn btn-primary btn-sm" data-action="load-sandbox" data-uid="${sb.uid}" ${isSelf?'disabled':''}>📥 載入</button>
-          </td>
-        </tr>`;
-      }).join('');
-    }
-  }
-
-  /* 3. 房間沙盤清單（僅幹部+） */
-  const roomCard = document.getElementById('roomSandboxCard');
-  const roomTbody = document.getElementById('roomSandboxTableBody');
-  if(roomCard){
-    if(window.SLG.canViewRoomSandboxes()){
-      roomCard.style.display = '';
-      /* 由 main.js 非同步載入資料後填入，這裡先判斷是否為空 */
-      if(roomTbody && (!state.roomSnapshotsList || state.roomSnapshotsList.length === 0)){
-        roomTbody.innerHTML = '<tr><td colspan="6" class="sandbox-empty">尚無房間沙盤資料</td></tr>';
-      }
-    } else {
-      roomCard.style.display = 'none';
-    }
-  }
-
-  /* 4. 救援工具（僅管理員/超管） */
-  const rescueCard = document.getElementById('rescueCard');
-  if(rescueCard){
-    rescueCard.style.display = window.SLG.canUseRescueTool() ? '' : 'none';
-  }
-
-  /* 5. 綁定「載入沙盤」按鈕 */
-  if(tbody){
-    tbody.querySelectorAll('[data-action="load-sandbox"]').forEach(btn => {
-      btn.addEventListener('click', function(){
-        const uid = this.dataset.uid;
-        if(typeof window.SLG.loadSandboxFromList === 'function'){
-          window.SLG.loadSandboxFromList(uid);
-        }
-      });
-    });
-  }
-}
-
-/* ============================================================
-   ★ 3-1 段結尾：暴露
-   ============================================================ */
-Object.assign(window.SLG, {
-  viz,
-  R,
-  renderAll: R.renderAll,
-  renderChat: R.renderChat,
-  renderChatBadge: R.renderChatBadge,
-  renderCities: R.renderCities,
-  renderZones: R.renderZones,
-  renderAlliances: R.renderAlliances,
-  renderMatrix: R.renderMatrix,
-  renderNarrative: R.renderNarrative,
-  renderDebug: R.renderDebug,
-  updateRoomEditButton,
-  updateRoomSandboxActions,
-  renderSandboxData,
-});
-
-/* ⚠️ 不要在此行下方加 })(); —— 3-2 段會接續 */
 /* ============================================================
    DYN — 動態戰報
    ============================================================ */
@@ -1846,14 +1669,688 @@ const DEPLOY = (() => {
 })();
 
 /* ============================================================
+   ★ v8.4：CityManager（城池清單表格 + 批次操作）
+   ============================================================ */
+const CityManager = (() => {
+  let currentView = 'table';
+
+  function init(){
+    const btn = document.getElementById('btnCityViewToggle');
+    if(btn){
+      btn.addEventListener('click', function(){
+        currentView = currentView === 'table' ? 'card' : 'table';
+        this.textContent = currentView === 'table' ? '🃏 卡片檢視' : '📋 表格檢視';
+        document.getElementById('cityTableView').style.display = currentView === 'table' ? '' : 'none';
+        document.getElementById('cityCardView').style.display = currentView === 'card' ? '' : 'none';
+        render();
+      });
+    }
+
+    ['cityFilterZone','cityFilterAlliance','cityFilterSide','citySearchInput'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el){
+        el.addEventListener('input', render);
+        el.addEventListener('change', render);
+      }
+    });
+
+    const selAll = document.getElementById('citySelectAll');
+    if(selAll){
+      selAll.addEventListener('change', function(){
+        document.querySelectorAll('.city-table .city-cb').forEach(cb => {
+          cb.checked = this.checked;
+        });
+        updateBatchBar();
+      });
+    }
+
+    const btnApplyAlliance = document.getElementById('btnCityBatchApplyAlliance');
+    if(btnApplyAlliance){
+      btnApplyAlliance.addEventListener('click', () => {
+        const aid = document.getElementById('cityBatchAlliance').value;
+        if(!aid) { alert('請選擇所屬盟'); return; }
+        applyBatch('allianceId', aid);
+      });
+    }
+
+    const btnApplySide = document.getElementById('btnCityBatchApplySide');
+    if(btnApplySide){
+      btnApplySide.addEventListener('click', () => {
+        const side = document.getElementById('cityBatchSide').value;
+        if(!side) { alert('請選擇陣營'); return; }
+        applyBatch('side', side);
+      });
+    }
+
+    const btnBatchDel = document.getElementById('btnCityBatchDelete');
+    if(btnBatchDel){
+      btnBatchDel.addEventListener('click', () => {
+        const ids = getCheckedIds();
+        if(ids.length === 0){ alert('請先勾選城池'); return; }
+        if(typeof window.SLG.showConfirm === 'function'){
+          window.SLG.showConfirm('批次刪除', `確定刪除 ${ids.length} 座城池？`, () => {
+            for(const id of ids){
+              window.SLG.deleteEntity('city', id);
+            }
+            render();
+            if(window.SLG.saveState) window.SLG.saveState();
+          });
+        }
+      });
+    }
+
+    const tbody = document.getElementById('cityTableBody');
+    if(tbody){
+      tbody.addEventListener('change', e => {
+        if(e.target.classList.contains('city-cb')) updateBatchBar();
+      });
+    }
+  }
+
+  function getCheckedIds(){
+    return [...document.querySelectorAll('.city-table .city-cb:checked')]
+      .map(cb => cb.dataset.id);
+  }
+
+  function updateBatchBar(){
+    const ids = getCheckedIds();
+    const bar = document.getElementById('cityBatchBar');
+    const cnt = document.getElementById('cityBatchCount');
+    if(bar) bar.style.display = ids.length > 0 ? '' : 'none';
+    if(cnt) cnt.textContent = ids.length;
+  }
+
+  function applyBatch(field, value){
+    const ids = getCheckedIds();
+    if(ids.length === 0){ alert('請先勾選城池'); return; }
+    for(const id of ids){
+      const city = state.cities.find(c => c.id === id);
+      if(!city) continue;
+      city[field] = value;
+      state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
+      if(window.SLG.markDirty) window.SLG.markDirty('city', id);
+    }
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState();
+    render();
+    logSystem(`✅ 已批次修改 ${ids.length} 座城池`);
+  }
+
+  function getFilteredCities(){
+    const zoneId = document.getElementById('cityFilterZone')?.value || 'all';
+    const allianceId = document.getElementById('cityFilterAlliance')?.value || 'all';
+    const side = document.getElementById('cityFilterSide')?.value || 'all';
+    const search = (document.getElementById('citySearchInput')?.value || '').trim().toLowerCase();
+
+    return state.cities.filter(c => {
+      if(zoneId !== 'all' && c.zoneId !== zoneId) return false;
+      if(allianceId !== 'all' && c.allianceId !== allianceId) return false;
+      if(side !== 'all' && c.side !== side) return false;
+      if(search && !c.name.toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }
+
+  function render(){
+    populateFilters();
+    populateBatchAllianceOptions();
+
+    const list = getFilteredCities();
+    const tbody = document.getElementById('cityTableBody');
+    if(tbody){
+      if(list.length === 0){
+        tbody.innerHTML = '<tr><td colspan="10" class="city-table-empty">無城池資料</td></tr>';
+      } else {
+        tbody.innerHTML = list.map(c => {
+          const zone = state.zones.find(z => z.id === c.zoneId);
+          const alliance = state.alliances.find(a => a.id === c.allianceId);
+          const avg = c.totalTeams > 0 ? Math.floor((Number(c.totalPower)||0) / c.totalTeams) : null;
+          const icon = (alliance && alliance.icon) ? alliance.icon + ' ' : '';
+          const avgDisplay = avg === null || !isFinite(avg) ? '—' : avg;
+
+          return `<tr class="${c.isCapital ? 'row-self' : ''}">
+            <td><input type="checkbox" class="city-cb" data-id="${c.id}"></td>
+            <td class="city-name">${c.isCapital ? '👑 ' : ''}${esc(c.name)}</td>
+            <td>${zone ? esc(zone.name) : '<span class="text-dim">—</span>'}</td>
+            <td>${icon}${alliance ? esc(alliance.name) : '<span class="text-dim">NPC</span>'}</td>
+            <td><span class="chip ${sideClass(c.side)}" style="font-size:9px;">${sideLabel(c.side)}</span></td>
+            <td class="col-num">${c.memberCount || '—'}</td>
+            <td class="col-num">${(Number(c.totalPower)||0).toLocaleString()}</td>
+            <td class="col-num">${c.totalTeams || '—'}</td>
+            <td class="col-num">${avgDisplay}</td>
+            <td>
+              <button class="btn btn-primary btn-sm" data-action="edit-city" data-id="${c.id}">✏️</button>
+              <button class="btn btn-danger btn-sm" data-action="del-city" data-id="${c.id}">🗑️</button>
+            </td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+    if(tbody){
+      tbody.querySelectorAll('[data-action="edit-city"]').forEach(b => {
+        b.addEventListener('click', function(){
+          if(window.SLG.openCityModal) window.SLG.openCityModal(this.dataset.id);
+        });
+      });
+      tbody.querySelectorAll('[data-action="del-city"]').forEach(b => {
+        b.addEventListener('click', function(){
+          const id = this.dataset.id;
+          const c = state.cities.find(x => x.id === id);
+          if(!c) return;
+          if(typeof window.SLG.showConfirm === 'function'){
+            window.SLG.showConfirm('刪除城池', `確定刪除「${c.name}」？`, () => {
+              window.SLG.deleteEntity('city', id);
+              render();
+              if(window.SLG.saveState) window.SLG.saveState();
+            });
+          }
+        });
+      });
+    }
+
+    updateBatchBar();
+    renderDistSummary();
+  }
+
+  function populateFilters(){
+    const zSel = document.getElementById('cityFilterZone');
+    if(zSel){
+      const cur = zSel.value;
+      zSel.innerHTML = '<option value="all">全部</option>' +
+        state.zones.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('');
+      zSel.value = cur && state.zones.find(z => z.id === cur) ? cur : 'all';
+    }
+    const aSel = document.getElementById('cityFilterAlliance');
+    if(aSel){
+      const cur = aSel.value;
+      aSel.innerHTML = '<option value="all">全部</option>' +
+        state.alliances.map(a => `<option value="${a.id}">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</option>`).join('');
+      aSel.value = cur && state.alliances.find(a => a.id === cur) ? cur : 'all';
+    }
+  }
+
+  function populateBatchAllianceOptions(){
+    const sel = document.getElementById('cityBatchAlliance');
+    if(!sel) return;
+    sel.innerHTML = '<option value="">更改所屬盟...</option>' +
+      state.alliances.map(a => `<option value="${a.id}">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</option>`).join('');
+  }
+
+  function renderDistSummary(){
+    const el = document.getElementById('allianceDistSummary');
+    if(!el) return;
+    if(state.alliances.length === 0){
+      el.innerHTML = '<div class="text-dim">尚未建立同盟</div>';
+      return;
+    }
+
+    el.innerHTML = state.alliances.map(a => {
+      const myCities = state.cities.filter(c => c.allianceId === a.id);
+      const allocatedPower = myCities.reduce((s, c) => s + (Number(c.totalPower) || 0), 0);
+      const totalPower = Number(a.totalPower) || 0;
+      const remain = totalPower - allocatedPower;
+      const pct = totalPower > 0 ? Math.round(allocatedPower / totalPower * 100) : 0;
+      const cls = pct > 100 ? 'warn' : '';
+      const icon = a.icon ? a.icon + ' ' : '';
+      const chipCls = a.side === 'self' ? 'self' : (a.side === 'ally' ? 'ally' : 'enemy');
+      const remainStyle = remain < 0 ? 'style="color:var(--neon-red);"' : 'style="color:var(--neon-green);"';
+
+      return `<div class="alliance-dist-row">
+        <span class="name">${icon}${esc(a.name)}</span>
+        <span class="chip ${chipCls}" style="font-size:9px;">${allianceSideLabel(a.side)}</span>
+        <span class="num">${allocatedPower.toLocaleString()} / ${totalPower.toLocaleString()}</span>
+        <div class="bar"><div class="bar-fill ${cls}" style="width:${Math.min(100, pct)}%"></div></div>
+        <span class="pct">${pct}%</span>
+        <span class="num" ${remainStyle}>餘 ${remain.toLocaleString()}</span>
+        <span class="num" style="color:var(--text-dim);">${myCities.length} 城</span>
+      </div>`;
+    }).join('');
+  }
+
+  return { init, render };
+})();
+
+/* ============================================================
+   ★ v8.4：WarManager（宣戰指示）
+   ============================================================ */
+const WarManager = (() => {
+  function init(){
+    const btn = document.getElementById('btnAddWarLine');
+    if(btn) btn.addEventListener('click', () => addLine());
+  }
+
+  function getAllWarLines(){
+    const lines = [];
+    for(const src of state.cities){
+      for(const t of (src.attackTargets || [])){
+        lines.push({
+          srcId: src.id,
+          tgtId: t.cityId,
+          type: 'attack',
+          preWarPercent: t.preWarPercent,
+          postRevivePercent: t.postRevivePercent,
+          priority: t.priority,
+        });
+      }
+      for(const t of (src.defendTargets || [])){
+        lines.push({
+          srcId: src.id,
+          tgtId: t.cityId,
+          type: 'defend',
+          preWarPercent: t.preWarPercent,
+          postRevivePercent: t.postRevivePercent,
+          priority: t.priority,
+        });
+      }
+    }
+    return lines;
+  }
+
+  function addLine(){
+    if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
+    const src = state.cities[0];
+    const tgt = state.cities.find(c => c.id !== src.id);
+    if(!src || !tgt) return;
+
+    const validSides = (window.SLG.ATTACK_RULES[src.side] || []);
+    if(!validSides.includes(tgt.side)){
+      alert(`「${src.name}」(${sideLabel(src.side)}) 不能進攻「${tgt.name}」(${sideLabel(tgt.side)})`);
+      return;
+    }
+
+    if(!src.attackTargets) src.attackTargets = [];
+    src.attackTargets.push({
+      cityId: tgt.id,
+      preWarPercent: 50,
+      postRevivePercent: 50,
+      priority: 1,
+    });
+    state.entityRev.city[src.id] = (state.entityRev.city[src.id] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', src.id);
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState();
+    render();
+    if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+  }
+
+  function render(){
+    const el = document.getElementById('warList');
+    if(!el) return;
+    const lines = getAllWarLines();
+
+    if(lines.length === 0){
+      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無宣戰指示</div>';
+      return;
+    }
+
+    const cityOpts = (selectedId) => state.cities.map(c =>
+      `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${esc(c.name)}</option>`
+    ).join('');
+
+    el.innerHTML = lines.map((l, i) => {
+      const src = state.cities.find(c => c.id === l.srcId);
+      const tgt = state.cities.find(c => c.id === l.tgtId);
+      const valid = src && tgt;
+      const invalidCls = valid ? '' : 'invalid';
+      return `<div class="war-line ${invalidCls}" data-line-idx="${i}">
+        <select class="war-src">${cityOpts(l.srcId)}</select>
+        <select class="war-type">
+          <option value="attack" ${l.type === 'attack' ? 'selected' : ''}>⚔️ 進攻</option>
+          <option value="defend" ${l.type === 'defend' ? 'selected' : ''}>🛡️ 防守</option>
+        </select>
+        <select class="war-tgt">${cityOpts(l.tgtId)}</select>
+        <button class="btn btn-danger btn-sm war-del">🗑️</button>
+      </div>`;
+    }).join('');
+
+    el.querySelectorAll('.war-line').forEach((lineEl, i) => {
+      const line = lines[i];
+      lineEl.querySelector('.war-src')?.addEventListener('change', function(){
+        moveLine(line, this.value, line.tgtId, line.type);
+      });
+      lineEl.querySelector('.war-type')?.addEventListener('change', function(){
+        moveLine(line, line.srcId, line.tgtId, this.value);
+      });
+      lineEl.querySelector('.war-tgt')?.addEventListener('change', function(){
+        moveLine(line, line.srcId, this.value, line.type);
+      });
+      lineEl.querySelector('.war-del')?.addEventListener('click', () => {
+        deleteLine(line);
+      });
+    });
+  }
+
+  function moveLine(oldLine, newSrcId, newTgtId, newType){
+    deleteLineSilent(oldLine);
+    const src = state.cities.find(c => c.id === newSrcId);
+    if(!src) return;
+    const arr = newType === 'attack' ? 'attackTargets' : 'defendTargets';
+    if(!src[arr]) src[arr] = [];
+
+    const existing = src[arr].find(t => t.cityId === newTgtId);
+    if(existing){
+      existing.preWarPercent = oldLine.preWarPercent || 50;
+      existing.postRevivePercent = oldLine.postRevivePercent || 50;
+      existing.priority = oldLine.priority || 1;
+    } else {
+      src[arr].push({
+        cityId: newTgtId,
+        preWarPercent: oldLine.preWarPercent || 50,
+        postRevivePercent: oldLine.postRevivePercent || 50,
+        priority: oldLine.priority || 1,
+      });
+    }
+    state.entityRev.city[src.id] = (state.entityRev.city[src.id] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', src.id);
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState();
+    render();
+    if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+  }
+
+  function deleteLine(line){
+    deleteLineSilent(line);
+    if(window.SLG.saveState) window.SLG.saveState();
+    render();
+    if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+  }
+
+  function deleteLineSilent(line){
+    const src = state.cities.find(c => c.id === line.srcId);
+    if(!src) return;
+    const arr = line.type === 'attack' ? 'attackTargets' : 'defendTargets';
+    if(!src[arr]) return;
+    src[arr] = src[arr].filter(t => t.cityId !== line.tgtId);
+    state.entityRev.city[src.id] = (state.entityRev.city[src.id] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', src.id);
+  }
+
+  return { init, render };
+})();
+
+/* ============================================================
+   ★ v8.4：DeployInstr（出兵指示）
+   ============================================================ */
+const DeployInstr = (() => {
+  function init(){
+    const el = document.getElementById('deployInstructionList');
+    if(el){
+      el.addEventListener('change', e => {
+        const input = e.target.closest('[data-deploy-field]');
+        if(!input) return;
+        const card = input.closest('.deploy-instr-card');
+        if(!card) return;
+        const srcId = card.dataset.srcId;
+        const tgtId = input.dataset.tgtId;
+        const type = input.dataset.type;
+        const field = input.dataset.deployField;
+        updateRoute(srcId, tgtId, type, field, input.value);
+      });
+      el.addEventListener('click', e => {
+        const delBtn = e.target.closest('[data-deploy-del]');
+        if(!delBtn) return;
+        const srcId = delBtn.dataset.srcId;
+        const tgtId = delBtn.dataset.tgtId;
+        const type = delBtn.dataset.type;
+        deleteRoute(srcId, tgtId, type);
+      });
+    }
+  }
+
+  function updateRoute(srcId, tgtId, type, field, value){
+    const src = state.cities.find(c => c.id === srcId);
+    if(!src) return;
+    const arr = type === 'attack' ? 'attackTargets' : 'defendTargets';
+    const route = (src[arr] || []).find(t => t.cityId === tgtId);
+    if(!route) return;
+    route[field] = parseFloat(value) || 0;
+    state.entityRev.city[srcId] = (state.entityRev.city[srcId] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', srcId);
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState();
+    render();
+  }
+
+  function deleteRoute(srcId, tgtId, type){
+    const src = state.cities.find(c => c.id === srcId);
+    if(!src) return;
+    const arr = type === 'attack' ? 'attackTargets' : 'defendTargets';
+    src[arr] = (src[arr] || []).filter(t => t.cityId !== tgtId);
+    state.entityRev.city[srcId] = (state.entityRev.city[srcId] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', srcId);
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState();
+    render();
+    if(window.SLG.WarManager) window.SLG.WarManager.render();
+  }
+
+  function render(){
+    const el = document.getElementById('deployInstructionList');
+    if(!el) return;
+
+    const sources = state.cities.filter(c =>
+      (c.attackTargets && c.attackTargets.length > 0) ||
+      (c.defendTargets && c.defendTargets.length > 0)
+    );
+
+    if(sources.length === 0){
+      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無出兵指示（請先在「宣戰指示」新增路線）</div>';
+      return;
+    }
+
+    el.innerHTML = sources.map(src => renderCard(src)).join('');
+  }
+
+  function renderCard(src){
+    const totalTeams = Number(src.totalTeams) || 0;
+    const atkLines = (src.attackTargets || []).map(t => renderLine(src, t, 'attack')).join('');
+    const defLines = (src.defendTargets || []).map(t => renderLine(src, t, 'defend')).join('');
+
+    let atkSum = 0, defSum = 0;
+    for(const t of (src.attackTargets || [])) atkSum += (Number(t.preWarPercent) || 0);
+    for(const t of (src.defendTargets || [])) defSum += (Number(t.preWarPercent) || 0);
+    const total = atkSum + defSum;
+    const isOver = total > 100;
+    const reserve = Math.max(0, 100 - total);
+
+    return `<div class="deploy-instr-card" data-src-id="${src.id}">
+      <div class="deploy-instr-header">
+        <div class="deploy-instr-title">${src.isCapital ? '👑 ' : ''}${esc(src.name)}</div>
+        <div class="deploy-instr-total">總隊數 ${totalTeams}</div>
+      </div>
+      ${atkLines ? `<div class="section-label" style="font-size:10px;">⚔️ 進攻指示（${atkSum}%）</div>${atkLines}` : ''}
+      ${defLines ? `<div class="section-label" style="font-size:10px;">🛡️ 防守指示（${defSum}%）</div>${defLines}` : ''}
+      <div class="deploy-instr-footer ${isOver ? 'warn' : ''}">
+        合計 ${total}%　留守 ${reserve}%　${isOver ? '⚠️ 超過 100%' : '✅'}
+      </div>
+    </div>`;
+  }
+
+  function renderLine(src, route, type){
+    const tgt = state.cities.find(c => c.id === route.cityId);
+    if(!tgt) return '';
+    const arrow = type === 'attack' ? '⚔️' : '🛡️';
+
+    return `<div class="deploy-instr-line">
+      <span class="label">${arrow}</span>
+      <span class="target">${esc(tgt.name)}</span>
+      <select data-deploy-field="preWarPercent" data-tgt-id="${route.cityId}" data-type="${type}">
+        ${PERCENT_OPTIONS.map(p => `<option value="${p}" ${p === route.preWarPercent ? 'selected' : ''}>${p}%</option>`).join('')}
+      </select>
+      <select data-deploy-field="postRevivePercent" data-tgt-id="${route.cityId}" data-type="${type}">
+        ${PERCENT_OPTIONS.map(p => `<option value="${p}" ${p === route.postRevivePercent ? 'selected' : ''}>${p}%</option>`).join('')}
+      </select>
+      <input type="number" data-deploy-field="priority" data-tgt-id="${route.cityId}" data-type="${type}" value="${route.priority || 1}" min="1" max="99" step="1">
+      <button class="btn btn-danger btn-sm" data-deploy-del="1" data-tgt-id="${route.cityId}" data-type="${type}" data-src-id="${src.id}">🗑️</button>
+    </div>`;
+  }
+
+  return { init, render };
+})();
+
+/* ============================================================
+   更新房間編輯按鈕 / 房間沙盤操作
+   ============================================================ */
+function updateRoomEditButton(){
+  const btn = document.getElementById('btnRequestRoomEdit');
+  if(!btn) return;
+
+  if(!window.SLG.isInRoom() || !state.auth.signedIn){
+    btn.style.display = 'none';
+    return;
+  }
+  if(window.SLG.canEditRoomData()){
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = '';
+  if(state.myEditRequestStatus === 'pending'){
+    btn.textContent = '⏳ 已申請，等待審核';
+    btn.className = 'btn btn-sm pending';
+    btn.disabled = true;
+  } else {
+    btn.textContent = '📝 申請編輯此房間資料';
+    btn.className = 'btn btn-warning btn-sm';
+    btn.disabled = false;
+  }
+}
+
+function updateRoomSandboxActions(){
+  const row = document.getElementById('roomSandboxActions');
+  const btnUpload = document.getElementById('btnUploadSandboxToRoom');
+  const btnDownload = document.getElementById('btnDownloadRoomSandbox');
+  if(!row) return;
+  if(!window.SLG.isInRoom()){
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+  if(btnUpload){
+    const canUpload = window.SLG.canUploadSandboxToRoom();
+    btnUpload.style.display = canUpload ? '' : 'none';
+    btnUpload.disabled = !canUpload;
+  }
+  if(btnDownload){
+    const hasRoom = !!state.roomHasSnapshot;
+    btnDownload.style.display = hasRoom ? '' : 'none';
+    btnDownload.disabled = !hasRoom;
+  }
+}
+
+/* ============================================================
+   沙盤數據頁渲染
+   ============================================================ */
+function renderSandboxData(){
+  const meName = document.getElementById('sandboxMeName');
+  const meTime = document.getElementById('sandboxMeTime');
+  const meStats = document.getElementById('sandboxMeStats');
+  if(meName){
+    if(state.auth.signedIn){
+      meName.textContent = state.auth.displayName || state.auth.username || '—';
+    } else {
+      meName.textContent = '未登入';
+    }
+  }
+  if(meTime){
+    const ts = state.mySandbox.updatedAt;
+    meTime.textContent = ts ? `最後更新：${timeAgo(ts)}` : '尚未同步';
+  }
+  if(meStats){
+    const c = state.cities.length;
+    const a = state.alliances.length;
+    const z = state.zones.length;
+    meStats.innerHTML = `🏰 城池 <b>${c}</b> · 🤝 同盟 <b>${a}</b> · 🗺️ 戰區 <b>${z}</b>`;
+  }
+
+  const tbody = document.getElementById('sandboxTableBody');
+  if(tbody){
+    const list = Object.entries(state.sandboxesList || {})
+      .map(([uid, sb]) => ({ uid, ...sb }))
+      .filter(sb => {
+        const isSelf = sb.uid === state.auth.accountUid;
+        if(isSelf) return true;
+        const role = sb.role || 'member';
+        if(!window.SLG.canViewSandboxOf(sb.uid, role)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        if(a.uid === state.auth.accountUid) return -1;
+        if(b.uid === state.auth.accountUid) return 1;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      });
+
+    if(list.length === 0){
+      tbody.innerHTML = '<tr><td colspan="7" class="sandbox-empty">尚無沙盤資料</td></tr>';
+    } else {
+      tbody.innerHTML = list.map(sb => {
+        const isSelf = sb.uid === state.auth.accountUid;
+        const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
+        const cityCount = sb.data?.cities?.length || 0;
+        const allianceCount = sb.data?.alliances?.length || 0;
+        const zoneCount = sb.data?.zones?.length || 0;
+        return `<tr class="${isSelf ? 'row-self' : ''}">
+          <td class="sandbox-name">${esc(fileName)}${isSelf ? ' <span class="chip" style="font-size:9px;color:var(--neon-yellow);">你</span>' : ''}</td>
+          <td class="sandbox-owner">${esc(sb.displayName || sb.username || '—')}</td>
+          <td class="col-num">${cityCount}</td>
+          <td class="col-num">${allianceCount}</td>
+          <td class="col-num">${zoneCount}</td>
+          <td class="sandbox-time">${esc(timeAgo(sb.updatedAt))}</td>
+          <td class="col-actions">
+            <button class="btn btn-primary btn-sm" data-action="load-sandbox" data-uid="${sb.uid}" ${isSelf?'disabled':''}>📥 載入</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
+  const roomCard = document.getElementById('roomSandboxCard');
+  const roomTbody = document.getElementById('roomSandboxTableBody');
+  if(roomCard){
+    if(window.SLG.canViewRoomSandboxes()){
+      roomCard.style.display = '';
+      if(roomTbody && (!state.roomSnapshotsList || state.roomSnapshotsList.length === 0)){
+        roomTbody.innerHTML = '<tr><td colspan="6" class="sandbox-empty">尚無房間沙盤資料</td></tr>';
+      }
+    } else {
+      roomCard.style.display = 'none';
+    }
+  }
+
+  const rescueCard = document.getElementById('rescueCard');
+  if(rescueCard){
+    rescueCard.style.display = window.SLG.canUseRescueTool() ? '' : 'none';
+  }
+
+  if(tbody){
+    tbody.querySelectorAll('[data-action="load-sandbox"]').forEach(btn => {
+      btn.addEventListener('click', function(){
+        const uid = this.dataset.uid;
+        if(typeof window.SLG.loadSandboxFromList === 'function'){
+          window.SLG.loadSandboxFromList(uid);
+        }
+      });
+    });
+  }
+}
+
+/* ============================================================
    同盟表單輔助
    ============================================================ */
 function updateAllianceAvgPowerPreview(){
   const mc = parseFloat(document.getElementById('allyMemberCount').value) || 0;
   const tp = parseFloat(document.getElementById('allyTotalPower').value) || 0;
-  document.getElementById('allyAvgPower').value =
-    mc > 0 ? (tp / mc).toLocaleString(undefined,{maximumFractionDigits:2}) : '0';
+  const el = document.getElementById('allyAvgPower');
+  if(el){
+    el.value = mc > 0 ? (tp / mc).toLocaleString(undefined,{maximumFractionDigits:2}) : '0';
+  }
 }
+
 function resetAllianceForm(){
   state.editingAllianceId = null;
   document.getElementById('allyFormTitle').textContent = '➕ 新增同盟';
@@ -1867,6 +2364,7 @@ function resetAllianceForm(){
   updateAllianceAvgPowerPreview();
   R.renderAlliances();
 }
+
 function startEditAlliance(id){
   const a = state.alliances.find(x => x.id === id);
   if(!a) return;
@@ -1884,204 +2382,22 @@ function startEditAlliance(id){
 }
 
 /* ============================================================
-   城池表單
+   城池表單（v8.4：移除路線設定）
    ============================================================ */
 let editingCityId = null;
 
-function updateSectionLabels(){
-  const mySide = document.getElementById('cm_side').value;
-  const atkSides = (ATTACK_RULES[mySide] || []).map(sideLabel).join(' / ');
-  const defSides = (DEFEND_RULES[mySide] || []).map(sideLabel).join(' / ');
-  document.getElementById('attackSectionLabel').textContent = `⚔️ 選擇進攻的城池（限 ${atkSides || '無'}）`;
-  document.getElementById('defendSectionLabel').textContent = `🛡️ 選擇協防的城池${defSides ? `（限 ${defSides}）` : '（不可協防）'}`;
-}
 function updateAutoCalcFields(){
   const t = parseFloat(document.getElementById('cm_totalTeams').value)||0;
   const p = parseFloat(document.getElementById('cm_totalPower').value)||0;
-  document.getElementById('cm_avgPower').value = t > 0 ? Math.floor(p/t) : 0;
-}
-function updateAllocPanel(){
-  const total = parseFloat(document.getElementById('cm_totalTeams').value) || 0;
-  let atkSum = 0, defSum = 0;
-  document.querySelectorAll('.atk-cb:checked').forEach(cb => {
-    const sel = document.querySelector(`.atk-pre[data-city="${cb.dataset.city}"]`);
-    atkSum += Math.floor(total * (parseFloat(sel.value)||0) / 100);
-  });
-  document.querySelectorAll('.def-cb:checked').forEach(cb => {
-    const sel = document.querySelector(`.def-pre[data-city="${cb.dataset.city}"]`);
-    defSum += Math.floor(total * (parseFloat(sel.value)||0) / 100);
-  });
-  const allocated = atkSum + defSum, reserve = total - allocated;
-  document.getElementById('cm_allocTotal').textContent = total;
-  document.getElementById('cm_allocAtk').textContent = atkSum;
-  document.getElementById('cm_allocDef').textContent = defSum;
-  const reserveEl = document.getElementById('cm_allocReserve');
-  reserveEl.textContent = reserve;
-  reserveEl.style.color = reserve < 0 ? 'var(--neon-red)' : 'var(--neon-green)';
-  document.getElementById('cm_allocWarning').style.display = reserve < 0 ? 'block' : 'none';
-}
-function renderTargetSelectors(attackTargets, defendTargets){
-  const zoneId = document.getElementById('cm_zone').value;
-  const mySide = document.getElementById('cm_side').value;
-  const attackEl = document.getElementById('cm_attackList');
-  const defendEl = document.getElementById('cm_defendList');
-  const pool = state.cities.filter(c => c.id !== editingCityId);
-  const sameZone = zoneId ? pool.filter(c => c.zoneId === zoneId) : pool;
-  const attackableSides = ATTACK_RULES[mySide] || [];
-  const attackable = sameZone.filter(c => attackableSides.includes(c.side));
-  const defendableSides = DEFEND_RULES[mySide] || [];
-  const defendable = sameZone.filter(c => defendableSides.includes(c.side));
-  const aMap = {}; (attackTargets || []).forEach(t => aMap[t.cityId] = t);
-  const dMap = {}; (defendTargets || []).forEach(t => dMap[t.cityId] = t);
-
-  const buildOptions = (selected) =>
-    PERCENT_OPTIONS.map(p => `<option value="${p}" ${p===selected?'selected':''}>${p}%</option>`).join('');
-
-  const myCityForAI = {
-    avgPower: parseFloat(document.getElementById('cm_avgPower').value) || 1,
-    totalTeams: parseFloat(document.getElementById('cm_totalTeams').value) || 0,
-    side: document.getElementById('cm_side').value,
-  };
-
-  if(attackable.length === 0){
-    attackEl.innerHTML = `<div class="empty-hint">無可進攻目標</div>`;
+  const el = document.getElementById('cm_avgPower');
+  if(!el) return;
+  if(t > 0 && p > 0){
+    el.value = Math.floor(p/t);
   } else {
-    attackEl.innerHTML = attackable.map(c => {
-      const cfg = aMap[c.id] || {};
-      const checked = cfg.cityId !== undefined;
-      const pre = cfg.preWarPercent !== undefined ? cfg.preWarPercent : 50;
-      const post = cfg.postRevivePercent !== undefined ? cfg.postRevivePercent : 50;
-      const pr = cfg.priority !== undefined ? cfg.priority : 1;
-      const defStart = c.defStartTime || '19:00';
-      const aiSuggest = AI.suggestForTarget(myCityForAI, c, true);
-      const aiCls = (aiSuggest === 100 && myCityForAI.avgPower < c.avgPower) ? 'ai-hint warn' : 'ai-hint';
-      const a = state.alliances.find(al => al.id === c.allianceId);
-      const icon = (a && a.icon) ? a.icon + ' ' : '';
-      return `<div class="target-item ${checked ? 'checked' : ''}" data-city="${c.id}">
-        <input type="checkbox" class="atk-cb" data-city="${c.id}" ${checked ? 'checked' : ''}>
-        <span class="tname">${icon}${c.isCapital ? '👑 ' : ''}${esc(c.name)}</span>
-        <span class="tside ${sideClass(c.side)}">${sideLabel(c.side)}</span>
-        <span class="tside time">${esc(defStart)}</span>
-        <span class="${aiCls}">🤖 ${aiSuggest}%</span>
-        <div class="target-config-row">
-          <span class="cfg-label">戰前</span>
-          <select class="atk-pre" data-city="${c.id}" ${checked ? '' : 'disabled'}>${buildOptions(pre)}</select>
-          <span class="cfg-label">復活</span>
-          <select class="atk-post" data-city="${c.id}" ${checked ? '' : 'disabled'}>${buildOptions(post)}</select>
-          <span class="cfg-label">順序</span>
-          <input type="number" class="atk-priority" data-city="${c.id}" value="${pr}" min="1" max="99" step="1" ${checked ? '' : 'disabled'}>
-        </div>
-      </div>`;
-    }).join('');
+    el.value = '—';
   }
+}
 
-  if(defendable.length === 0){
-    defendEl.innerHTML = defendableSides.length === 0
-      ? '<div class="empty-hint">此陣營不可協防任何城池</div>'
-      : `<div class="empty-hint">無可協防目標</div>`;
-  } else {
-    defendEl.innerHTML = defendable.map(c => {
-      const cfg = dMap[c.id] || {};
-      const checked = cfg.cityId !== undefined;
-      const pre = cfg.preWarPercent !== undefined ? cfg.preWarPercent : 50;
-      const post = cfg.postRevivePercent !== undefined ? cfg.postRevivePercent : 50;
-      const pr = cfg.priority !== undefined ? cfg.priority : 1;
-      const defStart = c.defStartTime || '19:00';
-      const aiSuggest = AI.suggestForTarget(myCityForAI, c, false);
-      const a = state.alliances.find(al => al.id === c.allianceId);
-      const icon = (a && a.icon) ? a.icon + ' ' : '';
-      return `<div class="target-item ${checked ? 'checked' : ''}" data-city="${c.id}">
-        <input type="checkbox" class="def-cb" data-city="${c.id}" ${checked ? 'checked' : ''}>
-        <span class="tname">${icon}${c.isCapital ? '👑 ' : ''}${esc(c.name)}</span>
-        <span class="tside ${sideClass(c.side)}">${sideLabel(c.side)}</span>
-        <span class="tside time">${esc(defStart)}</span>
-        <span class="ai-hint">🤖 ${aiSuggest}%</span>
-        <div class="target-config-row">
-          <span class="cfg-label">戰前</span>
-          <select class="def-pre" data-city="${c.id}" ${checked ? '' : 'disabled'}>${buildOptions(pre)}</select>
-          <span class="cfg-label">復活</span>
-          <select class="def-post" data-city="${c.id}" ${checked ? '' : 'disabled'}>${buildOptions(post)}</select>
-          <span class="cfg-label">順序</span>
-          <input type="number" class="def-priority" data-city="${c.id}" value="${pr}" min="1" max="99" step="1" ${checked ? '' : 'disabled'}>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  const bindToggle = (cbSelector, itemSelector, selects, priorityEl) => {
-    document.querySelectorAll(cbSelector).forEach(cb => cb.addEventListener('change', function(){
-      const item = this.closest(itemSelector);
-      item.classList.toggle('checked', this.checked);
-      item.querySelectorAll(selects).forEach(s => s.disabled = !this.checked);
-      item.querySelector(priorityEl).disabled = !this.checked;
-      updateAllocPanel();
-    }));
-  };
-  bindToggle('.atk-cb', '.target-item', '.atk-pre,.atk-post', '.atk-priority');
-  bindToggle('.def-cb', '.target-item', '.def-pre,.def-post', '.def-priority');
-  document.querySelectorAll('.atk-pre,.def-pre').forEach(el => el.addEventListener('change', updateAllocPanel));
-  updateAllocPanel();
-}
-function collectCurrentTargets(){
-  const atk = [], def = [];
-  document.querySelectorAll('.atk-cb:checked').forEach(cb => {
-    const cityId = cb.dataset.city;
-    const pre = parseFloat(document.querySelector(`.atk-pre[data-city="${cityId}"]`).value) || 0;
-    const post = parseFloat(document.querySelector(`.atk-post[data-city="${cityId}"]`).value) || 0;
-    const pr = parseInt(document.querySelector(`.atk-priority[data-city="${cityId}"]`).value) || 1;
-    if(pre > 0) atk.push({ cityId, preWarPercent: pre, postRevivePercent: post, priority: pr });
-  });
-  document.querySelectorAll('.def-cb:checked').forEach(cb => {
-    const cityId = cb.dataset.city;
-    const pre = parseFloat(document.querySelector(`.def-pre[data-city="${cityId}"]`).value) || 0;
-    const post = parseFloat(document.querySelector(`.def-post[data-city="${cityId}"]`).value) || 0;
-    const pr = parseInt(document.querySelector(`.def-priority[data-city="${cityId}"]`).value) || 1;
-    if(pre > 0) def.push({ cityId, preWarPercent: pre, postRevivePercent: post, priority: pr });
-  });
-  return { attackTargets: atk, defendTargets: def };
-}
-function applyAISuggestion(){
-  const currentCity = {
-    avgPower: parseFloat(document.getElementById('cm_avgPower').value) || 1,
-    totalTeams: parseFloat(document.getElementById('cm_totalTeams').value) || 0,
-    attackTargets: [],
-    defendTargets: [],
-  };
-  if (!currentCity.totalTeams){ alert('請先輸入總隊數'); return; }
-  const currentAtk = [], currentDef = [];
-  document.querySelectorAll('.atk-cb:checked').forEach(cb => {
-    const cityId = cb.dataset.city;
-    const pre = parseFloat(document.querySelector(`.atk-pre[data-city="${cityId}"]`).value) || 0;
-    const pr = parseInt(document.querySelector(`.atk-priority[data-city="${cityId}"]`).value) || 1;
-    if (pre > 0) currentAtk.push({ cityId, priority: pr });
-  });
-  document.querySelectorAll('.def-cb:checked').forEach(cb => {
-    const cityId = cb.dataset.city;
-    const pre = parseFloat(document.querySelector(`.def-pre[data-city="${cityId}"]`).value) || 0;
-    const pr = parseInt(document.querySelector(`.def-priority[data-city="${cityId}"]`).value) || 1;
-    if (pre > 0) currentDef.push({ cityId, priority: pr });
-  });
-  if (currentAtk.length === 0 && currentDef.length === 0){
-    alert('請先勾選至少一個進攻或協防目標'); return;
-  }
-  currentCity.attackTargets = currentAtk;
-  currentCity.defendTargets = currentDef;
-  const suggestion = AI.suggestForCity(currentCity, state.cities);
-  for (const s of suggestion.atk){
-    const preEl = document.querySelector(`.atk-pre[data-city="${s.cityId}"]`);
-    const postEl = document.querySelector(`.atk-post[data-city="${s.cityId}"]`);
-    if (preEl) preEl.value = s.preWarPercent;
-    if (postEl) postEl.value = s.postRevivePercent;
-  }
-  for (const s of suggestion.def){
-    const preEl = document.querySelector(`.def-pre[data-city="${s.cityId}"]`);
-    const postEl = document.querySelector(`.def-post[data-city="${s.cityId}"]`);
-    if (preEl) preEl.value = s.preWarPercent;
-    if (postEl) postEl.value = s.postRevivePercent;
-  }
-  updateAllocPanel();
-  logSystem('🤖 AI 佈兵建議已套用');
-}
 function openCityModal(cityId){
   editingCityId = cityId || null;
   const isNew = !editingCityId;
@@ -2095,11 +2411,11 @@ function openCityModal(cityId){
     isNew ? '🏰 新增城池' : `✏️ 編輯城池：${city ? city.name : ''}`;
 
   const zoneSel = document.getElementById('cm_zone');
-  zoneSel.innerHTML = state.zones.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('')
-    || '<option value="">（尚未建立戰區）</option>';
+  zoneSel.innerHTML = '<option value="">（不指定戰區）</option>' +
+    state.zones.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('');
 
   const allianceSel = document.getElementById('cm_alliance');
-  allianceSel.innerHTML = '<option value="">（不指定）</option>' +
+  allianceSel.innerHTML = '<option value="">（不指定 / NPC）</option>' +
     state.alliances.map(a =>
       `<option value="${a.id}">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}（${allianceSideLabel(a.side)}）</option>`
     ).join('');
@@ -2107,8 +2423,9 @@ function openCityModal(cityId){
   if(isNew){
     document.getElementById('cm_name').value = '';
     document.getElementById('cm_side').value = 'self';
-    document.getElementById('cm_totalPower').value = 100000;
-    document.getElementById('cm_totalTeams').value = 100;
+    document.getElementById('cm_memberCount').value = '';
+    document.getElementById('cm_totalPower').value = '';
+    document.getElementById('cm_totalTeams').value = '';
     document.getElementById('cm_cooldownMin').value = 5;
     document.getElementById('cm_wallMin').value = 30;
     document.getElementById('cm_defStartTime').value = '19:00';
@@ -2119,17 +2436,19 @@ function openCityModal(cityId){
     document.getElementById('cm_zone').value = city.zoneId || '';
     document.getElementById('cm_alliance').value = city.allianceId || '';
     document.getElementById('cm_side').value = city.side;
-    document.getElementById('cm_totalPower').value = city.totalPower;
-    document.getElementById('cm_totalTeams').value = city.totalTeams;
+    document.getElementById('cm_memberCount').value = city.memberCount || '';
+    document.getElementById('cm_totalPower').value = city.totalPower || '';
+    document.getElementById('cm_totalTeams').value = city.totalTeams || '';
     document.getElementById('cm_cooldownMin').value = city.cooldownMin;
     document.getElementById('cm_wallMin').value = city.wallMin;
     document.getElementById('cm_defStartTime').value = city.defStartTime || '19:00';
     document.getElementById('cm_isCapital').checked = !!city.isCapital;
   }
-  updateAutoCalcFields(); updateSectionLabels();
-  renderTargetSelectors(city ? (city.attackTargets || []) : [], city ? (city.defendTargets || []) : []);
+  updateAutoCalcFields();
+  /* ★ v8.4：路線已移至獨立區塊，Modal 不再渲染 */
   document.getElementById('cityModal').classList.add('show');
 }
+
 function closeCityModal(){
   if(editingCityId && window.SLG.isConnected && window.SLG.isConnected()){
     window.SLG.releaseEditLock(editingCityId);
@@ -2138,22 +2457,29 @@ function closeCityModal(){
   document.getElementById('cityModal').classList.remove('show');
   editingCityId = null;
   R.renderCities();
+  if(window.SLG.CityManager) window.SLG.CityManager.render();
   if (document.getElementById('tab-deploy').classList.contains('active')) DEPLOY.render();
 }
+
 function saveCityFromModal(){
   const name = document.getElementById('cm_name').value.trim();
   if(!name){ alert('請輸入城池名稱'); return; }
   const zoneId = document.getElementById('cm_zone').value;
-  if(!zoneId){ alert('請先建立並選擇戰區'); return; }
   const allianceId = document.getElementById('cm_alliance').value;
   const side = document.getElementById('cm_side').value;
+  const memberCount = parseFloat(document.getElementById('cm_memberCount').value) || 0;
   const totalPower = parseFloat(document.getElementById('cm_totalPower').value) || 0;
   const totalTeams = parseFloat(document.getElementById('cm_totalTeams').value) || 0;
   const cooldownMin = parseFloat(document.getElementById('cm_cooldownMin').value) || 0;
   const wallMin = parseFloat(document.getElementById('cm_wallMin').value) || 0;
   const defStartTime = document.getElementById('cm_defStartTime').value || '19:00';
   const isCapital = document.getElementById('cm_isCapital').checked;
-  const { attackTargets, defendTargets } = collectCurrentTargets();
+
+  /* ★ v8.4：路線已移至獨立區塊，此處保留既有路線 */
+  const existingCity = editingCityId ? state.cities.find(c => c.id === editingCityId) : null;
+  const attackTargets = existingCity ? (existingCity.attackTargets || []) : [];
+  const defendTargets = existingCity ? (existingCity.defendTargets || []) : [];
+
   const avgPower = totalTeams > 0 ? Math.floor(totalPower / totalTeams) : 0;
   const id = editingCityId || uid();
 
@@ -2168,39 +2494,58 @@ function saveCityFromModal(){
   }
 
   const entity = {
-    id, name, zoneId, allianceId, side, totalPower, totalTeams, avgPower,
-    cooldownMin, wallMin, defStartTime, isCapital, attackTargets, defendTargets
+    id, name, zoneId, allianceId, side,
+    memberCount, totalPower, totalTeams, avgPower,
+    cooldownMin, wallMin, defStartTime, isCapital,
+    attackTargets, defendTargets
   };
   window.SLG.upsertEntity('city', entity);
   closeCityModal();
   R.renderCities();
+  if(window.SLG.CityManager) window.SLG.CityManager.render();
+  if(window.SLG.WarManager) window.SLG.WarManager.render();
+  if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   window.SLG.saveState();
 }
 
 /* ============================================================
-   DEPLOY 便捷函式
+   DEPLOY 便捷
    ============================================================ */
 function deployRender(){ DEPLOY.render(); }
 
 /* ============================================================
-   ★ 3-2 段結尾：暴露 + 關閉 IIFE
+   暴露
    ============================================================ */
 Object.assign(window.SLG, {
+  viz,
+  R,
+  renderAll: R.renderAll,
+  renderChat: R.renderChat,
+  renderChatBadge: R.renderChatBadge,
+  renderCities: R.renderCities,
+  renderZones: R.renderZones,
+  renderAlliances: R.renderAlliances,
+  renderMatrix: R.renderMatrix,
+  renderNarrative: R.renderNarrative,
+  renderDebug: R.renderDebug,
+  updateRoomEditButton,
+  updateRoomSandboxActions,
+  renderSandboxData,
+
   DYN,
   DEPLOY,
   deployRender,
   updateAllianceAvgPowerPreview,
   resetAllianceForm,
   startEditAlliance,
-  updateSectionLabels,
   updateAutoCalcFields,
-  updateAllocPanel,
-  renderTargetSelectors,
-  collectCurrentTargets,
-  applyAISuggestion,
   openCityModal,
   closeCityModal,
   saveCityFromModal,
+
+  CityManager,
+  WarManager,
+  DeployInstr,
 });
 
 })();

@@ -1,6 +1,6 @@
 /* ============================================================================
- * data.js — Excel/CSV 匯入匯出（v8.2：移除 JSON 匯入匯出與分享連結）
- * v8.2
+ * data.js — Excel/CSV 匯入匯出（v8.4）
+ * v8.4：新增「人數」欄位、總隊數可留空
  * ========================================================================== */
 (function(){
 'use strict';
@@ -62,11 +62,15 @@ function findFieldIndex(headers, aliases){
   return -1;
 }
 
+/* ============================================================
+   欄位別名（v8.4：加入 memberCount）
+   ============================================================ */
 const CITY_FIELD_ALIASES = {
   name:        ['城池名稱','城池','城名','名稱','name','cityname','city'],
   zone:        ['戰區','分區','區域','zone','zoneid','region'],
   alliance:    ['同盟','盟','盟名稱','盟名','alliance','alliancename'],
   side:        ['陣營','陣營關係','side','faction'],
+  memberCount: ['人數','成員數','總人數','membercount','members','member'],
   totalPower:  ['總戰力','戰力','totalpower','power'],
   totalTeams:  ['總隊數','隊數','兵力','隊伍數','totalteams','teams'],
   cooldownMin: ['冷卻','冷卻分鐘','冷卻復活','冷卻(分)','cooldownmin','cooldown'],
@@ -127,6 +131,9 @@ function parseCitiesTable(rows){
     const sideRaw = get('side', '本方');
     const sideNorm = normalizeHeader(sideRaw);
     const side = SIDE_PARSE_MAP[sideRaw] || SIDE_PARSE_MAP[sideNorm] || 'self';
+
+    /* v8.4：memberCount 為新欄位 */
+    const memberCount = parseFloat(get('memberCount', '0')) || 0;
     const totalPower = parseFloat(get('totalPower', '0')) || 0;
     const totalTeams = parseFloat(get('totalTeams', '0')) || 0;
     const cooldownMin = parseFloat(get('cooldownMin', '5')) || 5;
@@ -135,8 +142,9 @@ function parseCitiesTable(rows){
     const capRaw = String(get('isCapital', '')).toLowerCase().trim();
     const isCapital = TRUTHY_SET.has(capRaw);
 
-    if(totalTeams <= 0){
-      errors.push(`第 ${i+1} 列「${getName}」總隊數必須大於 0，略過`);
+    /* v8.4：允許總隊數留空（0） */
+    if(totalTeams < 0){
+      errors.push(`第 ${i+1} 列「${getName}」總隊數不可為負數，略過`);
       continue;
     }
 
@@ -148,7 +156,7 @@ function parseCitiesTable(rows){
 
     cities.push({
       name: getName, zoneName, allianceName, side,
-      totalPower, totalTeams, cooldownMin, wallMin, defStartTime, isCapital,
+      memberCount, totalPower, totalTeams, cooldownMin, wallMin, defStartTime, isCapital,
     });
   }
 
@@ -395,6 +403,7 @@ function executeExcelImport(cityResult, routeResult, mode){
         existing.zoneId = zoneId;
         existing.allianceId = allianceId;
         existing.side = cd.side;
+        existing.memberCount = cd.memberCount || 0;   /* v8.4 */
         existing.totalPower = cd.totalPower;
         existing.totalTeams = cd.totalTeams;
         existing.avgPower = avgPower;
@@ -409,6 +418,7 @@ function executeExcelImport(cityResult, routeResult, mode){
         const id = uid();
         const entity = {
           id, name: cd.name, zoneId, allianceId, side: cd.side,
+          memberCount: cd.memberCount || 0,   /* v8.4 */
           totalPower: cd.totalPower, totalTeams: cd.totalTeams, avgPower,
           cooldownMin: cd.cooldownMin, wallMin: cd.wallMin,
           defStartTime: cd.defStartTime, isCapital: cd.isCapital,
@@ -468,9 +478,13 @@ function executeExcelImport(cityResult, routeResult, mode){
   flushPatches();
   saveState();
 
+  /* 更新所有渲染 */
   if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
   if(typeof window.SLG.populateCityFilters === 'function') window.SLG.populateCityFilters();
   if(typeof window.SLG.populateZoneFilter === 'function') window.SLG.populateZoneFilter();
+  if(typeof window.SLG.CityManager?.render === 'function') window.SLG.CityManager.render();
+  if(typeof window.SLG.WarManager?.render === 'function') window.SLG.WarManager.render();
+  if(typeof window.SLG.DeployInstr?.render === 'function') window.SLG.DeployInstr.render();
   if(typeof window.SLG.deployRender === 'function'
      && document.getElementById('tab-deploy').classList.contains('active')){
     window.SLG.deployRender();
@@ -503,9 +517,10 @@ function downloadCSV(csv, filename){
   URL.revokeObjectURL(url);
 }
 
+/* v8.4：加入「人數」欄位，總戰力 / 總隊數允許留空 */
 function exportCitiesCSV(){
   if(state.cities.length === 0){ alert('目前沒有任何城池'); return; }
-  const headers = ['城池名稱','戰區','同盟','陣營','總戰力','總隊數','冷卻','城牆','防守開始','首都'];
+  const headers = ['城池名稱','戰區','同盟','陣營','人數','總戰力','總隊數','冷卻','城牆','防守開始','首都'];
   const rows = state.cities.map(c => {
     const zone = state.zones.find(z => z.id === c.zoneId);
     const alliance = state.alliances.find(a => a.id === c.allianceId);
@@ -514,7 +529,11 @@ function exportCitiesCSV(){
       zone ? zone.name : '',
       alliance ? alliance.name : '',
       SIDE_LABELS[c.side] || c.side,
-      c.totalPower, c.totalTeams, c.cooldownMin, c.wallMin,
+      c.memberCount || '',
+      c.totalPower || '',
+      c.totalTeams || '',
+      c.cooldownMin,
+      c.wallMin,
       c.defStartTime || '19:00',
       c.isCapital ? '是' : '',
     ];
@@ -546,18 +565,20 @@ function exportRoutesCSV(){
   logSystem(`📤 已匯出路線表 CSV（${rows.length} 條）`);
 }
 
+/* v8.4：更新範本說明（加入人數、說明可留空） */
 function downloadExcelTemplate(){
   const template = `【城池表欄位說明】
-城池名稱,戰區,同盟,陣營,總戰力,總隊數,冷卻,城牆,防守開始,首都
-主城,北境,我方盟,本方,100000,100,5,30,19:00,是
-敵城1,北境,敵盟A,敵方,80000,80,5,20,19:00,
-友城A,北境,我方盟,同盟,60000,60,5,25,19:00,
-中立城,北境,,NPC,30000,30,5,15,19:00,
+城池名稱,戰區,同盟,陣營,人數,總戰力,總隊數,冷卻,城牆,防守開始,首都
+主城,北境,我方盟,本方,100,100000,100,5,30,19:00,是
+敵城1,北境,敵盟A,敵方,80,80000,80,5,20,19:00,
+友城A,北境,我方盟,同盟,60,60000,60,5,25,19:00,
+中立城,北境,,NPC,30,30000,30,5,15,19:00,
 
 ■ 陣營可填：本方 / 同盟 / 敵方 / 共同敵方 / NPC
 ■ 首都可填：是 / Y / 1（空白為否）
 ■ 防守開始：HH:MM 格式，如 19:00
 ■ 冷卻 / 城牆：單位為分鐘
+■ 人數 / 總戰力 / 總隊數：可留空
 ■ 戰區 / 同盟：不存在的會自動建立
 ■ 欄位順序不拘，程式會自動識別表頭
 

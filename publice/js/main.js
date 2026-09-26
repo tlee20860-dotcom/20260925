@@ -86,21 +86,20 @@ function applyPermissions(){
   /* ── 1. Tab 可見性（v8.3 最終） ── */
   const guestAllowed  = ['tab-rules'];
   const memberAllowed = [
-    'tab-room', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
-    'tab-sandbox', 'tab-account', 'tab-rules'
-  ];
-  const adminAllowed  = [
-    'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
-    'tab-sandbox', 'tab-account', 'tab-rules'
-  ];
-  const superAllowed  = [
-    'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
-    'tab-sandbox', 'tab-account', 'tab-accounts', 'tab-rules'
-  ];
-  // ...（其餘不變）
+  'tab-room', 'tab-alliances', 'tab-cities', 'tab-deploy',
+  'tab-summary', 'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+  'tab-sandbox', 'tab-account', 'tab-rules'
+];
+const adminAllowed  = [
+  'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
+  'tab-summary', 'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+  'tab-sandbox', 'tab-account', 'tab-rules'
+];
+const superAllowed  = [
+  'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
+  'tab-summary', 'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+  'tab-sandbox', 'tab-account', 'tab-accounts', 'tab-rules'
+];
 
   document.querySelectorAll('.top-nav button[data-tab]').forEach(btn => {
     const tabId = btn.dataset.tab;
@@ -336,6 +335,18 @@ function handleSimulationDone(result){
   DYN().populateCityFilters();
   saveState();
 
+  /* ★ v8.4：建立並渲染推演總結 */
+  if(window.SLG.Summary){
+    const summary = window.SLG.Summary.build(
+      result,
+      state.cities,
+      state.alliances,
+      state.dynRows
+    );
+    window.SLG.Summary.render(summary);
+    logSystem('📊 推演總結已建立');
+  }
+
   if(state.isHost && window.SLG.isConnected()){
     window.SLG.publish({ type:'viz_payload', data: viz().getAllSnapshots() });
     window.SLG.publish({ type:'dyn_payload', rows: state.dynRows });
@@ -344,6 +355,12 @@ function handleSimulationDone(result){
   viz().finalize();
   state.isSimulating = false;
   logSystem('✅ 推演完成');
+
+  /* ★ v8.4：自動切到推演總結 Tab */
+  const summaryTab = document.querySelector('.top-nav button[data-tab="tab-summary"]');
+  if(summaryTab && summaryTab.style.display !== 'none'){
+    summaryTab.click();
+  }
 }
 
 /* ============================================================
@@ -628,7 +645,9 @@ function bindUI(){
       if(tabId === 'tab-narrative'){ R().renderNarrative(state.narrativeLines); }
       if(tabId === 'tab-viz') requestAnimationFrame(() => requestAnimationFrame(() => viz().activate()));
       if(tabId === 'tab-params') syncAIParamsToUI();
-      if(tabId === 'tab-deploy'){ DEPLOY().populateZoneFilter(); DEPLOY().render(); }
+      ifif(tabId === 'tab-summary'){
+  if(window.SLG.Summary) window.SLG.Summary.render(window.SLG.Summary.getLast());
+}
       if(tabId === 'tab-sandbox'){
         /* 進入沙盤數據 Tab 時，非同步載入清單 */
         refreshSandboxList();
@@ -713,7 +732,7 @@ if(btnLogout){
     saveState();
   });
 
-  /* ── 中斷連線 ── */
+/* ── 中斷連線 ── */
 document.getElementById('btnDisconnect').addEventListener('click', () => {
   window.SLG.requestDisconnect();
 });
@@ -1255,6 +1274,9 @@ function bindEvents(){
     R().renderAlliances();
     R().renderZones();
     R().renderCities();
+    if(window.SLG.CityManager) window.SLG.CityManager.render();
+if(window.SLG.WarManager) window.SLG.WarManager.render();
+if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
     document.getElementById('globalTimeLimit').value = state.settings.timeLimitMin;
     document.getElementById('globalConsumeMinPerMin').value = state.settings.consumeMinPerMin;
     document.getElementById('globalConsumeMaxPerMin').value = state.settings.consumeMaxPerMin;
@@ -1380,9 +1402,12 @@ function boot(){
 
   /* 8. 初始化子模組 */
   viz().init();
-  DYN().init();
-  window.SLG.resetAllianceForm();
-
+DYN().init();
+window.SLG.resetAllianceForm();
+if(window.SLG.Summary) window.SLG.Summary.init();
+if(window.SLG.CityManager) window.SLG.CityManager.init();
+if(window.SLG.WarManager) window.SLG.WarManager.init();
+if(window.SLG.DeployInstr) window.SLG.DeployInstr.init();
   /* 9. 首繪 */
   R().renderAll();
   DYN().setRows(state.dynRows);
