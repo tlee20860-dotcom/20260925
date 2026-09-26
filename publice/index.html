@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.5</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.5.1</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-<link rel="stylesheet" href="style.css?v=20260927_2300">
+<link rel="stylesheet" href="style.css?v=20260927_2330">
 </head>
 <body>
 
@@ -16,13 +16,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.1</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.1</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -73,11 +73,10 @@
 <!-- ============ 應用佈局（v8.5：側邊欄 + 主內容） ============ -->
 <div class="app-layout">
 
-  <!-- ============ 左側側邊欄 ============ -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.5</span>
+      <span class="sidebar-version">v8.5.1</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -114,16 +113,13 @@
     </nav>
   </aside>
 
-  <!-- ============ 主內容 ============ -->
   <main class="main-content">
 
-    <!-- 手機版頂部 -->
     <header class="mobile-header">
       <button class="hamburger" id="hamburger" title="選單">☰</button>
       <span class="mobile-title">🏰 城戰沙盤</span>
     </header>
 
-    <!-- 模式狀態條 -->
     <div class="mode-bar local" id="modeBar">
       <div class="mode-bar-inner">
         <span class="mode-indicator" id="modeIndicator">🖥️ 本機模式</span>
@@ -351,6 +347,16 @@
     <!-- ============ 城池數據 ============ -->
     <section id="tab-cities" class="tab-content">
 
+      <!-- 🗺️ 戰區管理（v8.5.1 加回） -->
+      <div class="card">
+        <div class="card-title">🗺️ 戰區管理</div>
+        <div id="zoneList" class="flex-row"></div>
+        <div class="form-row mt-8">
+          <input type="text" id="newZoneName" placeholder="新戰區名稱">
+          <button class="btn btn-primary btn-sm" id="btnAddZone">＋ 新增戰區</button>
+        </div>
+      </div>
+
       <!-- ① 城池清單 -->
       <div class="card">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -430,10 +436,17 @@
           <div id="cityList"></div>
         </div>
 
-        <div class="alliance-dist-summary" id="allianceDistSummary"></div>
+        <!-- v8.5.1：盟分配摘要摺疊 -->
+        <details class="alliance-dist-details" id="allianceDistDetails">
+          <summary class="alliance-dist-summary-header">
+            <span>📊 各盟兵力分佈</span>
+            <span class="summary-toggle-icon">▼</span>
+          </summary>
+          <div class="alliance-dist-summary" id="allianceDistSummary"></div>
+        </details>
       </div>
 
-      <!-- ② 地圖路線管理（v8.5 新增） -->
+      <!-- ② 地圖路線管理 -->
       <div class="card">
         <div class="card-title">② 🛣️ 地圖路線管理</div>
         <div class="text-dim" style="margin-bottom:8px;">
@@ -448,7 +461,7 @@
       <div class="card">
         <div class="card-title">③ ⚔️ 宣戰指示</div>
         <div class="text-dim" style="margin-bottom:8px;">
-          ＊定義「誰打誰」「誰守誰」。
+          ＊定義「誰打誰」「誰守誰」。每個方向只能一種宣戰類型。
         </div>
         <div class="war-list" id="warList"></div>
         <button class="btn btn-primary btn-sm mt-8" id="btnAddWarLine">➕ 新增宣戰指示</button>
@@ -551,18 +564,16 @@
       </div>
     </section>
 
-    <!-- ============ v8.5：地圖（路線圖 + 動態圖） ============ -->
+    <!-- ============ 地圖 ============ -->
     <section id="tab-map" class="tab-content">
       <div class="card">
         <div class="card-title">🗺️ 地圖</div>
 
-        <!-- 子檢視切換 -->
         <div class="map-view-tabs">
           <button class="map-view-tab active" data-map-view="route">🛣️ 路線圖</button>
           <button class="map-view-tab" data-map-view="dynamic">📊 動態圖</button>
         </div>
 
-        <!-- 路線圖 -->
         <div id="mapRouteWrap">
           <div class="map-toolbar">
             <button class="btn btn-ghost btn-sm" id="btnMapEditRoute">✏️ 編輯路線：關</button>
@@ -575,7 +586,6 @@
           </div>
         </div>
 
-        <!-- 動態圖 -->
         <div id="mapDynamicWrap" style="display:none;">
           <div class="text-dim mt-8">⚔️ 紅箭頭 = 進攻；🛡️ 綠箭頭 = 協防；✕ = 已淪陷；👑 = 首都；⚡ = 被圍攻</div>
           <div id="vizContainer" class="viz-container">
@@ -820,7 +830,7 @@
     <!-- ============ 戰鬥規則 ============ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.5）</div>
+        <div class="card-title">📖 城戰計算規則（v8.5.1）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -855,28 +865,38 @@
             <li>城牆每 30 秒結算一次，由「未分配到守方兵力的攻方兵力」造成傷害。</li>
             <li>城牆歸零 → 城池淪陷，所有相關路線立刻終止。</li>
           </ul>
-          <h2>六、地圖路線（v8.5 新增）</h2>
+          <h2>六、地圖路線</h2>
           <ul>
             <li><b>定義</b>：兩城之間是否有「接觸」，無向圖。</li>
             <li><b>建立方式</b>：列表新增 / 拖曳連線 / Excel 匯入。</li>
             <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
-            <li><b>目前不強制驗證</b>宣戰時必須有路線（日後可加）。</li>
           </ul>
-          <h2>七、協作模式</h2>
+          <h2>七、宣戰指示（v8.5.1）</h2>
+          <ul>
+            <li><b>類型</b>：進攻 / 防守 / 協防（路線：黃色）。</li>
+            <li><b>去重</b>：每個方向（A→B）只能一種宣戰類型。</li>
+            <li><b>暫不驗證</b>路線接觸（日後可加）。</li>
+          </ul>
+          <h2>八、出兵指示（v8.5.1）</h2>
+          <ul>
+            <li>每個方向（A→B）只能一種出兵指示。</li>
+            <li>由宣戰指示衍生，設定派兵 %。</li>
+          </ul>
+          <h2>九、協作模式</h2>
           <ul>
             <li><b>個人雲端沙盤</b>：每個帳號一份，即時自動同步。</li>
             <li><b>房間雲端沙盤</b>：房主/幹部+手動上載。</li>
             <li><b>沙盤數據 Tab</b>：查看所有沙盤，載入到自己的。</li>
             <li><b>Excel 協作</b>：CSV 或複製貼上批次匯入。</li>
           </ul>
-          <h2>八、帳號與權限</h2>
+          <h2>十、帳號與權限</h2>
           <ul>
             <li><b>超級管理員</b>：最高權限。</li>
             <li><b>管理員</b>：可停用帳號、修改 extraPerms。</li>
             <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
             <li><b>成員</b>：本機推演、加入房間、管理自己帳號。</li>
           </ul>
-          <h2>九、推演總結</h2>
+          <h2>十一、推演總結</h2>
           <ul>
             <li>推演結束後，可至「📊 推演總結」Tab 查看結果。</li>
             <li>顯示：盟兵力分佈、城池最終狀態、推演重點、時間軸。</li>
@@ -997,10 +1017,10 @@
   </div>
 </div>
 
-<!-- ============ Excel 匯入對話框（v8.5：4 表單） ============ -->
+<!-- ============ Excel 匯入對話框 ============ -->
 <div class="modal-overlay" id="excelImportModal">
   <div class="modal-box modal-lg">
-    <h3>📊 匯入資料（v8.5）</h3>
+    <h3>📊 匯入資料</h3>
     <div class="modal-scroll">
       <div class="text-dim" style="margin-bottom:10px;">
         ＊每個區塊獨立匯入，匯入前會確認是否覆蓋。<br>
@@ -1008,7 +1028,6 @@
         ＊第一列為表頭，欄位順序不拘。
       </div>
 
-      <!-- ① 盟名單 -->
       <div class="section-label" style="color:var(--neon-purple);">① 🤝 盟名單</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="alliances">📁 上傳 CSV</button>
@@ -1019,7 +1038,6 @@
       <input type="file" id="excelAlliancesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelAlliancesText" class="excel-textarea" placeholder="盟名稱,盟徽,人數,總戰力,陣營&#10;帝盟,帝,100,20000,敵方&#10;秦盟,秦,90,18000,敵方&#10;鼎盟,鼎,80,16000,敵方"></textarea>
 
-      <!-- ② 城池表 -->
       <div class="section-label" style="color:var(--neon-blue);">② 🏰 城池表</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="cities">📁 上傳 CSV</button>
@@ -1030,7 +1048,6 @@
       <input type="file" id="excelCitiesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,等級,人數,總戰力,總隊數,冷卻,城牆,防守開始,首都&#10;洛陽,司隸,鼎盟,敵方,10,100,100000,100,5,30,19:00,是&#10;函谷關,司隸,秦盟,敵方,9,80,80000,80,5,20,19:00,"></textarea>
 
-      <!-- ③ 地圖路線表 -->
       <div class="section-label" style="color:var(--neon-yellow);">③ 🛣️ 地圖路線表</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="mapRoutes">📁 上傳 CSV</button>
@@ -1041,7 +1058,6 @@
       <input type="file" id="excelMapRoutesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelMapRoutesText" class="excel-textarea" placeholder="洛陽-函谷關&#10;洛陽-洛陽北&#10;洛陽北-洛陽西"></textarea>
 
-      <!-- ④ 宣戰表 -->
       <div class="section-label" style="color:var(--neon-red);">④ ⚔️ 宣戰表</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="routes">📁 上傳 CSV</button>
@@ -1052,7 +1068,6 @@
       <input type="file" id="excelRoutesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelRoutesText" class="excel-textarea" placeholder="出兵城,目標城,類型,戰前%,復活%,順序&#10;洛陽,函谷關,進攻,50,50,1&#10;洛陽北,洛陽,防守,30,30,1"></textarea>
 
-      <!-- 預覽 -->
       <div class="excel-preview" id="excelPreview">
         <span class="text-dim">請在任一區塊填入資料</span>
       </div>
@@ -1063,7 +1078,7 @@
   </div>
 </div>
 
-<!-- ============ 城池編輯 Modal（v8.5：加等級） ============ -->
+<!-- ============ 城池編輯 Modal ============ -->
 <div class="modal-overlay" id="cityModal">
   <div class="modal-box modal-lg">
     <h3 id="cityModalTitle">🏰 新增城池</h3>
@@ -1165,13 +1180,13 @@
 </div>
 
 <!-- ============ 載入 JS ============ -->
-<script src="js/simulation.js?v=20260927_2300"></script>
-<script src="js/core.js?v=20260927_2300"></script>
-<script src="js/firebase.js?v=20260927_2300"></script>
-<script src="js/auth.js?v=20260927_2300"></script>
-<script src="js/data.js?v=20260927_2300"></script>
-<script src="js/ui.js?v=20260927_2300"></script>
-<script src="js/summary.js?v=20260927_2300"></script>
-<script src="js/main.js?v=20260927_2300"></script>
+<script src="js/simulation.js?v=20260927_2330"></script>
+<script src="js/core.js?v=20260927_2330"></script>
+<script src="js/firebase.js?v=20260927_2330"></script>
+<script src="js/auth.js?v=20260927_2330"></script>
+<script src="js/data.js?v=20260927_2330"></script>
+<script src="js/ui.js?v=20260927_2330"></script>
+<script src="js/summary.js?v=20260927_2330"></script>
+<script src="js/main.js?v=20260927_2330"></script>
 </body>
 </html>
