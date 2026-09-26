@@ -1,6 +1,6 @@
 /* ============================================================================
- * auth.js — 認證模組 + 帳號管理 + 入口門禁（v8.2：移除訪客）
- * v8.2
+ * auth.js — 認證模組 + 帳號管理 + 入口門禁（v8.3）
+ * v8.3：移除訪客 + 帳號 Tab 顯示 + 登出回入口 + 嚴格登入門禁
  * ========================================================================== */
 (function(){
 'use strict';
@@ -195,10 +195,22 @@ const Auth = (() => {
     emit(EVT.AUTH, state.auth);
   }
 
-  function logout(){
-    /* ★ v8.2：登出前先儲存個人沙盤 */
+  async function logout(){
+    /* ★ v8.2：登出前先儲存個人沙盤（等儲存完成再清狀態） */
     if(state.auth.signedIn && window.SLG.saveMySandbox){
-      window.SLG.saveMySandbox().catch(e => console.warn('登出前儲存失敗', e));
+      try{
+        await window.SLG.saveMySandbox();
+        logSystem('💾 登出前已儲存個人沙盤');
+      }catch(e){
+        console.warn('登出前儲存失敗', e);
+      }
+    }
+
+    /* ★ v8.3：若在房間內，先中斷連線 */
+    if(window.SLG.isConnected && window.SLG.isConnected()){
+      try{
+        window.SLG.disconnectFirebase();
+      }catch(e){ console.warn('中斷連線失敗', e); }
     }
 
     state.auth = {
@@ -219,6 +231,11 @@ const Auth = (() => {
     localStorage.removeItem(window.SLG.ACCOUNT_UID_KEY);
     emit(EVT.AUTH, state.auth);
     logSystem('🚪 已登出');
+
+    /* ★ v8.3：登出後回到入口遮罩 */
+    if(window.SLG.EntryGate){
+      window.SLG.EntryGate.showForm();
+    }
   }
 
   async function updateDisplayName(newName){
@@ -760,12 +777,146 @@ const EntryGate = (() => {
 })();
 
 /* ============================================================
+   ★ v8.3：帳號 Tab UI（renderAuthUI / bindAuthUI）
+   ============================================================ */
+function renderAuthUI(){
+  const a = state.auth;
+  const guestPanel = document.getElementById('authGuestPanel');
+  const userPanel  = document.getElementById('authUserPanel');
+
+  if(!a.signedIn){
+    if(guestPanel) guestPanel.style.display = '';
+    if(userPanel)  userPanel.style.display = 'none';
+    return;
+  }
+
+  if(guestPanel) guestPanel.style.display = 'none';
+  if(userPanel)  userPanel.style.display = '';
+
+  /* 頭像（用顯示名首字） */
+  const avatarEl = document.getElementById('authAvatar');
+  if(avatarEl){
+    const ch = (a.displayName || a.username || '👤').trim().charAt(0) || '👤';
+    avatarEl.textContent = ch;
+  }
+
+  /* 名稱 / 帳號 */
+  const nameEl = document.getElementById('authDisplayName');
+  if(nameEl) nameEl.textContent = a.displayName || '—';
+
+  const userEl = document.getElementById('authUsername');
+  if(userEl) userEl.textContent = '@' + (a.username || '—');
+
+  /* 角色 chip */
+  const roleEl = document.getElementById('authRoleChip');
+  if(roleEl){
+    roleEl.textContent = ROLE_LABELS[a.role] || a.role;
+    roleEl.className = 'auth-role-chip ' + (ROLE_CLASS[a.role] || 'role-guest');
+  }
+
+  /* 帳號資訊 */
+  const metaEl = document.getElementById('authMeta');
+  if(metaEl){
+    const rows = [
+      ['帳號', a.username || '—'],
+      ['顯示名稱', a.displayName || '—'],
+      ['角色', ROLE_LABELS[a.role] || a.role],
+      ['狀態', a.status === 'active' ? '✅ 啟用' : (a.status === 'suspended' ? '⏸️ 停用' : a.status || '—')],
+    ];
+    metaEl.innerHTML = rows.map(([k, v]) =>
+      `<div class="row"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`
+    ).join('');
+  }
+
+  /* 顯示名稱輸入框預填 */
+  const editNameEl = document.getElementById('editDisplayName');
+  if(editNameEl) editNameEl.value = a.displayName || '';
+
+  /* 管理權限提示卡 */
+  const adminHint = document.getElementById('authAdminHint');
+  const adminHintText = document.getElementById('authAdminHintText');
+  if(adminHint){
+    if(Auth.isAdmin()){
+      adminHint.style.display = '';
+      if(adminHintText){
+        adminHintText.textContent = Auth.isSuperAdmin()
+          ? '👑 您擁有最高權限，可管理所有帳號、查閱密碼、修改角色。'
+          : '🛡️ 您為管理員，可停用帳號、修改額外權限。';
+      }
+    } else {
+      adminHint.style.display = 'none';
+    }
+  }
+}
+
+function bindAuthUI(){
+  /* ── 更新顯示名稱 ── */
+  const btnName = document.getElementById('btnUpdateDisplayName');
+  if(btnName && !btnName.dataset.bound){
+    btnName.dataset.bound = '1';
+    btnName.addEventListener('click', async () => {
+      const el = document.getElementById('editDisplayName');
+      const newName = (el?.value || '').trim();
+      if(!newName){ alert('請輸入顯示名稱'); return; }
+      btnName.disabled = true;
+      try{
+        await Auth.updateDisplayName(newName);
+        alert('✅ 顯示名稱已更新');
+        renderAuthUI();
+      }catch(e){
+        alert('❌ 更新失敗：' + e.message);
+      }finally{
+        btnName.disabled = false;
+      }
+    });
+  }
+
+  /* ── 更新密碼 ── */
+  const btnPwd = document.getElementById('btnUpdatePassword');
+  if(btnPwd && !btnPwd.dataset.bound){
+    btnPwd.dataset.bound = '1';
+    btnPwd.addEventListener('click', async () => {
+      const oldEl = document.getElementById('editOldPassword');
+      const newEl = document.getElementById('editNewPassword');
+      const oldPwd = oldEl?.value || '';
+      const newPwd = newEl?.value || '';
+      if(!oldPwd || !newPwd){ alert('請輸入目前密碼與新密碼'); return; }
+      btnPwd.disabled = true;
+      try{
+        await Auth.updatePassword(oldPwd, newPwd);
+        alert('✅ 密碼已更新');
+        if(oldEl) oldEl.value = '';
+        if(newEl) newEl.value = '';
+      }catch(e){
+        alert('❌ 更新失敗：' + e.message);
+      }finally{
+        btnPwd.disabled = false;
+      }
+    });
+  }
+
+  /* ── 前往帳號管理 ── */
+  const btnGoto = document.getElementById('btnGotoAccounts');
+  if(btnGoto && !btnGoto.dataset.bound){
+    btnGoto.dataset.bound = '1';
+    btnGoto.addEventListener('click', () => {
+      const btn = document.querySelector('.top-nav button[data-tab="tab-accounts"]');
+      if(btn) btn.click();
+    });
+  }
+
+  renderAuthUI();
+}
+
+/* ============================================================
    暴露
    ============================================================ */
 Object.assign(window.SLG, {
   Auth,
   Accounts,
   EntryGate,
+  renderAuthUI,
+  bindAuthUI,
 });
 
 })();

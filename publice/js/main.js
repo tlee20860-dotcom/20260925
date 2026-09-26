@@ -82,12 +82,15 @@ function effectiveCanImportExcel(){
 function applyPermissions(){
   const signedIn = state.auth.signedIn;
 
-  /* ── 1. Tab 可見性（v8.2 最終） ── */
+function applyPermissions(){
+  const signedIn = state.auth.signedIn;
+
+  /* ── 1. Tab 可見性（v8.3 最終） ── */
   const guestAllowed  = ['tab-rules'];
   const memberAllowed = [
     'tab-room', 'tab-alliances', 'tab-cities', 'tab-deploy',
     'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
-    'tab-sandbox', 'tab-rules'
+    'tab-sandbox', 'tab-account', 'tab-rules'
   ];
   const adminAllowed  = [
     'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
@@ -99,6 +102,7 @@ function applyPermissions(){
     'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
     'tab-sandbox', 'tab-account', 'tab-accounts', 'tab-rules'
   ];
+  // ...（其餘不變）
 
   document.querySelectorAll('.top-nav button[data-tab]').forEach(btn => {
     const tabId = btn.dataset.tab;
@@ -652,6 +656,21 @@ function bindUI(){
 
   /* ── 帳號 UI ── */
   if(window.SLG.bindAuthUI) window.SLG.bindAuthUI();
+  /* ── ★ v8.3：登出按鈕 ── */
+const btnLogout = document.getElementById('btnLogout');
+if(btnLogout){
+  btnLogout.addEventListener('click', async () => {
+    showConfirm('登出', '確定要登出嗎？\n\n登出前會自動儲存你的個人沙盤，並中斷目前的房間連線。', async () => {
+      try{
+        await Auth().logout();
+      }catch(e){
+        console.warn('登出失敗', e);
+        alert('登出失敗：' + e.message);
+      }
+    });
+  });
+}
+  
 
   /* ── 指揮官名稱 ── */
   const nameInput = document.getElementById('commanderName');
@@ -1155,11 +1174,30 @@ async function refreshSandboxList(){
 function bindEvents(){
   on(EVT.DEBUG, (p) => R().renderDebug(p));
 
-  on(EVT.AUTH, () => {
-    if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
-    applyPermissions();
-    updateModeBar();
-  });
+    on(EVT.AUTH, () => {
+  if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
+  applyPermissions();
+  updateModeBar();
+
+  /* ★ v8.3：登出時隱藏所有 Tab 內容 */
+  if(!state.auth.signedIn){
+    hideAllTabContent();
+  } else {
+    /* ★ v8.3：登入時自動切到「房間連線」Tab */
+    const roomBtn = document.querySelector('.top-nav button[data-tab="tab-room"]');
+    if(roomBtn && roomBtn.style.display !== 'none'){
+      roomBtn.click();
+    }
+  }
+
+  /* ★ v8.3：認證變更時，若帳號管理 Tab 可見則重整 */
+  if(state.auth.signedIn && Auth() && (Auth().isSuperAdmin() || Auth().isAdmin())){
+    const accTab = document.getElementById('tab-accounts');
+    if(accTab && accTab.classList.contains('active')){
+      window.SLG.Accounts.refresh();
+    }
+  }
+});
 
   on(EVT.CONN, () => {
     R().renderHealth();
@@ -1261,6 +1299,14 @@ function bindEvents(){
 /* ============================================================
    啟動
    ============================================================ */
+   
+   
+   /* ★ v8.3：未登入時隱藏所有 Tab 內容 */
+function hideAllTabContent(){
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.top-nav button').forEach(b => b.classList.remove('active'));
+}
+   
 function boot(){
   /* 1. 讀取本機狀態 */
   loadState();
@@ -1331,33 +1377,35 @@ function boot(){
   if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
   applyPermissions();
 
-  /* 10. 非同步初始化認證 */
-  (async () => {
-    let ok = false;
-    if(window.SLG.Auth){
-      ok = await window.SLG.Auth.initFirebaseAuth();
-    }
-    let loggedIn = false;
-    if(ok){
-      loggedIn = await window.SLG.Auth.restoreSession();
-    }
+/* 10. 非同步初始化認證 */
+(async () => {
+  let ok = false;
+  if(window.SLG.Auth){
+    ok = await window.SLG.Auth.initFirebaseAuth();
+  }
+  let loggedIn = false;
+  if(ok){
+    loggedIn = await window.SLG.Auth.restoreSession();
+  }
 
-    if(loggedIn){
-      if(window.SLG.EntryGate) window.SLG.EntryGate.hide();
-      if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
-      applyPermissions();
-      R().renderAll();
-      logSystem('🚪 已自動登入，跳過入口');
-      /* 載入沙盤清單（若在沙盤數據 Tab） */
-      if(document.getElementById('tab-sandbox')?.classList.contains('active')){
-        refreshSandboxList();
-      }
-    } else {
-      if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
-      if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
-      applyPermissions();
+  if(loggedIn){
+    if(window.SLG.EntryGate) window.SLG.EntryGate.hide();
+    if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
+    applyPermissions();
+    R().renderAll();
+    logSystem('🚪 已自動登入，跳過入口');
+    /* 載入沙盤清單（若在沙盤數據 Tab） */
+    if(document.getElementById('tab-sandbox')?.classList.contains('active')){
+      refreshSandboxList();
     }
-  })();
+  } else {
+    /* ★ v8.3：未登入 → 顯示入口 + 隱藏所有 Tab 內容 */
+    hideAllTabContent();
+    if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
+    if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
+    applyPermissions();
+  }
+})();
 
   console.log('%c[沙盤 v8.2] 雲端個人沙盤 + 房間沙盤（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
