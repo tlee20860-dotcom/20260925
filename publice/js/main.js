@@ -79,8 +79,6 @@ function effectiveCanImportExcel(){
   return Auth() && Auth().canImportExcel();
 }
 
-function applyPermissions(){
-  const signedIn = state.auth.signedIn;
 
 function applyPermissions(){
   const signedIn = state.auth.signedIn;
