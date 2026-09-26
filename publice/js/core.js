@@ -12,7 +12,6 @@ const {
   hhmmToMinutes, minutesToHHMM, fmtSimTime, clamp, yieldToMain, computeAllocation,
   COMBAT_TICK, SIM_CHUNK, VIZ_SNAPSHOT_INTERVAL, DYN_ROUTE_SAMPLE_SEC
 } = window.SLG;
-
 /* ============================================================
    常量
    ============================================================ */
