@@ -1580,28 +1580,35 @@ const WarManager = (() => {
      依類型取得可選目標城
      ============================================================ */
   function getTargetsForType(srcCityId, type){
-    if(type === 'attack'){
-      /* 進攻：敵方 / 共同敵方 / NPC */
-      return state.cities.filter(c =>
-        c.id !== srcCityId &&
-        (c.side === 'enemy' || c.side === 'common_enemy' || c.side === 'npc')
-      );
-    }
-    if(type === 'defend'){
-      /* 防守：本方 */
-      return state.cities.filter(c =>
-        c.id !== srcCityId && c.side === 'self'
-      );
-    }
-    if(type === 'assist'){
-      /* 協防：同盟 */
-      return state.cities.filter(c =>
-        c.id !== srcCityId && c.side === 'ally'
-      );
-    }
-    return [];
+  if(type === 'attack'){
+    /* 進攻：敵方 / 共同敵方 / NPC */
+    return state.cities.filter(c =>
+      c.id !== srcCityId &&
+      (c.side === 'enemy' || c.side === 'common_enemy' || c.side === 'npc')
+    );
   }
-
+  if(type === 'defend'){
+    /* 防守：本方（城 side = self，或盟 side = self） */
+    return state.cities.filter(c => {
+      if(c.id === srcCityId) return false;
+      if(c.side === 'self') return true;
+      const a = state.alliances.find(al => al.id === c.allianceId);
+      if(a && a.side === 'self') return true;
+      return false;
+    });
+  }
+  if(type === 'assist'){
+    /* 協防：同盟（城 side = ally，或盟 side = ally） */
+    return state.cities.filter(c => {
+      if(c.id === srcCityId) return false;
+      if(c.side === 'ally') return true;
+      const a = state.alliances.find(al => al.id === c.allianceId);
+      if(a && a.side === 'ally') return true;
+      return false;
+    });
+  }
+  return [];
+}
   /* 檢查某方向是否已有宣戰 */
   function findWarLine(srcId, tgtId){
     const src = state.cities.find(c => c.id === srcId);
@@ -2035,21 +2042,28 @@ const RouteManager = (() => {
   }
 
   function addEmptyLine(){
-    if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
-    const a = state.cities[0];
-    const b = state.cities.find(c => c.id !== a.id);
-    if(!a || !b) return;
-    if(window.SLG.findRoute(a.id, b.id)){
-      alert('這兩城之間已有路線');
-      return;
-    }
-    const r = window.SLG.addRoute(a.id, b.id);
-    if(r){
-      if(window.SLG.saveState) window.SLG.saveState();
-      render();
-      if(window.SLG.GameMap) window.SLG.GameMap.render();
+  if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
+
+  const cities = state.cities;
+  /* 找一對還沒建立過路線的城池組合 */
+  for(let i = 0; i < cities.length; i++){
+    for(let j = i + 1; j < cities.length; j++){
+      const a = cities[i];
+      const b = cities[j];
+      if(!window.SLG.findRoute(a.id, b.id)){
+        const r = window.SLG.addRoute(a.id, b.id);
+        if(r){
+          if(window.SLG.saveState) window.SLG.saveState();
+          render();
+          if(window.SLG.GameMap) window.SLG.GameMap.render();
+          return;
+        }
+      }
     }
   }
+
+  alert('所有城池組合都已有路線');
+}
 
   function render(){
     const el = document.getElementById('routeManagerList');
