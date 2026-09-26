@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI
- * v8.4
+ * v8.5
  * ========================================================================== */
 (function(){
 'use strict';
@@ -26,6 +26,10 @@ const EDIT_LOCK_TTL = 30000;
 /* v8.2 雲端同步 debounce */
 const SANDBOX_SYNC_DEBOUNCE = 1500;
 const ROOM_SNAPSHOT_DEBOUNCE = 2000;
+
+/* v8.5：NPC 預設盟名稱 */
+const NPC_ALLIANCE_NAME = 'NPC';
+const NPC_ALLIANCE_ICON = '🏰';
 
 const PERCENT_OPTIONS = [0, 17, 33, 50, 67, 84, 100];
 
@@ -98,6 +102,8 @@ const EVT = {
   MY_SANDBOX_UPDATED:'sandbox:mine',
   SANDBOXES_LIST_UPDATED:'sandbox:list',
   ROOM_SNAPSHOT_UPDATED:'room:snapshot',
+  /* v8.5：路線事件 */
+  ROUTES_UPDATED:'routes:updated',
 };
 
 /* ============================================================
@@ -266,6 +272,8 @@ const state = {
     siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1
   },
   alliances:[], zones:[], cities:[],
+  /* v8.5：地圖路線（無向圖） */
+  routes: [],
   lamport:0, settingsRev:0,
   entityRev:{ alliance:{}, zone:{}, city:{} },
   dirty:{
@@ -355,6 +363,7 @@ function saveState(){
       alliances: state.alliances,
       zones: state.zones,
       cities: state.cities,
+      routes: state.routes,
       dynRows: state.dynRows.slice(-5000),
       narrativeLines: state.narrativeLines.slice(-1000),
       chatMessages: state.chatMessages.slice(-200),
@@ -407,6 +416,8 @@ function loadState(){
     if(Array.isArray(d.cities)){
       state.cities = d.cities.map(c => {
         if(!c.defStartTime) c.defStartTime = '19:00';
+        /* v8.5：舊沙盤相容：level 預設 1 */
+        if(typeof c.level !== 'number') c.level = 1;
         const migrate = arr => (arr||[]).map(t => ({
           cityId: t.cityId,
           preWarPercent: t.preWarPercent !== undefined
@@ -419,6 +430,15 @@ function loadState(){
         c.defendTargets = migrate(c.defendTargets);
         return c;
       });
+    }
+
+    /* v8.5：舊沙盤相容：routes 預設空 */
+    if(Array.isArray(d.routes)){
+      state.routes = d.routes.map(r => ({
+        id: r.id || uid(),
+        cityAId: r.cityAId || '',
+        cityBId: r.cityBId || '',
+      })).filter(r => r.cityAId && r.cityBId);
     }
 
     if(Array.isArray(d.dynRows)) state.dynRows = d.dynRows.slice(-5000);
@@ -592,6 +612,7 @@ function buildFullSnapshot(){
     alliances: JSON.parse(JSON.stringify(state.alliances)),
     zones: JSON.parse(JSON.stringify(state.zones)),
     cities: JSON.parse(JSON.stringify(state.cities)),
+    routes: JSON.parse(JSON.stringify(state.routes)),
     clientId: state.myClientId,
     name: state.commanderName
   };
@@ -606,6 +627,7 @@ function applyFullSnapshot(snap){
   state.alliances = JSON.parse(JSON.stringify(snap.alliances || []));
   state.zones     = JSON.parse(JSON.stringify(snap.zones     || []));
   state.cities    = JSON.parse(JSON.stringify(snap.cities    || []));
+  state.routes    = JSON.parse(JSON.stringify(snap.routes    || []));
   state.entityRev = { alliance:{}, zone:{}, city:{} };
   for(const item of [
     ['alliance', state.alliances],
@@ -627,6 +649,7 @@ function buildSandboxData(){
     alliances: JSON.parse(JSON.stringify(state.alliances)),
     zones: JSON.parse(JSON.stringify(state.zones)),
     cities: JSON.parse(JSON.stringify(state.cities)),
+    routes: JSON.parse(JSON.stringify(state.routes)),
   };
 }
 
@@ -636,6 +659,7 @@ function applySandboxData(data){
   state.alliances = JSON.parse(JSON.stringify(data.alliances || []));
   state.zones     = JSON.parse(JSON.stringify(data.zones     || []));
   state.cities    = JSON.parse(JSON.stringify(data.cities    || []));
+  state.routes    = JSON.parse(JSON.stringify(data.routes    || []));
   state.entityRev = { alliance:{}, zone:{}, city:{} };
   for(const item of [
     ['alliance', state.alliances],
@@ -658,6 +682,72 @@ function getAllianceDist(allianceId){
     .filter(c => c.allianceId === allianceId)
     .reduce((s, c) => s + (Number(c.totalTeams) || 0), 0);
   return { allocatedPower, allocatedTeams };
+}
+
+/* ============================================================
+   v8.5：盟查找 / NPC 預設
+   ============================================================ */
+function getAllianceByName(name){
+  if(!name) return null;
+  return state.alliances.find(a => a.name === name) || null;
+}
+
+/**
+ * 確保有 NPC 盟存在，若無則建立
+ * @returns {Object} NPC 盟物件
+ */
+function ensureNpcAlliance(){
+  let npc = getAllianceByName(NPC_ALLIANCE_NAME);
+  if(npc) return npc;
+  npc = {
+    id: uid(),
+    name: NPC_ALLIANCE_NAME,
+    icon: NPC_ALLIANCE_ICON,
+    side: 'enemy',
+    memberCount: 0,
+    totalPower: 0,
+    avgPower: 0,
+    power: 0,
+  };
+  state.alliances.push(npc);
+  logSystem('已建立預設 NPC 盟');
+  return npc;
+}
+
+/* ============================================================
+   v8.5：路線 CRUD
+   ============================================================ */
+function findRoute(cityAId, cityBId){
+  return state.routes.find(r =>
+    (r.cityAId === cityAId && r.cityBId === cityBId) ||
+    (r.cityAId === cityBId && r.cityBId === cityAId)
+  ) || null;
+}
+
+function addRoute(cityAId, cityBId){
+  if(!cityAId || !cityBId || cityAId === cityBId) return null;
+  if(findRoute(cityAId, cityBId)) return null;
+  const route = { id: uid(), cityAId, cityBId };
+  state.routes.push(route);
+  emit(EVT.ROUTES_UPDATED);
+  return route;
+}
+
+function removeRoute(routeId){
+  const idx = state.routes.findIndex(r => r.id === routeId);
+  if(idx < 0) return false;
+  state.routes.splice(idx, 1);
+  emit(EVT.ROUTES_UPDATED);
+  return true;
+}
+
+function getReachableCityIds(cityId){
+  const ids = [];
+  for(const r of state.routes){
+    if(r.cityAId === cityId) ids.push(r.cityBId);
+    else if(r.cityBId === cityId) ids.push(r.cityAId);
+  }
+  return ids;
 }
 
 /* ============================================================
@@ -837,6 +927,7 @@ Object.assign(window.SLG, {
   HOST_TIMEOUT, EDIT_LOCK_TTL,
   SANDBOX_SYNC_DEBOUNCE, ROOM_SNAPSHOT_DEBOUNCE,
   PERCENT_OPTIONS,
+  NPC_ALLIANCE_NAME, NPC_ALLIANCE_ICON,
   ATTACK_RULES, DEFEND_RULES, SIDE_LABELS, ALLIANCE_SIDE_LABELS,
   ROLE, ROLE_LABELS, ROLE_CLASS, ROLE_ORDER, EVT,
 
@@ -876,6 +967,14 @@ Object.assign(window.SLG, {
   syncAIParamsToUI, readAIParamsFromUI,
 
   getAllianceDist,
+  getAllianceByName,
+  ensureNpcAlliance,
+
+  /* v8.5：路線 API */
+  findRoute,
+  addRoute,
+  removeRoute,
+  getReachableCityIds,
 });
 
 })();

@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.4
+ * v8.5
  * ========================================================================== */
 (function(){
 'use strict';
@@ -82,24 +82,25 @@ function effectiveCanImportExcel(){
 function applyPermissions(){
   const signedIn = state.auth.signedIn;
 
-  /* ── 1. Tab 可見性 ── */
+  /* ── 1. Tab 可見性（v8.5：tab-viz 移除，改為 tab-map） ── */
   const guestAllowed  = ['tab-rules'];
   const memberAllowed = [
     'tab-room', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-summary', 'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+    'tab-summary', 'tab-map', 'tab-dyn', 'tab-narrative', 'tab-chat',
     'tab-sandbox', 'tab-account', 'tab-rules'
   ];
   const adminAllowed  = [
     'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-summary', 'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+    'tab-summary', 'tab-map', 'tab-dyn', 'tab-narrative', 'tab-chat',
     'tab-sandbox', 'tab-account', 'tab-rules'
   ];
   const superAllowed  = [
     'tab-room', 'tab-params', 'tab-alliances', 'tab-cities', 'tab-deploy',
-    'tab-summary', 'tab-viz', 'tab-dyn', 'tab-narrative', 'tab-chat',
+    'tab-summary', 'tab-map', 'tab-dyn', 'tab-narrative', 'tab-chat',
     'tab-sandbox', 'tab-account', 'tab-accounts', 'tab-rules'
   ];
 
+  /* v8.5：側邊欄 nav 使用 .top-nav class */
   document.querySelectorAll('.top-nav button[data-tab]').forEach(btn => {
     const tabId = btn.dataset.tab;
     let allowed = false;
@@ -154,11 +155,19 @@ function applyPermissions(){
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
 
+  /* v8.5：路線管理按鈕 */
+  togglePerm(document.getElementById('btnAddRouteLine'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnMapEditRoute'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnMapRelayout'), true, '');
+  togglePerm(document.getElementById('btnMapFit'), true, '');
+
   /* ── 6. Excel 匯入區 ── */
   const canImportExcel = effectiveCanImportExcel();
   togglePerm(document.getElementById('btnOpenExcelImport'), canImportExcel, '需要 Excel 匯入權限');
   togglePerm(document.getElementById('btnExportCitiesCSV'), signedIn, '請先登入');
   togglePerm(document.getElementById('btnExportRoutesCSV'), signedIn, '請先登入');
+  togglePerm(document.getElementById('btnExportMapRoutesCSV'), signedIn, '請先登入');
+  togglePerm(document.getElementById('btnExportAlliancesCSV'), signedIn, '請先登入');
 
   /* ── 7. 聊天室 ── */
   togglePerm(document.getElementById('btnSendChat'), signedIn, '請先登入');
@@ -334,7 +343,7 @@ function handleSimulationDone(result){
   DYN().populateCityFilters();
   saveState();
 
-  /* ★ v8.4：建立並渲染推演總結 */
+  /* v8.4：建立並渲染推演總結 */
   if(window.SLG.Summary){
     const summary = window.SLG.Summary.build(
       result,
@@ -355,7 +364,7 @@ function handleSimulationDone(result){
   state.isSimulating = false;
   logSystem('✅ 推演完成');
 
-  /* ★ v8.4：自動切到推演總結 Tab */
+  /* v8.4：自動切到推演總結 Tab */
   const summaryTab = document.querySelector('.top-nav button[data-tab="tab-summary"]');
   if(summaryTab && summaryTab.style.display !== 'none'){
     summaryTab.click();
@@ -553,6 +562,8 @@ async function downloadRoomSandbox(){
     await window.SLG.saveMySandbox();
     R().renderAll();
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+    if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+    if(window.SLG.GameMap) window.SLG.GameMap.reset();
     alert('✅ 已下載房間沙盤到你的個人沙盤！');
   }catch(e){
     console.warn(e);
@@ -587,6 +598,8 @@ async function loadSandboxFromList(uid){
     await window.SLG.saveMySandbox();
     R().renderAll();
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+    if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+    if(window.SLG.GameMap) window.SLG.GameMap.reset();
     alert(`✅ 已載入「${fileName}」到你的沙盤！`);
     logSystem(`📥 已載入 ${fileName} 到個人沙盤`);
   }catch(e){
@@ -604,6 +617,7 @@ function backupCurrentSandbox(){
       alliances: JSON.parse(JSON.stringify(state.alliances)),
       zones: JSON.parse(JSON.stringify(state.zones)),
       cities: JSON.parse(JSON.stringify(state.cities)),
+      routes: JSON.parse(JSON.stringify(state.routes)),
     };
     localStorage.setItem(key, JSON.stringify(data));
     logSystem(`💾 已備份目前沙盤（key: ${key}）`);
@@ -621,22 +635,60 @@ function backupCurrentSandbox(){
 }
 
 /* ============================================================
+   v8.5：地圖子檢視切換
+   ============================================================ */
+let currentMapView = 'route';   // 'route' | 'dynamic'
+
+function switchMapView(view){
+  currentMapView = view;
+  document.querySelectorAll('.map-view-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.mapView === view);
+  });
+
+  const routeWrap = document.getElementById('mapRouteWrap');
+  const dynamicWrap = document.getElementById('mapDynamicWrap');
+  if(routeWrap) routeWrap.style.display = (view === 'route') ? '' : 'none';
+  if(dynamicWrap) dynamicWrap.style.display = (view === 'dynamic') ? '' : 'none';
+
+  if(view === 'route'){
+    if(window.SLG.GameMap) window.SLG.GameMap.activate();
+  } else {
+    if(window.SLG.viz) viz().activate();
+  }
+}
+
+/* ============================================================
    事件綁定
    ============================================================ */
 function bindUI(){
-  /* ── 頂部 Tab 切換 ── */
+  /* ── 側邊欄 Tab 切換（v8.5：加入手機自動關閉） ── */
   document.querySelectorAll('.top-nav button').forEach(btn => {
     btn.addEventListener('click', function(){
       document.querySelectorAll('.top-nav button').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
       this.classList.add('active');
       const tabId = this.dataset.tab;
-      document.getElementById(tabId).classList.add('active');
-      if(tabId === 'tab-cities') R().renderCities();
+      const tabEl = document.getElementById(tabId);
+      if(tabEl) tabEl.classList.add('active');
+
+      /* 手機版：點擊後關閉側邊欄 */
+      if(window.innerWidth <= 768){
+        const sidebar = document.getElementById('sidebar');
+        if(sidebar) sidebar.classList.remove('open');
+      }
+
+      if(tabId === 'tab-cities'){
+        R().renderCities();
+        if(window.SLG.CityManager) window.SLG.CityManager.render();
+        if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+      }
       if(tabId === 'tab-alliances') R().renderAlliances();
       if(tabId === 'tab-dyn'){ DYN().setRows(state.dynRows); DYN().populateCityFilters(); }
       if(tabId === 'tab-narrative'){ R().renderNarrative(state.narrativeLines); }
-      if(tabId === 'tab-viz') requestAnimationFrame(() => requestAnimationFrame(() => viz().activate()));
+      if(tabId === 'tab-map'){
+        /* 地圖 Tab：依當前子檢視啟動 */
+        switchMapView(currentMapView);
+      }
       if(tabId === 'tab-params') syncAIParamsToUI();
       if(tabId === 'tab-summary'){
         if(window.SLG.Summary) window.SLG.Summary.render(window.SLG.Summary.getLast());
@@ -656,6 +708,46 @@ function bindUI(){
         const el = document.getElementById('chatMessages');
         if(el) el.scrollTop = el.scrollHeight;
       }
+    });
+  });
+
+  /* ── v8.5：手機漢堡選單 ── */
+  const hamburger = document.getElementById('hamburger');
+  if(hamburger){
+    hamburger.addEventListener('click', () => {
+      const sidebar = document.getElementById('sidebar');
+      if(sidebar) sidebar.classList.toggle('open');
+    });
+  }
+  const sidebarClose = document.getElementById('sidebarClose');
+  if(sidebarClose){
+    sidebarClose.addEventListener('click', () => {
+      const sidebar = document.getElementById('sidebar');
+      if(sidebar) sidebar.classList.remove('open');
+    });
+  }
+  /* 點側邊欄外部關閉（手機版） */
+  document.addEventListener('click', (e) => {
+    if(window.innerWidth > 768) return;
+    const sidebar = document.getElementById('sidebar');
+    const hamburgerEl = document.getElementById('hamburger');
+    if(!sidebar || !sidebar.classList.contains('open')) return;
+    if(sidebar.contains(e.target)) return;
+    if(hamburgerEl && hamburgerEl.contains(e.target)) return;
+    sidebar.classList.remove('open');
+  });
+  /* ESC 關閉 */
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape'){
+      const sidebar = document.getElementById('sidebar');
+      if(sidebar) sidebar.classList.remove('open');
+    }
+  });
+
+  /* ── v8.5：地圖子檢視切換 ── */
+  document.querySelectorAll('.map-view-tab').forEach(tab => {
+    tab.addEventListener('click', function(){
+      switchMapView(this.dataset.mapView);
     });
   });
 
@@ -866,6 +958,7 @@ function bindUI(){
           state.alliances = [];
           state.zones = [];
           state.cities = [];
+          state.routes = [];
           await window.SLG.saveMySandbox();
         }
       }catch(e){}
@@ -928,6 +1021,8 @@ function bindUI(){
     });
     window.SLG.resetAllianceForm();
     R().renderAlliances();
+    if(window.SLG.CityManager) window.SLG.CityManager.render();
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
     saveState();
   });
 
@@ -1023,15 +1118,25 @@ function bindUI(){
     window.SLG.saveCityFromModal();
   });
 
-  /* ★ v8.4：cityModalAI 已移除 */
-  /* ★ v8.4：cm_side / cm_zone 不再觸發路線重繪 */
-
   ['cm_totalPower', 'cm_totalTeams', 'cm_memberCount'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.addEventListener('input', () => {
       window.SLG.updateAutoCalcFields();
     });
   });
+
+  /* ── v8.5：路線管理 ── */
+  if(window.SLG.RouteManager) window.SLG.RouteManager.init();
+
+  /* ── v8.5：地圖 ── */
+  if(window.SLG.GameMap) window.SLG.GameMap.init();
+
+  /* ── v8.5：地圖按鈕 ── */
+  const btnExportMapRoutes = document.getElementById('btnExportMapRoutesCSV');
+  if(btnExportMapRoutes) btnExportMapRoutes.addEventListener('click', window.SLG.exportMapRoutesCSV);
+
+  const btnExportAlliances = document.getElementById('btnExportAlliancesCSV');
+  if(btnExportAlliances) btnExportAlliances.addEventListener('click', window.SLG.exportAlliancesCSV);
 
   /* ── 執行推演 ── */
   const btnSimulate = document.getElementById('btnSimulate');
@@ -1066,7 +1171,7 @@ function bindUI(){
     confirmCb = null;
   });
 
-  /* ── Excel ── */
+  /* ── Excel 匯入 / 匯出 ── */
   const btnOpenExcel = document.getElementById('btnOpenExcelImport');
   if(btnOpenExcel) btnOpenExcel.addEventListener('click', () => {
     if(!requirePerm(() => effectiveCanImportExcel(), 'Excel 匯入')) return;
@@ -1085,18 +1190,33 @@ function bindUI(){
   const excelCancel = document.getElementById('excelImportCancel');
   if(excelCancel) excelCancel.addEventListener('click', window.SLG.closeExcelImportModal);
 
-  const excelConfirm = document.getElementById('excelImportConfirm');
-  if(excelConfirm) excelConfirm.addEventListener('click', window.SLG.doExcelImport);
+  /* v8.5：4 個獨立匯入按鈕 */
+  const btnImpAll = document.getElementById('excelImportAlliancesBtn');
+  if(btnImpAll) btnImpAll.addEventListener('click', window.SLG.doImportAlliances);
 
-  const citiesTextEl = document.getElementById('excelCitiesText');
-  const routesTextEl = document.getElementById('excelRoutesText');
-  if(citiesTextEl) citiesTextEl.addEventListener('input', window.SLG.updateExcelPreview);
-  if(routesTextEl) routesTextEl.addEventListener('input', window.SLG.updateExcelPreview);
+  const btnImpCities = document.getElementById('excelImportCitiesBtn');
+  if(btnImpCities) btnImpCities.addEventListener('click', window.SLG.doImportCities);
 
+  const btnImpMapRoutes = document.getElementById('excelImportMapRoutesBtn');
+  if(btnImpMapRoutes) btnImpMapRoutes.addEventListener('click', window.SLG.doImportMapRoutes);
+
+  const btnImpRoutes = document.getElementById('excelImportRoutesBtn');
+  if(btnImpRoutes) btnImpRoutes.addEventListener('click', window.SLG.doImportRoutes);
+
+  /* 4 個 textarea 的 input 預覽更新 */
+  ['excelAlliancesText','excelCitiesText','excelMapRoutesText','excelRoutesText'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input', window.SLG.updateExcelPreview);
+  });
+
+  /* 4 個上傳檔案按鈕 */
   document.querySelectorAll('[data-excel-upload]').forEach(btn => {
     btn.addEventListener('click', () => {
       const which = btn.dataset.excelUpload;
-      const fileInput = document.getElementById(which === 'cities' ? 'excelCitiesFile' : 'excelRoutesFile');
+      const fileInput = document.getElementById(which === 'cities' ? 'excelCitiesFile' :
+                       which === 'routes' ? 'excelRoutesFile' :
+                       which === 'alliances' ? 'excelAlliancesFile' :
+                       which === 'mapRoutes' ? 'excelMapRoutesFile' : null);
       if(fileInput) fileInput.click();
     });
   });
@@ -1104,37 +1224,37 @@ function bindUI(){
   document.querySelectorAll('[data-excel-clear]').forEach(btn => {
     btn.addEventListener('click', () => {
       const which = btn.dataset.excelClear;
-      const textarea = document.getElementById(which === 'cities' ? 'excelCitiesText' : 'excelRoutesText');
+      const textarea = document.getElementById(which === 'cities' ? 'excelCitiesText' :
+                       which === 'routes' ? 'excelRoutesText' :
+                       which === 'alliances' ? 'excelAlliancesText' :
+                       which === 'mapRoutes' ? 'excelMapRoutesText' : null);
       if(textarea){ textarea.value = ''; window.SLG.updateExcelPreview(); }
     });
   });
 
-  const citiesFileEl = document.getElementById('excelCitiesFile');
-  if(citiesFileEl){
-    citiesFileEl.addEventListener('change', function(){
+  /* 4 個檔案 input */
+  const fileMap = {
+    excelCitiesFile: 'excelCitiesText',
+    excelRoutesFile: 'excelRoutesText',
+    excelAlliancesFile: 'excelAlliancesText',
+    excelMapRoutesFile: 'excelMapRoutesText',
+  };
+  Object.keys(fileMap).forEach(fileId => {
+    const fileEl = document.getElementById(fileId);
+    if(!fileEl) return;
+    fileEl.addEventListener('change', function(){
       if(!this.files || !this.files[0]) return;
       const reader = new FileReader();
       reader.onload = (e) => {
-        document.getElementById('excelCitiesText').value = e.target.result;
+        const textareaId = fileMap[fileId];
+        const ta = document.getElementById(textareaId);
+        if(ta) ta.value = e.target.result;
         window.SLG.updateExcelPreview();
       };
       reader.readAsText(this.files[0], 'UTF-8');
       this.value = '';
     });
-  }
-  const routesFileEl = document.getElementById('excelRoutesFile');
-  if(routesFileEl){
-    routesFileEl.addEventListener('change', function(){
-      if(!this.files || !this.files[0]) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        document.getElementById('excelRoutesText').value = e.target.result;
-        window.SLG.updateExcelPreview();
-      };
-      reader.readAsText(this.files[0], 'UTF-8');
-      this.value = '';
-    });
-  }
+  });
 
   /* ── 聊天室 ── */
   const chatInput = document.getElementById('chatInput');
@@ -1262,6 +1382,14 @@ function bindEvents(){
     if(window.SLG.CityManager) window.SLG.CityManager.render();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+    if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+    if(window.SLG.GameMap){
+      window.SLG.GameMap.reset();
+      const mapTab = document.getElementById('tab-map');
+      if(mapTab && mapTab.classList.contains('active')){
+        window.SLG.GameMap.activate();
+      }
+    }
 
     const gt = document.getElementById('globalTimeLimit');
     if(gt) gt.value = state.settings.timeLimitMin;
@@ -1285,6 +1413,18 @@ function bindEvents(){
   on(EVT.DYN_RESULT, () => {
     DYN().setRows(state.dynRows);
     DYN().populateCityFilters();
+  });
+
+  /* v8.5：路線更新事件 */
+  on(EVT.ROUTES_UPDATED, () => {
+    if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+    if(window.SLG.GameMap){
+      window.SLG.GameMap.reset();
+      const mapTab = document.getElementById('tab-map');
+      if(mapTab && mapTab.classList.contains('active')){
+        window.SLG.GameMap.activate();
+      }
+    }
   });
 
   on(EVT.SIM_TRIGGER, payload => {
@@ -1417,6 +1557,7 @@ function boot(){
   DEPLOY().populateZoneFilter();
   updateModeBar();
   if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
+  if(window.SLG.RouteManager) window.SLG.RouteManager.render();
   applyPermissions();
 
   /* 10. 非同步初始化認證 */
@@ -1447,7 +1588,7 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.4] 雲端個人沙盤 + 房間沙盤 + 推演總結（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.5] 側邊欄 + 地圖 + 路線管理（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 if(document.readyState === 'loading'){
