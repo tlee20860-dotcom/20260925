@@ -839,7 +839,6 @@ function readAIParamsFromUI(){
    暴露到全域
    ============================================================ */
 Object.assign(window.SLG, {
-    ,
   /* 常量 */
   LS_PREFIX, LS_LEGACY_PREFIX, AI_LS_KEY, ACCOUNT_UID_KEY,
   HOST_TIMEOUT, EDIT_LOCK_TTL,
