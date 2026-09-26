@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.2</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.3</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-<link rel="stylesheet" href="style.css?v=20260927">
+<link rel="stylesheet" href="style.css?v=20260928">
 </head>
 <body>
 
@@ -17,14 +17,14 @@
   <div class="entry-card">
     <!-- 載入中 -->
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.2</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.3</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <!-- 登入/註冊表單 -->
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.2</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.3</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -646,7 +646,7 @@
 <!-- ============ 戰鬥規則 ============ -->
 <section id="tab-rules" class="tab-content">
   <div class="card">
-    <div class="card-title">📖 城戰計算規則（v8.2）</div>
+    <div class="card-title">📖 城戰計算規則（v8.3）</div>
     <div class="rules-doc">
       <h2>一、對戰節奏</h2>
       <div class="rule-card ok">
@@ -680,12 +680,12 @@
         <li><b>沙盤數據 Tab</b>：可查看所有（有權限的）沙盤，載入到自己的沙盤。</li>
         <li><b>Excel 協作</b>：用 CSV 或複製貼上批次匯入城池與路線。</li>
       </ul>
-      <h2>六、帳號與權限（v8.2）</h2>
+      <h2>六、帳號與權限（v8.3）</h2>
       <ul>
         <li><b>超級管理員</b>：最高權限，可查閱密碼、修改他人角色。</li>
         <li><b>管理員</b>：可停用帳號、修改 extraPerms、查閱清單（不含密碼）。</li>
         <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
-        <li><b>成員</b>：可本機推演、加入房間、查看成員沙盤。</li>
+        <li><b>成員</b>：可本機推演、加入房間、查看成員沙盤、管理自己的帳號。</li>
         <li><b>訪客</b>：已取消，所有使用者必須註冊登入。</li>
       </ul>
     </div>
@@ -989,12 +989,12 @@
 </div>
 
 <!-- ============ 載入 7 個 JS 檔案 ============ -->
-<script src="js/simulation.js?v=20260927"></script>
-<script src="js/core.js?v=20260927"></script>
-<script src="js/firebase.js?v=20260927"></script>
-<script src="js/auth.js?v=20260927"></script>
-<script src="js/data.js?v=20260927"></script>
-<script src="js/ui.js?v=20260927"></script>
-<script src="js/main.js?v=20260927"></script>
+<script src="js/simulation.js?v=20260928"></script>
+<script src="js/core.js?v=20260928"></script>
+<script src="js/firebase.js?v=20260928"></script>
+<script src="js/auth.js?v=20260928"></script>
+<script src="js/data.js?v=20260928"></script>
+<script src="js/ui.js?v=20260928"></script>
+<script src="js/main.js?v=20260928"></script>
 </body>
 </html>
