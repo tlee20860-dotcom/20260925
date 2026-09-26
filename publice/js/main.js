@@ -645,7 +645,7 @@ function bindUI(){
       if(tabId === 'tab-narrative'){ R().renderNarrative(state.narrativeLines); }
       if(tabId === 'tab-viz') requestAnimationFrame(() => requestAnimationFrame(() => viz().activate()));
       if(tabId === 'tab-params') syncAIParamsToUI();
-      ifif(tabId === 'tab-summary'){
+      if(tabId === 'tab-summary'){
   if(window.SLG.Summary) window.SLG.Summary.render(window.SLG.Summary.getLast());
 }
       if(tabId === 'tab-sandbox'){
