@@ -1,13 +1,175 @@
+/* ============================================================================
+ * style.css — v8.5
+ * 新增：側邊欄 + 手機漢堡 + 地圖子檢視 + 路線管理 + GameMap
+ * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
   --border:#2a3a52;--border-glow:#3b82f6;--text-primary:#e2e8f0;--text-secondary:#94a3b8;
   --text-dim:#64748b;--neon-green:#22ff88;--neon-red:#ff4466;--neon-yellow:#ffcc00;
   --neon-blue:#44aaff;--neon-purple:#aa66ff;--radius:8px;--radius-sm:5px;
+  --sidebar-width:220px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg-deep);color:var(--text-primary);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","Microsoft JhengHei",sans-serif;
   font-size:13px;line-height:1.5;min-height:100vh;overflow-x:hidden;}
+
+/* ============================================================
+   v8.5：應用佈局（側邊欄 + 主內容）
+   ============================================================ */
+.app-layout{
+  display:flex;
+  min-height:100vh;
+}
+
+/* ── 側邊欄 ── */
+.sidebar{
+  width:var(--sidebar-width);
+  background:#0a0e17;
+  border-right:1px solid var(--border);
+  position:fixed;
+  top:0;left:0;bottom:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  z-index:200;
+  display:flex;
+  flex-direction:column;
+  transition:transform 0.25s ease-out;
+  scrollbar-width:thin;
+  scrollbar-color:#2a3a52 transparent;
+}
+.sidebar::-webkit-scrollbar{width:6px;}
+.sidebar::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:3px;}
+
+.sidebar-header{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:14px 14px 12px;
+  border-bottom:1px solid var(--border);
+  flex:0 0 auto;
+}
+.sidebar-logo{
+  font-size:14px;
+  font-weight:700;
+  color:var(--text-primary);
+  flex:1;
+  white-space:nowrap;
+}
+.sidebar-version{
+  font-size:10px;
+  color:var(--text-dim);
+  padding:1px 6px;
+  border:1px solid var(--border);
+  border-radius:8px;
+}
+.sidebar-close{
+  display:none;
+  width:26px;height:26px;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-secondary);
+  font-size:13px;
+  cursor:pointer;
+  font-family:inherit;
+}
+.sidebar-close:hover{color:var(--text-primary);background:rgba(255,255,255,.05);}
+
+/* 側邊欄導覽（保留 .top-nav class 相容既有程式碼） */
+.sidebar-nav.top-nav{
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  padding:8px 0 20px;
+  background:transparent;
+  border:none;
+  overflow-x:visible;
+  flex:1 1 auto;
+}
+.sidebar-nav.top-nav::-webkit-scrollbar{display:none;}
+
+.nav-group{
+  padding:8px 0;
+}
+.nav-group-title{
+  font-size:10px;
+  color:var(--text-dim);
+  font-weight:700;
+  letter-spacing:1px;
+  padding:4px 16px;
+  margin-bottom:2px;
+  text-transform:uppercase;
+}
+
+.sidebar-nav button{
+  position:relative;
+  display:flex;
+  align-items:center;
+  width:100%;
+  background:transparent;
+  color:var(--text-secondary);
+  border:none;
+  border-radius:0;
+  padding:8px 16px;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .15s;
+  white-space:nowrap;
+  font-family:inherit;
+  text-align:left;
+}
+.sidebar-nav button:hover{
+  background:rgba(68,170,255,.08);
+  color:var(--text-primary);
+}
+.sidebar-nav button.active{
+  background:linear-gradient(90deg,rgba(59,130,246,.2),rgba(59,130,246,.02));
+  color:var(--neon-blue);
+  border-left:3px solid var(--neon-blue);
+  padding-left:13px;
+}
+
+/* ── 主內容區 ── */
+.main-content{
+  flex:1;
+  margin-left:var(--sidebar-width);
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  min-height:100vh;
+}
+
+/* ── 手機頂部 ── */
+.mobile-header{
+  display:none;
+  align-items:center;
+  gap:10px;
+  padding:8px 12px;
+  background:rgba(10,14,23,.95);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  position:sticky;
+  top:0;
+  z-index:150;
+}
+.hamburger{
+  width:32px;height:32px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+  font-size:16px;
+  cursor:pointer;
+  font-family:inherit;
+}
+.hamburger:hover{border-color:var(--neon-blue);}
+.mobile-title{
+  font-size:13px;
+  font-weight:700;
+  color:var(--text-primary);
+}
 
 /* ============ 入口門禁（v8.2：訪客已移除） ============ */
 .entry-gate{
@@ -106,7 +268,6 @@ body{background:var(--bg-deep);color:var(--text-primary);
   line-height:1.6;
 }
 
-/* 載入中 */
 .entry-loading{
   display:flex;flex-direction:column;align-items:center;
   padding:20px 0 10px;
@@ -123,15 +284,16 @@ body{background:var(--bg-deep);color:var(--text-primary);
   font-size:11px;color:var(--text-dim);letter-spacing:1px;
 }
 
-/* ============ sticky 包裹層 ============ */
-.sticky-header{position:sticky;top:0;z-index:100;}
-
+/* ============ 模式狀態條 ============ */
 .mode-bar{
   display:flex;align-items:center;
   padding:6px 12px;
   font-size:12px;font-weight:600;
   transition:background .25s,color .25s;
   border-bottom:1px solid var(--border);
+  position:sticky;
+  top:0;
+  z-index:100;
 }
 .mode-bar-inner{
   display:flex;align-items:center;gap:10px;
@@ -179,18 +341,8 @@ body{background:var(--bg-deep);color:var(--text-primary);
   color:var(--text-secondary);
 }
 
-/* ============ top-nav ============ */
-.top-nav{
-  background:rgba(10,14,23,.95);backdrop-filter:blur(12px);
-  border-bottom:1px solid var(--border);padding:6px 8px;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;
-}
-.top-nav::-webkit-scrollbar{display:none}
-.top-nav button{position:relative;flex:0 0 auto;background:var(--bg-card);color:var(--text-secondary);
-  border:1px solid var(--border);border-radius:20px;padding:7px 14px;font-size:12px;
-  font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;font-family:inherit;}
-.top-nav button.active{background:linear-gradient(135deg,#1e3a5f,#2a4a6f);color:var(--neon-blue);
-  border-color:var(--neon-blue);box-shadow:0 0 12px rgba(68,170,255,.25);}
-.main-container{padding:10px;max-width:900px;margin:0 auto;padding-bottom:80px}
+/* ============ 通用元件 ============ */
+.main-container{padding:10px;max-width:900px;margin:0 auto;padding-bottom:80px;width:100%;}
 .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px}
 .card-title{font-size:13px;font-weight:700;color:var(--neon-blue);margin-bottom:10px;
   display:flex;align-items:center;gap:6px;letter-spacing:.5px;}
@@ -303,6 +455,8 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .chip.host{color:var(--neon-yellow);border-color:rgba(255,204,0,.3)}
 .chip.capital{color:var(--neon-yellow);border-color:rgba(255,204,0,.3);background:rgba(255,204,0,.1)}
 .chip.time{color:var(--neon-blue);border-color:rgba(68,170,255,.3);background:rgba(68,170,255,.1)}
+
+/* ============ 態勢圖 / 動態圖 ============ */
 .viz-container{position:relative;width:100%;overflow:auto;background:#060a10;border:1px solid #1a2a3a;border-radius:var(--radius-sm);-webkit-overflow-scrolling:touch;min-height:300px}
 .viz-canvas{display:block;position:absolute;top:0;left:0}
 .viz-container>#vizStatic{position:relative}
@@ -327,6 +481,8 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .clear-city .stat-item .lbl{color:var(--text-secondary);}
 .clear-city .stat-item .val{font-family:"SF Mono","Consolas",monospace;font-weight:600;}
 .clear-city.fallen{opacity:.5;}
+
+/* ============ 動態戰報 ============ */
 .dyn-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;background:#0a101a;border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:10px;}
 .dyn-filter > div{flex:1;min-width:110px;}
 .dyn-filter label{font-size:10px;margin-bottom:2px;}
@@ -347,6 +503,8 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .dyn-table .num-cd{color:var(--text-dim);}
 .dyn-table .num-march{color:var(--neon-yellow);}
 .dyn-table .consumed{color:#ffaa44;font-weight:600;}
+
+/* ============ 規則文件 ============ */
 .rules-doc{background:#0a101a;border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;font-size:12px;line-height:1.75;color:var(--text-primary);}
 .rules-doc h2{font-size:14px;color:var(--neon-blue);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);font-weight:700;}
 .rules-doc h2:first-child{margin-top:0}
@@ -359,7 +517,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .rules-doc .rule-card.ok{border-left-color:var(--neon-green)}
 .rules-doc .rule-card.title{border-left-color:var(--neon-yellow)}
 
-/* 參數設定 */
+/* ============ 參數設定 ============ */
 .param-section{background:#0a101a;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px;}
 .param-section-title{font-size:12px;font-weight:700;color:var(--neon-blue);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 .param-item{margin-bottom:12px;}
@@ -369,16 +527,16 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .param-hint{font-size:10px;color:var(--text-dim);margin-top:4px;line-height:1.5;}
 .param-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;}
 
-/* AI 建議 */
+/* ============ AI 建議 ============ */
 .target-item .ai-hint{font-size:10px;color:var(--neon-green);padding:2px 6px;border-radius:8px;
   background:rgba(34,255,136,.08);border:1px solid rgba(34,255,136,.3);margin-left:4px;white-space:nowrap;}
 .target-item .ai-hint.warn{color:var(--neon-red);background:rgba(255,68,102,.08);border-color:rgba(255,68,102,.3);}
 
-/* 戰報輸出 */
+/* ============ 戰報輸出 ============ */
 .report-output{background:#060a10;border:1px solid #1a2a3a;border-radius:var(--radius-sm);padding:10px;
   font-family:"SF Mono","Consolas",monospace;font-size:11px;line-height:1.8;max-height:500px;overflow-y:auto;color:#8aa8c8;white-space:pre-wrap;word-break:break-all;}
 
-/* 戰報敘事 */
+/* ============ 戰報敘事 ============ */
 #narrativeOutput{line-height:2;font-size:12px;padding:14px;}
 #narrativeOutput .narrative-line{margin-bottom:4px;padding-left:8px;border-left:2px solid transparent;}
 #narrativeOutput .narrative-line.event-info{border-left-color:var(--neon-blue);color:#8ecbff;}
@@ -386,7 +544,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 #narrativeOutput .narrative-line.event-capture{border-left-color:var(--neon-yellow);color:var(--neon-yellow);font-weight:700;}
 #narrativeOutput .narrative-line.event-revive{border-left-color:var(--neon-green);color:var(--neon-green);}
 
-/* 佈兵總覽 */
+/* ============ 佈兵總覽 ============ */
 .deploy-tabs{display:flex;gap:6px;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px;overflow-x:auto;scrollbar-width:none;}
 .deploy-tabs::-webkit-scrollbar{display:none;}
 .deploy-tab{flex:0 0 auto;background:var(--bg-input);color:var(--text-secondary);border:1px solid var(--border);
@@ -426,7 +584,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .deploy-matrix .cell-empty{color:#334155;}
 .deploy-matrix .cell-self{background:#0a101a;color:var(--text-dim);}
 
-/* 連線圖 */
+/* ============ 連線圖（SVG） ============ */
 .deploy-graph-wrap{width:100%;height:65vh;min-height:400px;background:#060a10;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;position:relative;user-select:none;-webkit-user-select:none;touch-action:none;}
 .deploy-graph-wrap svg{width:100%;height:100%;display:block;cursor:grab;}
 .deploy-graph-wrap svg:active{cursor:grabbing;}
@@ -464,7 +622,9 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .graph-zone-label{font-size:13px;font-weight:700;fill:var(--neon-blue);text-anchor:middle;pointer-events:none;paint-order:stroke;stroke:#060a10;stroke-width:4px;stroke-linejoin:round;}
 .graph-zone-sublabel{font-size:10px;fill:var(--text-dim);text-anchor:middle;pointer-events:none;}
 
-/* 盟徽 */
+/* ============================================================
+   v8.5：盟徽快速選擇
+   ============================================================ */
 .icon-quick-row{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:4px 0 8px;}
 .icon-quick-label{font-size:10px;color:var(--text-dim);margin-right:4px;}
 .icon-quick{width:32px;height:32px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:16px;cursor:pointer;transition:all .15s;padding:0;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;}
@@ -473,7 +633,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .alliance-icon{font-size:14px;margin-right:4px;display:inline-block;vertical-align:middle;}
 .chip .alliance-icon{font-size:11px;margin-right:2px;}
 
-/* 退出房間選項 */
+/* ============ 退出房間選項 ============ */
 .exit-options{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
 .exit-option{display:flex;align-items:center;gap:12px;width:100%;padding:12px;background:#0a101a;
   border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;
@@ -486,9 +646,9 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .exit-option[data-exit-choice="keepRoom"]:hover{border-color:var(--neon-green);background:rgba(34,255,136,.08);}
 .exit-option[data-exit-choice="restore"]:hover{border-color:var(--neon-yellow);background:rgba(255,204,0,.08);}
 
-/* Excel 匯入 */
+/* ============ Excel 匯入 ============ */
 .excel-textarea{
-  width:100%;min-height:110px;max-height:200px;
+  width:100%;min-height:90px;max-height:180px;
   font-family:"SF Mono","Consolas",monospace;font-size:11px;
   background:#0a101a;color:var(--text-primary);
   border:1px solid var(--border);border-radius:var(--radius-sm);
@@ -513,7 +673,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .excel-preview .err{color:var(--neon-red);font-weight:700;}
 .excel-preview .warn{color:var(--neon-yellow);font-weight:700;}
 
-/* 聊天室 */
+/* ============ 聊天室 ============ */
 .chat-messages{height:100%;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#060a10;}
 .chat-messages::-webkit-scrollbar{width:6px;}
 .chat-messages::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:3px;}
@@ -528,7 +688,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .badge{display:none;position:absolute;top:-4px;right:-4px;background:var(--neon-red);color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;align-items:center;justify-content:center;padding:0 4px;}
 .badge.show{display:inline-flex;}
 
-/* ============ ★ v8.2 新增：帳號系統樣式 ============ */
+/* ============ 帳號系統 ============ */
 .auth-tabs{
   display:flex;gap:4px;margin-bottom:12px;
   border-bottom:1px solid var(--border);padding-bottom:8px;
@@ -549,7 +709,6 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 }
 .auth-view{padding:4px 0;}
 
-/* 個人資料卡 */
 .auth-profile{
   display:flex;align-items:center;gap:14px;
   padding:12px 0;
@@ -619,7 +778,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
   padding:2px 0;
 }
 
-/* ============ ★ v8.2 新增：權限控制 ============ */
+/* ============ 權限控制 ============ */
 .perm-disabled{
   opacity:.35 !important;
   cursor:not-allowed !important;
@@ -644,7 +803,7 @@ input:disabled,select:disabled,textarea:disabled{
   cursor:not-allowed;
 }
 
-/* ============ ★ v8.2 新增：帳號管理 ============ */
+/* ============ 帳號管理 ============ */
 .accounts-filter{
   display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
   background:#0a101a;border:1px solid var(--border);
@@ -728,7 +887,7 @@ input:disabled,select:disabled,textarea:disabled{
 .ae-perm-item input[type=checkbox]:disabled{cursor:not-allowed;opacity:.5;}
 .ae-perm-item span{flex:1;}
 
-/* ============ ★ v8.2 新增：房間編輯權限 ============ */
+/* ============ 房間編輯權限 ============ */
 #btnRequestRoomEdit{
   font-size:11px;
   padding:4px 10px;
@@ -796,7 +955,7 @@ input:disabled,select:disabled,textarea:disabled{
   flex:0 0 auto;
 }
 
-/* ============ ★ v8.2 新增：沙盤數據 Tab ============ */
+/* ============ 沙盤數據 Tab ============ */
 .sandbox-me-panel{
   background:#0a101a;
   border:1px solid var(--border);
@@ -895,7 +1054,7 @@ input:disabled,select:disabled,textarea:disabled{
   font-style:italic;
 }
 
-/* ============ ★ v8.2 新增：房間空沙盤提示 Modal ============ */
+/* ============ 房間空沙盤提示 Modal ============ */
 .empty-room-options{
   display:flex;
   flex-direction:column;
@@ -951,7 +1110,7 @@ input:disabled,select:disabled,textarea:disabled{
   background:rgba(255,204,0,.06);
 }
 
-/* ============ ★ v8.2 新增：救援工具 ============ */
+/* ============ 救援工具 ============ */
 #rescueCard{
   border-color:rgba(255,68,102,.3);
 }
@@ -962,7 +1121,355 @@ input:disabled,select:disabled,textarea:disabled{
   white-space:nowrap;
 }
 
-/* ============ 響應式 ============ */
+/* ============================================================
+   v8.4：城池清單表格
+   ============================================================ */
+.city-list-filter{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
+  background:#0a101a;border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:10px;margin-bottom:10px;
+}
+.city-list-filter > div{flex:1;min-width:110px;}
+.city-list-filter label{font-size:10px;margin-bottom:2px;}
+.city-list-filter input,.city-list-filter select{font-size:11px;padding:5px 8px;}
+
+.city-batch-bar{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  background:rgba(68,170,255,.08);
+  border:1px solid var(--neon-blue);
+  border-radius:var(--radius-sm);
+  padding:8px 12px;margin-bottom:10px;
+  font-size:11px;
+}
+.city-batch-bar b{color:var(--neon-yellow);font-size:13px;}
+.city-batch-bar select{max-width:140px;padding:4px 22px 4px 6px;font-size:11px;}
+
+.city-table-wrap{
+  overflow:auto;border:1px solid var(--border);
+  border-radius:var(--radius-sm);background:#060a10;
+  -webkit-overflow-scrolling:touch;
+  max-height:70vh;
+}
+.city-table{
+  width:100%;border-collapse:collapse;font-size:11px;min-width:900px;
+}
+.city-table th{
+  position:sticky;top:0;background:#0f1a2a;color:var(--neon-blue);
+  font-weight:700;font-size:10px;padding:8px;
+  text-align:left;border-bottom:2px solid var(--border);
+  border-right:1px solid var(--border);white-space:nowrap;z-index:2;
+}
+.city-table td{
+  padding:6px 8px;border-bottom:1px solid #0f1a2a;
+  border-right:1px solid #0f1a2a;white-space:nowrap;
+  color:var(--text-secondary);vertical-align:middle;
+}
+.city-table tr:hover td{background:rgba(59,130,246,.05);}
+.city-table tr.row-self td{background:rgba(255,204,0,.04);}
+.city-table tr.row-fallen td{opacity:.5;text-decoration:line-through;}
+.city-table .city-name{font-weight:700;color:var(--text-primary);font-size:12px;}
+.city-table .col-num{text-align:right;font-family:"SF Mono","Consolas",monospace;}
+.city-table .city-table-empty{
+  padding:24px!important;text-align:center;
+  color:var(--text-dim);font-style:italic;
+}
+.city-table input[type=checkbox]{width:16px;height:16px;accent-color:#3b82f6;cursor:pointer;}
+
+/* ============================================================
+   v8.4：盟分配摘要
+   ============================================================ */
+.alliance-dist-summary{
+  display:flex;flex-direction:column;gap:6px;
+  margin-top:12px;padding:10px;
+  background:#0a101a;border:1px dashed var(--border);
+  border-radius:var(--radius-sm);
+}
+.alliance-dist-row{
+  display:flex;align-items:center;gap:10px;
+  font-size:11px;color:var(--text-secondary);
+}
+.alliance-dist-row .name{font-weight:600;color:var(--text-primary);min-width:100px;}
+.alliance-dist-row .num{font-family:"SF Mono","Consolas",monospace;min-width:80px;text-align:right;}
+.alliance-dist-row .bar{
+  flex:1;height:8px;background:#0f1a2a;
+  border-radius:4px;overflow:hidden;position:relative;
+}
+.alliance-dist-row .bar-fill{
+  height:100%;background:linear-gradient(90deg,#3b82f6,#22ff88);
+  transition:width .3s;
+}
+.alliance-dist-row .bar-fill.warn{background:linear-gradient(90deg,#ffcc00,#ff4466);}
+.alliance-dist-row .pct{font-family:"SF Mono","Consolas",monospace;min-width:40px;text-align:right;font-weight:700;}
+
+/* ============================================================
+   v8.4：宣戰指示
+   ============================================================ */
+.war-list{display:flex;flex-direction:column;gap:6px;}
+.war-line{
+  display:grid;
+  grid-template-columns:2fr 1.2fr 2fr auto;
+  gap:6px;align-items:center;
+  background:#0a101a;border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:6px 8px;
+}
+.war-line select{font-size:11px;padding:5px 22px 5px 6px;}
+.war-line .btn{flex:0 0 auto;}
+.war-line.invalid{border-color:var(--neon-red);}
+.war-line.invalid select{border-color:var(--neon-red);}
+
+/* ============================================================
+   v8.4：出兵指示
+   ============================================================ */
+.deploy-instr-card{
+  background:#0a101a;border:1px solid var(--border);
+  border-radius:var(--radius);padding:10px;margin-bottom:10px;
+}
+.deploy-instr-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:8px;padding-bottom:6px;
+  border-bottom:1px solid var(--border);
+}
+.deploy-instr-title{font-weight:700;font-size:12px;color:var(--neon-blue);}
+.deploy-instr-total{font-size:11px;color:var(--text-secondary);}
+.deploy-instr-lines{display:flex;flex-direction:column;gap:4px;}
+.deploy-instr-line{
+  display:grid;
+  grid-template-columns:auto 2fr auto auto auto auto;
+  gap:6px;align-items:center;
+  font-size:11px;padding:4px 0;
+}
+.deploy-instr-line .label{color:var(--text-dim);min-width:32px;}
+.deploy-instr-line .target{font-weight:600;color:var(--text-primary);}
+.deploy-instr-line select{width:70px;padding:3px 20px 3px 4px;font-size:11px;}
+.deploy-instr-line input[type=number]{width:48px;padding:3px 4px;font-size:11px;text-align:center;}
+.deploy-instr-footer{
+  margin-top:8px;padding-top:8px;
+  border-top:1px dashed var(--border);
+  font-size:11px;color:var(--text-secondary);
+}
+.deploy-instr-footer.warn{color:var(--neon-red);}
+
+/* ============================================================
+   v8.4：推演總結
+   ============================================================ */
+.summary-overview{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:10px;
+}
+.summary-stat{
+  background:#0a101a;border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:10px;
+  text-align:center;
+}
+.summary-stat .label{font-size:10px;color:var(--text-dim);margin-bottom:4px;}
+.summary-stat .value{
+  font-size:18px;font-weight:700;color:var(--neon-blue);
+  font-family:"SF Mono","Consolas",monospace;
+}
+
+.summary-view-toggle{
+  display:flex;gap:4px;margin-bottom:10px;
+  border-bottom:1px solid var(--border);padding-bottom:8px;
+}
+.summary-view-tab{
+  flex:1;background:var(--bg-input);color:var(--text-secondary);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:6px 10px;font-size:11px;font-weight:600;
+  cursor:pointer;font-family:inherit;transition:all .15s;
+}
+.summary-view-tab.active{
+  background:linear-gradient(135deg,#1e3a5f,#2a4a6f);
+  color:var(--neon-blue);border-color:var(--neon-blue);
+}
+
+.summary-group{
+  margin-bottom:12px;
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  overflow:hidden;
+}
+.summary-group-header{
+  background:#0f1a2a;padding:8px 12px;
+  font-size:12px;font-weight:700;color:var(--text-primary);
+  display:flex;justify-content:space-between;align-items:center;
+  cursor:pointer;
+}
+.summary-group-header .count{font-size:10px;color:var(--text-dim);font-weight:400;}
+.summary-group-body{background:#060a10;}
+
+.summary-city-table{
+  width:100%;border-collapse:collapse;font-size:11px;
+}
+.summary-city-table th{
+  background:#0f1a2a;color:var(--text-secondary);
+  font-weight:600;font-size:10px;padding:6px 8px;
+  text-align:left;border-bottom:1px solid var(--border);
+}
+.summary-city-table td{
+  padding:6px 8px;border-bottom:1px solid #0f1a2a;
+  color:var(--text-secondary);
+}
+.summary-city-table .col-num{
+  text-align:right;font-family:"SF Mono","Consolas",monospace;
+}
+.summary-city-table tr.fallen td{opacity:.5;}
+.summary-city-table tr.critical td{background:rgba(255,204,0,.05);}
+
+.summary-highlight{
+  display:flex;gap:10px;flex-wrap:wrap;
+}
+.summary-highlight-item{
+  flex:1;min-width:140px;
+  background:#0a101a;border:1px solid var(--border);
+  border-left:3px solid var(--neon-blue);
+  border-radius:var(--radius-sm);padding:10px;
+}
+.summary-highlight-item.ok{border-left-color:var(--neon-green);}
+.summary-highlight-item.warn{border-left-color:var(--neon-yellow);}
+.summary-highlight-item.bad{border-left-color:var(--neon-red);}
+.summary-highlight-item .num{
+  font-size:24px;font-weight:700;
+  font-family:"SF Mono","Consolas",monospace;
+  margin-bottom:4px;
+}
+.summary-highlight-item.ok .num{color:var(--neon-green);}
+.summary-highlight-item.warn .num{color:var(--neon-yellow);}
+.summary-highlight-item.bad .num{color:var(--neon-red);}
+.summary-highlight-item .label{font-size:11px;color:var(--text-secondary);}
+
+.summary-timeline{
+  display:flex;flex-direction:column;gap:4px;
+  font-family:"SF Mono","Consolas",monospace;font-size:11px;
+}
+.summary-timeline-line{
+  display:flex;gap:10px;padding:4px 8px;
+  border-left:2px solid transparent;
+}
+.summary-timeline-line.event-info{border-left-color:var(--neon-blue);}
+.summary-timeline-line.event-warn{border-left-color:var(--neon-yellow);}
+.summary-timeline-line.event-capture{border-left-color:var(--neon-red);}
+.summary-timeline-line .time{color:var(--neon-yellow);min-width:70px;font-weight:700;}
+.summary-timeline-line .text{color:var(--text-secondary);}
+
+/* ============================================================
+   v8.5：地圖子檢視
+   ============================================================ */
+.map-view-tabs{
+  display:flex;gap:4px;margin-bottom:12px;
+  border-bottom:1px solid var(--border);padding-bottom:8px;
+}
+.map-view-tab{
+  flex:1;
+  background:var(--bg-input);color:var(--text-secondary);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:8px 12px;font-size:12px;font-weight:700;
+  cursor:pointer;font-family:inherit;transition:all .15s;
+}
+.map-view-tab:hover{color:var(--text-primary);}
+.map-view-tab.active{
+  background:linear-gradient(135deg,#1e3a5f,#2a4a6f);
+  color:var(--neon-blue);border-color:var(--neon-blue);
+  box-shadow:0 0 12px rgba(68,170,255,.2);
+}
+
+.map-toolbar{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+  padding:8px 10px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+}
+.map-toolbar .text-dim{font-size:10px;margin-left:auto;}
+.map-toolbar .btn.active{
+  background:linear-gradient(135deg,#1e3a5f,#2a4a6f);
+  color:var(--neon-blue);
+  border-color:var(--neon-blue);
+}
+
+/* ============================================================
+   v8.5：GameMap 容器
+   ============================================================ */
+.game-map-container{
+  width:100%;
+  height:70vh;
+  min-height:400px;
+  overflow:auto;
+  background:#0a0e17;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  position:relative;
+  -webkit-overflow-scrolling:touch;
+  cursor:grab;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:none;
+}
+.game-map-container::-webkit-scrollbar{width:8px;height:8px;}
+.game-map-container::-webkit-scrollbar-track{background:#060a10;}
+.game-map-container::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:4px;}
+.game-map-container::-webkit-scrollbar-thumb:hover{background:#3b82f6;}
+
+.game-map-canvas{
+  display:block;
+  transform-origin:0 0;
+  background:#0a0e17;
+}
+
+/* ============================================================
+   v8.5：路線管理列表
+   ============================================================ */
+.route-manager-list{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  max-height:400px;
+  overflow-y:auto;
+  padding:4px;
+}
+.route-manager-list::-webkit-scrollbar{width:5px;}
+.route-manager-list::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:3px;}
+
+.route-line{
+  display:grid;
+  grid-template-columns:1fr auto 1fr auto;
+  gap:8px;
+  align-items:center;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:6px 8px;
+}
+.route-line select{
+  font-size:11px;
+  padding:5px 22px 5px 6px;
+}
+.route-line .route-arrow{
+  color:var(--text-dim);
+  font-size:14px;
+  text-align:center;
+}
+.route-line .btn{
+  flex:0 0 auto;
+}
+
+/* ============================================================
+   響應式
+   ============================================================ */
+@media (max-width:768px){
+  .sidebar{
+    transform:translateX(-100%);
+    box-shadow:0 0 30px rgba(0,0,0,.7);
+  }
+  .sidebar.open{transform:translateX(0);}
+  .sidebar-close{display:inline-flex;align-items:center;justify-content:center;}
+  .main-content{margin-left:0;}
+  .mobile-header{display:flex;}
+  .mode-bar{position:relative;top:auto;}
+}
+
 @media (max-width:600px){
   .form-row{gap:6px;}
   .form-row > [style*="0 0 auto"]{
@@ -978,9 +1485,23 @@ input:disabled,select:disabled,textarea:disabled{
   .mode-detail{font-size:10px;}
   .btn-mode{padding:3px 10px;font-size:10px;}
 
-  /* v8.2 沙盤數據：手機折行 */
   .sandbox-me-row{flex-direction:column;align-items:flex-start;gap:4px;}
   .sandbox-me-stats{font-size:11px;gap:10px;}
+
+  .war-line{grid-template-columns:1fr 1fr;gap:4px;}
+  .war-line .btn{grid-column:span 2;justify-self:end;}
+
+  .summary-overview{grid-template-columns:repeat(2,1fr);}
+  .summary-stat .value{font-size:16px;}
+  .summary-city-table th,.summary-city-table td{padding:4px 6px;font-size:10px;}
+
+  .route-line{
+    grid-template-columns:1fr 1fr auto;
+    gap:4px;
+  }
+  .route-line .route-arrow{display:none;}
+
+  .game-map-container{height:60vh;}
 }
 
 @media (max-width:480px){
@@ -995,7 +1516,10 @@ input:disabled,select:disabled,textarea:disabled{
   .deploy-filter > div{min-width:90px;}
   .graph-legend{font-size:9px;gap:8px;padding:6px 8px;}
 
-  /* v8.2 帳號表格手機優化 */
   .accounts-table th,.accounts-table td{padding:6px 6px;font-size:10px;}
   .sandbox-table th,.sandbox-table td{padding:6px 8px;font-size:10px;}
+  .city-table th,.city-table td{padding:4px 6px;font-size:10px;}
+
+  .sidebar{width:240px;}
+  .map-toolbar .text-dim{display:none;}
 }
