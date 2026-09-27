@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.5.5
+ * v8.5.6
  * ========================================================================== */
 (function(){
 'use strict';
@@ -155,7 +155,7 @@ function applyPermissions(){
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
 
-  /* v8.5.3：路線管理按鈕 */
+  /* 路線管理按鈕 */
   togglePerm(document.getElementById('btnAddRouteLine'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnQuickAddRoute'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnExpandAllRouteGroups'), true, '');
@@ -164,7 +164,7 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnMapRelayout'), true, '');
   togglePerm(document.getElementById('btnMapFit'), true, '');
 
-  /* v8.5.5：宣戰按鈕 */
+  /* 宣戰按鈕 */
   togglePerm(document.getElementById('btnAddWarLine'), canEditData, '需要編輯資料權限');
 
   /* ── 6. Excel 匯入區 ── */
@@ -185,6 +185,22 @@ function applyPermissions(){
     '[data-action="edit-city"],[data-action="del-city"],' +
     '[data-action="edit-alliance"],[data-action="del-alliance"],' +
     '[data-action="del-zone"],[data-deploy-edit]'
+  ).forEach(b => {
+    togglePerm(b, canEditData, '需要編輯資料權限');
+  });
+
+  /* v8.5.6：清單內的編輯欄位（唯讀：非編輯者不可改） */
+  document.querySelectorAll(
+    '.list-table [data-war-time],' +
+    '.list-table [data-war-src],' +
+    '.list-table [data-war-type],' +
+    '.list-table [data-war-tgt],' +
+    '.list-table [data-deploy-field]'
+  ).forEach(el => {
+    el.disabled = !canEditData;
+  });
+  document.querySelectorAll(
+    '[data-war-del], [data-route-del]'
   ).forEach(b => {
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
@@ -222,7 +238,6 @@ function executeSimulation(zoneId){
   const marchTimeSec = parseInt(document.getElementById('globalMarchTimeSec').value) || 0;
   const maxLossRatio = (parseFloat(document.getElementById('globalMaxLossRatio').value) || 90) / 100;
   const minLossRatio = (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100;
-  /* v8.5.5：進攻路線接觸參數 */
   const attackRequireRouteEl = document.getElementById('globalAttackRequireRoute');
   const attackRequireRoute = attackRequireRouteEl ? !!attackRequireRouteEl.checked : false;
 
@@ -359,7 +374,6 @@ function handleSimulationDone(result){
   DYN().populateCityFilters();
   saveState();
 
-  /* v8.4：建立並渲染推演總結 */
   if(window.SLG.Summary){
     const summary = window.SLG.Summary.build(
       result,
@@ -380,7 +394,6 @@ function handleSimulationDone(result){
   state.isSimulating = false;
   logSystem('✅ 推演完成');
 
-  /* v8.4：自動切到推演總結 Tab */
   const summaryTab = document.querySelector('.top-nav button[data-tab="tab-summary"]');
   if(summaryTab && summaryTab.style.display !== 'none'){
     summaryTab.click();
@@ -674,6 +687,31 @@ function switchMapView(view){
 }
 
 /* ============================================================
+   清單偏好初始化（v8.5.6）
+   ============================================================ */
+function initListPrefs(){
+  try{
+    const ws = localStorage.getItem('slg_war_sort_v856');
+    if(ws) state.listPrefs.warSort = ws;
+    const wg = localStorage.getItem('slg_war_group_v856');
+    if(wg) state.listPrefs.warGroup = wg;
+    const ds = localStorage.getItem('slg_deploy_sort_v856');
+    if(ds) state.listPrefs.deploySort = ds;
+    const dg = localStorage.getItem('slg_deploy_group_v856');
+    if(dg) state.listPrefs.deployGroup = dg;
+  }catch(e){}
+  /* 同步下拉初始值 */
+  const ws = document.getElementById('warSortSelect');
+  if(ws) ws.value = state.listPrefs.warSort || 'time';
+  const wg = document.getElementById('warGroupSelect');
+  if(wg) wg.value = state.listPrefs.warGroup || 'none';
+  const ds = document.getElementById('deploySortSelect');
+  if(ds) ds.value = state.listPrefs.deploySort || 'alliance';
+  const dg = document.getElementById('deployGroupSelect');
+  if(dg) dg.value = state.listPrefs.deployGroup || 'none';
+}
+
+/* ============================================================
    事件綁定
    ============================================================ */
 function bindUI(){
@@ -687,7 +725,6 @@ function bindUI(){
       const tabEl = document.getElementById(tabId);
       if(tabEl) tabEl.classList.add('active');
 
-      /* 手機版：點擊後關閉側邊欄 */
       if(window.innerWidth <= 768){
         const sidebar = document.getElementById('sidebar');
         if(sidebar) sidebar.classList.remove('open');
@@ -767,6 +804,9 @@ function bindUI(){
 
   /* ── 城池數據子 Tab 初始化 ── */
   if(window.SLG.initCitySubtabs) window.SLG.initCitySubtabs();
+
+  /* ── v8.5.6：清單偏好初始化 ── */
+  initListPrefs();
 
   /* ── 模式切換 ── */
   const btnSwitchMode = document.getElementById('btnSwitchMode');
@@ -941,7 +981,7 @@ function bindUI(){
     });
   }
 
-  /* ── 儲存戰鬥參數（v8.5.5：加入 attackRequireRoute） ── */
+  /* ── 儲存戰鬥參數 ── */
   const btnSaveSettings = document.getElementById('btnSaveSettings');
   if(btnSaveSettings) btnSaveSettings.addEventListener('click', () => {
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改戰鬥參數')) return;
@@ -957,7 +997,6 @@ function bindUI(){
       attackRequireRoute: attackRequireRouteEl ? !!attackRequireRouteEl.checked : false,
     });
     R().renderMatrix();
-    /* v8.5.5：參數變更後，宣戰目標城選項可能變動，重繪 */
     if(window.SLG.WarManager) window.SLG.WarManager.render();
     alert('戰鬥參數已儲存');
   });
@@ -1025,7 +1064,9 @@ function bindUI(){
     const icon = document.getElementById('allyIcon').value.trim();
     const side = document.getElementById('allySide').value;
     const memberCount = parseFloat(document.getElementById('allyMemberCount').value) || 0;
-    const totalPower = parseFloat(document.getElementById('allyTotalPower').value) || 0;
+    /* v8.5.6：億 → 完整數字 */
+    const pInput = parseFloat(document.getElementById('allyTotalPower').value) || 0;
+    const totalPower = Math.round(pInput * 1e8);
     if(memberCount <= 0){ alert('總人數必須大於 0'); return; }
     const avgPower = totalPower / memberCount;
     if(side === 'self'){
@@ -1045,6 +1086,7 @@ function bindUI(){
     R().renderAlliances();
     if(window.SLG.CityManager) window.SLG.CityManager.render();
     if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
     saveState();
   });
 
@@ -1074,6 +1116,7 @@ function bindUI(){
         if(state.editingAllianceId === a.id) window.SLG.resetAllianceForm();
         window.SLG.deleteEntity('alliance', a.id);
         R().renderAlliances();
+        if(window.SLG.renderOverview) window.SLG.renderOverview();
         saveState();
       });
     }
@@ -1154,6 +1197,12 @@ function bindUI(){
 
   /* ── 路線管理 ── */
   if(window.SLG.RouteManager) window.SLG.RouteManager.init();
+
+  /* ── 宣戰清單 ── */
+  if(window.SLG.WarManager) window.SLG.WarManager.init();
+
+  /* ── 出兵清單 ── */
+  if(window.SLG.DeployInstr) window.SLG.DeployInstr.init();
 
   /* ── 地圖 ── */
   if(window.SLG.GameMap) window.SLG.GameMap.init();
@@ -1433,7 +1482,6 @@ function bindEvents(){
     if(gml) gml.value = Math.round(state.settings.maxLossRatio * 100);
     const gmn = document.getElementById('globalMinLossRatio');
     if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
-    /* v8.5.5：attackRequireRoute */
     const garr = document.getElementById('globalAttackRequireRoute');
     if(garr) garr.checked = !!state.settings.attackRequireRoute;
 
@@ -1456,7 +1504,6 @@ function bindEvents(){
       }
     }
     if(window.SLG.renderOverview) window.SLG.renderOverview();
-    /* v8.5.5：路線變更影響協防選項 */
     if(window.SLG.WarManager) window.SLG.WarManager.render();
   });
 
@@ -1534,7 +1581,6 @@ function boot(){
   if(gml) gml.value = Math.round(state.settings.maxLossRatio * 100);
   const gmn = document.getElementById('globalMinLossRatio');
   if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
-  /* v8.5.5：attackRequireRoute */
   const garr = document.getElementById('globalAttackRequireRoute');
   if(garr) garr.checked = !!state.settings.attackRequireRoute;
   syncAIParamsToUI();
@@ -1581,8 +1627,7 @@ function boot(){
   window.SLG.resetAllianceForm();
   if(window.SLG.Summary) window.SLG.Summary.init();
   if(window.SLG.CityManager) window.SLG.CityManager.init();
-  if(window.SLG.WarManager) window.SLG.WarManager.init();
-  if(window.SLG.DeployInstr) window.SLG.DeployInstr.init();
+  /* WarManager / DeployInstr / RouteManager / GameMap 的 init 已在 bindUI 內呼叫 */
 
   /* 9. 首繪 */
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
@@ -1597,6 +1642,8 @@ function boot(){
   updateModeBar();
   if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
   if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+  if(window.SLG.WarManager) window.SLG.WarManager.render();
+  if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   if(window.SLG.renderOverview) window.SLG.renderOverview();
   applyPermissions();
 
@@ -1616,6 +1663,8 @@ function boot(){
       if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
       applyPermissions();
       R().renderAll();
+      if(window.SLG.WarManager) window.SLG.WarManager.render();
+      if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
       if(window.SLG.renderOverview) window.SLG.renderOverview();
       logSystem('🚪 已自動登入，跳過入口');
       if(document.getElementById('tab-sandbox')?.classList.contains('active')){
@@ -1629,7 +1678,7 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.5.5] 宣戰時間 + 出兵唯讀時間（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.5.6] 戰力單位 + 宣戰/出兵清單（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 if(document.readyState === 'loading'){

@@ -1,6 +1,6 @@
 /* ============================================================================
- * data.js — Excel/CSV 匯入匯出（v8.5.5）
- * v8.5.5：宣戰表加進攻開始時間；城池表移除防守開始時間
+ * data.js — Excel/CSV 匯入匯出（v8.5.6）
+ * v8.5.6：戰力單位（億）匯入匯出 + 均戰（萬）匯出
  * ========================================================================== */
 (function(){
 'use strict';
@@ -20,6 +20,10 @@ const {
   NPC_ALLIANCE_ICON,
   findRoute,
   addRoute,
+  /* v8.5.6：戰力單位工具 */
+  POWER_YI, POWER_WAN,
+  parsePowerInput,
+  migratePower,
 } = window.SLG;
 
 /* ============================================================
@@ -75,11 +79,11 @@ const ALLIANCE_FIELD_ALIASES = {
   name:        ['盟名稱','同盟名稱','名稱','盟名','name','alliancename'],
   icon:        ['盟徽','icon','徽章'],
   memberCount: ['人數','成員數','總人數','membercount','members'],
-  totalPower:  ['總戰力','戰力','totalpower','power'],
+  /* v8.5.6：加入（億）變體 */
+  totalPower:  ['總戰力','戰力','totalpower','power','總戰力（億）','總戰力(億)','總戰力億','戰力（億）','戰力(億)'],
   side:        ['陣營','side','faction'],
 };
 
-/* v8.5.5：移除 defStartTime（防守開始時間）欄位 */
 const CITY_FIELD_ALIASES = {
   name:        ['城池名稱','城池','城名','名稱','name','cityname','city'],
   zone:        ['戰區','分區','區域','zone','zoneid','region'],
@@ -87,14 +91,14 @@ const CITY_FIELD_ALIASES = {
   side:        ['陣營','陣營關係','side','faction'],
   level:       ['等級','level','lv','級別'],
   memberCount: ['人數','成員數','總人數','membercount','members','member'],
-  totalPower:  ['總戰力','戰力','totalpower','power'],
+  /* v8.5.6：加入（億）變體 */
+  totalPower:  ['總戰力','戰力','totalpower','power','總戰力（億）','總戰力(億)','總戰力億','戰力（億）','戰力(億)'],
   totalTeams:  ['總隊數','隊數','兵力','隊伍數','totalteams','teams'],
   cooldownMin: ['冷卻','冷卻分鐘','冷卻復活','冷卻(分)','cooldownmin','cooldown'],
   wallMin:     ['城牆','城牆耐久','城牆分鐘','城牆(分)','wallmin','wall'],
   isCapital:   ['首都','盟首都','主城','iscapital','capital'],
 };
 
-/* v8.5.5：新增 attackStartTime（進攻開始時間） */
 const ROUTE_FIELD_ALIASES = {
   src:             ['出兵城','進攻城','來源城','出兵','src','srccity','from'],
   tgt:             ['目標城','目標','tgt','tgtcity','to'],
@@ -120,7 +124,7 @@ const SIDE_PARSE_MAP = {
 const TRUTHY_SET = new Set(['是','y','yes','true','1','✓','√','v','有','首都','主城']);
 
 /* ============================================================
-   v8.5.5：時間格式正規化（HH:MM）
+   時間格式正規化（HH:MM）
    ============================================================ */
 function normalizeTimeString(s){
   if(!s) return '';
@@ -144,6 +148,43 @@ function normalizeTimeString(s){
     return String(parseInt(h,10)).padStart(2,'0') + ':' + m.padStart(2,'0');
   }
   return '';
+}
+
+/* ============================================================
+   v8.5.6：戰力解析（億 → 完整數字）
+   ============================================================ */
+/**
+ * 從匯入值解析戰力
+ * 若值為空 → 回傳 0
+ * 若值過大（>= 10⁶，視為完整數字）→ 保留
+ * 否則視為「億」→ × 10⁸
+ */
+function parsePowerFromImport(raw){
+  const s = String(raw == null ? '' : raw).trim();
+  if(s === '') return 0;
+  const n = parseFloat(s);
+  if(isNaN(n) || n < 0) return 0;
+  /* 若值 >= 10⁶，視為已經完整數字（相容舊資料） */
+  if(n >= 1e6) return Math.round(n);
+  return Math.round(n * POWER_YI);
+}
+
+/**
+ * 將完整數字轉為「億」字串輸出（2 位小數）
+ */
+function powerToYiStr(num){
+  const n = Number(num) || 0;
+  if(n === 0) return '0.00';
+  return (n / POWER_YI).toFixed(2);
+}
+
+/**
+ * 將完整數字轉為「萬」字串輸出（無小數）
+ */
+function powerToWanStr(num){
+  const n = Number(num) || 0;
+  if(n === 0) return '0';
+  return String(Math.round(n / POWER_WAN));
 }
 
 /* ============================================================
@@ -175,7 +216,10 @@ function parseAlliancesTable(rows){
 
     const icon = get('icon', '');
     const memberCount = parseFloat(get('memberCount', '100')) || 100;
-    const totalPower = parseFloat(get('totalPower', '20000')) || 20000;
+    /* v8.5.6：總戰力解析為億 */
+    const totalPowerRaw = get('totalPower', '2');
+    const totalPower = parsePowerFromImport(totalPowerRaw);
+
     const sideRaw = get('side', '敵方');
     const sideNorm = normalizeHeader(sideRaw);
     const side = SIDE_PARSE_MAP[sideRaw] || SIDE_PARSE_MAP[sideNorm] || 'enemy';
@@ -193,7 +237,7 @@ function parseAlliancesTable(rows){
 }
 
 /* ============================================================
-   解析：城池表（v8.5.5：移除防守開始時間）
+   解析：城池表
    ============================================================ */
 function parseCitiesTable(rows){
   if(!rows || rows.length < 2) return { cities: [], errors: ['城池表至少需要表頭 + 1 筆資料'] };
@@ -229,7 +273,10 @@ function parseCitiesTable(rows){
 
     const level = parseInt(get('level', '1')) || 1;
     const memberCount = parseFloat(get('memberCount', '0')) || 0;
-    const totalPower = parseFloat(get('totalPower', '0')) || 0;
+    /* v8.5.6：總戰力解析為億 */
+    const totalPowerRaw = get('totalPower', '0');
+    const totalPower = parsePowerFromImport(totalPowerRaw);
+
     const totalTeams = parseFloat(get('totalTeams', '0')) || 0;
     const cooldownMin = parseFloat(get('cooldownMin', '5')) || 5;
     const wallMin = parseFloat(get('wallMin', '30')) || 30;
@@ -251,7 +298,6 @@ function parseCitiesTable(rows){
       name, zoneName, allianceName, side,
       level, memberCount, totalPower, totalTeams,
       cooldownMin, wallMin, isCapital,
-      /* v8.5.5：defStartTime 不再從匯入讀取，由宣戰推算 */
     });
   }
 
@@ -263,7 +309,7 @@ function parseCitiesTable(rows){
 }
 
 /* ============================================================
-   解析：宣戰路線表（v8.5.5：新增進攻開始時間）
+   解析：宣戰路線表
    ============================================================ */
 function parseRoutesTable(rows){
   if(!rows || rows.length < 2) return { routes: [], errors: ['宣戰表至少需要表頭 + 1 筆資料'] };
@@ -303,17 +349,15 @@ function parseRoutesTable(rows){
     const post = idx.post >= 0 ? clamp(getNum('post', pre), 0, 100) : pre;
     const priority = idx.priority >= 0 ? Math.floor(getNum('priority', 1)) : 1;
 
-    /* v8.5.5：解析進攻開始時間（僅進攻類型需要） */
+    /* v8.5.5：解析進攻開始時間 */
     let attackStartTime = '';
     if(idx.attackStartTime >= 0){
       const raw = String(r[idx.attackStartTime] || '').trim();
       attackStartTime = normalizeTimeString(raw);
     }
-    /* 進攻若無時間，預設 19:00 */
     if(type === 'attack' && !attackStartTime){
       attackStartTime = '19:00';
     }
-    /* 協防不需時間 */
     if(type === 'assist'){
       attackStartTime = '';
     }
@@ -541,7 +585,7 @@ function doImportAlliances(){
       icon: a.icon,
       side: a.side,
       memberCount: a.memberCount,
-      totalPower: a.totalPower,
+      totalPower: a.totalPower,  /* v8.5.6：已是完整數字 */
       avgPower: a.memberCount > 0 ? (a.totalPower / a.memberCount) : 0,
       power: a.totalPower,
     };
@@ -561,7 +605,7 @@ function doImportAlliances(){
   logSystem(`📥 盟名單匯入完成：${result.alliances.length} 個`);
 }
 
-/* ② 匯入城池表（v8.5.5：不匯入防守開始時間） */
+/* ② 匯入城池表 */
 function doImportCities(){
   const text = document.getElementById('excelCitiesText')?.value.trim() || '';
   if(!text){ alert('請填入城池表'); return; }
@@ -635,12 +679,11 @@ function doImportCities(){
       side,
       level: cd.level,
       memberCount: cd.memberCount,
-      totalPower: cd.totalPower,
+      totalPower: cd.totalPower,  /* v8.5.6：已是完整數字 */
       totalTeams: cd.totalTeams,
       avgPower,
       cooldownMin: cd.cooldownMin,
       wallMin: cd.wallMin,
-      /* v8.5.5：defStartTime 由宣戰推算，匯入時給預設 */
       defStartTime: '19:00',
       isCapital: cd.isCapital,
       attackTargets: [],
@@ -708,7 +751,7 @@ function doImportMapRoutes(){
   logSystem(`📥 地圖路線匯入完成：${added} 條`);
 }
 
-/* ④ 匯入宣戰表（v8.5.5：加進攻開始時間） */
+/* ④ 匯入宣戰表 */
 function doImportRoutes(){
   const text = document.getElementById('excelRoutesText')?.value.trim() || '';
   if(!text){ alert('請填入宣戰表'); return; }
@@ -749,7 +792,6 @@ function doImportRoutes(){
       preWarPercent: route.preWarPercent,
       postRevivePercent: route.postRevivePercent,
       priority: route.priority,
-      /* v8.5.5：進攻帶時間，協防空 */
       attackStartTime: route.isAttack ? (route.attackStartTime || '19:00') : '',
     };
     const existingIdx = arr.findIndex(t => t.cityId === tgtCityId);
@@ -761,7 +803,7 @@ function doImportRoutes(){
     added++;
   }
 
-  /* v8.5.5：匯入後重新計算防守開始時間 */
+  /* 匯入後重新計算防守開始時間 */
   if(window.SLG.computeDefStartTimes){
     window.SLG.computeDefStartTimes(state.cities);
   }
@@ -792,13 +834,14 @@ function downloadCSV(csv, filename){
   URL.revokeObjectURL(url);
 }
 
-/* v8.5.5：移除「防守開始」欄位 */
+/* v8.5.6：城池表匯出（戰力以億、均戰以萬） */
 function exportCitiesCSV(){
   if(state.cities.length === 0){ alert('目前沒有任何城池'); return; }
-  const headers = ['城池名稱','戰區','同盟','陣營','等級','人數','總戰力','總隊數','冷卻','城牆','首都'];
+  const headers = ['城池名稱','戰區','同盟','陣營','等級','人數','總戰力（億）','均戰（萬）','總隊數','冷卻','城牆','首都'];
   const rows = state.cities.map(c => {
     const zone = state.zones.find(z => z.id === c.zoneId);
     const alliance = state.alliances.find(a => a.id === c.allianceId);
+    const avgPower = c.totalTeams > 0 ? Math.floor((Number(c.totalPower) || 0) / c.totalTeams) : 0;
     return [
       c.name,
       zone ? zone.name : '',
@@ -806,7 +849,8 @@ function exportCitiesCSV(){
       SIDE_LABELS[c.side] || c.side,
       c.level || 1,
       c.memberCount || '',
-      c.totalPower || '',
+      powerToYiStr(c.totalPower),           /* v8.5.6：億 */
+      powerToWanStr(avgPower),               /* v8.5.6：萬 */
       c.totalTeams || '',
       c.cooldownMin,
       c.wallMin,
@@ -815,23 +859,27 @@ function exportCitiesCSV(){
   });
   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v==null?'':v).replace(/"/g,'""')}"`).join(',')).join('\n');
   downloadCSV(csv, `城池表_${new Date().toISOString().slice(0,10)}.csv`);
-  logSystem('📤 已匯出城池表 CSV');
+  logSystem('📤 已匯出城池表 CSV（戰力單位：億）');
 }
 
-/* 匯出盟名單 */
+/* v8.5.6：盟名單匯出（戰力以億、平均戰力以萬） */
 function exportAlliancesCSV(){
   if(state.alliances.length === 0){ alert('目前沒有任何盟'); return; }
-  const headers = ['盟名稱','盟徽','人數','總戰力','陣營'];
-  const rows = state.alliances.map(a => [
-    a.name,
-    a.icon || '',
-    a.memberCount || 0,
-    a.totalPower || 0,
-    ALLIANCE_SIDE_LABELS[a.side] || a.side,
-  ]);
+  const headers = ['盟名稱','盟徽','人數','總戰力（億）','平均戰力（萬）','陣營'];
+  const rows = state.alliances.map(a => {
+    const avgPower = a.memberCount > 0 ? (Number(a.totalPower) || 0) / a.memberCount : 0;
+    return [
+      a.name,
+      a.icon || '',
+      a.memberCount || 0,
+      powerToYiStr(a.totalPower),          /* v8.5.6：億 */
+      powerToWanStr(avgPower),              /* v8.5.6：萬 */
+      SIDE_LABELS[a.side] || a.side,
+    ];
+  });
   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v==null?'':v).replace(/"/g,'""')}"`).join(',')).join('\n');
   downloadCSV(csv, `盟名單_${new Date().toISOString().slice(0,10)}.csv`);
-  logSystem('📤 已匯出盟名單 CSV');
+  logSystem('📤 已匯出盟名單 CSV（戰力單位：億）');
 }
 
 /* 匯出地圖路線 */
@@ -849,9 +897,9 @@ function exportMapRoutesCSV(){
   logSystem(`📤 已匯出地圖路線 CSV（${rows.length} 條）`);
 }
 
-/* v8.5.5：宣戰表加進攻開始時間 */
+/* 匯出宣戰表 */
 function exportRoutesCSV(){
-  const headers = ['出兵城','目標城','類型','戰前%','復活%','順序','進攻開始時間'];
+  const headers = ['出兵城','目標城','類型','戰前%','復活%','順序','開始時間'];
   const rows = [];
   const cityById = new Map(state.cities.map(c => [c.id, c]));
   for(const src of state.cities){
@@ -872,7 +920,7 @@ function exportRoutesCSV(){
       rows.push([
         src.name, tgt.name, '協防',
         t.preWarPercent, t.postRevivePercent, t.priority,
-        ''  /* 協防無時間 */
+        ''
       ]);
     }
   }
@@ -882,28 +930,32 @@ function exportRoutesCSV(){
   logSystem(`📤 已匯出宣戰表 CSV（${rows.length} 條）`);
 }
 
-/* v8.5.5：更新範本說明 */
+/* v8.5.6：更新範本說明 */
 function downloadExcelTemplate(){
-  const template = `【盟名單欄位說明】
-盟名稱,盟徽,人數,總戰力,陣營
-帝盟,帝,100,20000,敵方
-秦盟,秦,90,18000,敵方
-鼎盟,鼎,80,16000,敵方
+  const template = `【盟名單欄位說明】（v8.5.6：戰力單位＝億）
+盟名稱,盟徽,人數,總戰力（億）,陣營
+帝盟,帝,100,2.00,敵方
+秦盟,秦,90,1.80,敵方
+鼎盟,鼎,80,1.60,敵方
 
 ■ 盟徽：可留空（預設 🏰），或用 emoji
 ■ 陣營可填：本方 / 同盟 / 敵方
-■ 人數 / 總戰力：可留空
+■ 人數：可留空（預設 100）
+■ 總戰力（億）：輸入「億」為單位，例：輸入 2.00 代表 2 億
+   ・系統儲存為完整數字（× 10⁸），顯示為「2.00 億」
 
 ─────────────────────────────────────────────
 
-【城池表欄位說明】（v8.5.5 移除「防守開始」）
-城池名稱,戰區,同盟,陣營,等級,人數,總戰力,總隊數,冷卻,城牆,首都
-洛陽,司隸,鼎盟,敵方,10,100,100000,100,5,30,是
-函谷關,司隸,秦盟,敵方,9,80,80000,80,5,20,
+【城池表欄位說明】（v8.5.6：戰力單位＝億）
+城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都
+洛陽,司隸,鼎盟,敵方,10,100,10.00,100,5,30,是
+函谷關,司隸,秦盟,敵方,9,80,8.00,80,5,20,
 
 ■ 同盟：填盟名稱，會自動對應盟徽（找不到 → NPC）
 ■ 等級：1~10（可留空，預設 1）
-■ 人數 / 總戰力 / 總隊數：可留空
+■ 人數：可留空
+■ 總戰力（億）：輸入「億」為單位，例：輸入 1.50 代表 1.5 億
+■ 總隊數：可留空
 ■ 冷卻 / 城牆：單位為分鐘
 ■ 防守開始時間：由宣戰指示推算（不再手動輸入）
 
@@ -921,8 +973,8 @@ function downloadExcelTemplate(){
 
 ─────────────────────────────────────────────
 
-【宣戰表欄位說明】（v8.5.5 新增「進攻開始時間」）
-出兵城,目標城,類型,戰前%,復活%,順序,進攻開始時間
+【宣戰表欄位說明】（v8.5.6）
+出兵城,目標城,類型,戰前%,復活%,順序,開始時間
 洛陽,函谷關,進攻,50,50,1,19:00
 洛陽北,洛陽,協防,30,30,1,
 
@@ -930,10 +982,10 @@ function downloadExcelTemplate(){
 ■ 戰前%：開局派出的兵力百分比
 ■ 復活%：復活後派出的兵力百分比
 ■ 順序：數字越小越優先
-■ 進攻開始時間（HH:MM）：即目標城的防守開始時間
-   - 若該城被多條宣戰指向，以「最早的進攻開始時間」為該城的防守開始時間
+■ 開始時間（HH:MM）：即目標城的防守開始時間
+   - 若該城被多條宣戰指向，以「最早的開始時間」為該城的防守開始時間
    - 例：A城 19:00 進攻 B城，C城 20:00 進攻 B城 → B城防守從 19:00 開始，時長 120 分
-■ 協防的進攻開始時間：留空（協防跟隨目標城的防守時間）
+■ 協防的開始時間：留空（協防跟隨目標城的防守時間）
 `;
   const blob = new Blob(['\uFEFF' + template], {type:'text/plain;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -950,6 +1002,8 @@ function downloadExcelTemplate(){
 Object.assign(window.SLG, {
   parseDelimited, normalizeHeader, findFieldIndex,
   normalizeTimeString,
+  parsePowerFromImport,
+  powerToYiStr, powerToWanStr,
   parseAlliancesTable,
   parseCitiesTable,
   parseRoutesTable,

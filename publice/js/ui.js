@@ -1,10 +1,10 @@
 /* ============================================================================
  * ui.js — 所有渲染（viz / R / DYN / DEPLOY / CityManager / WarManager / DeployInstr / RouteManager / GameMap）
- * v8.5.5：宣戰進攻時間 + 出兵唯讀時間 + 子 Tab 6 個
+ * v8.5.6：戰力單位換算 + 宣戰清單 + 出兵清單
  *
  * ⚠️ 此檔案分為 2 部分交付；實際部署時合併為單一 js/ui.js。
  *    第 1/2 部分：viz / R / DYN / DEPLOY
- *    第 2/2 部分：CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 暴露
+ *    第 2/2 部分：CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 清單 / 暴露
  * ========================================================================== */
 (function(){
 'use strict';
@@ -27,13 +27,16 @@ const {
   addRoute,
   removeRoute,
   getReachableCityIds,
+  /* v8.5.6：戰力單位工具 */
+  formatPower,
+  formatAvgPower,
 } = window.SLG;
 
 const Auth = () => window.SLG.Auth;
 const hasTogglePerm = () => typeof window.SLG.togglePerm === 'function';
 
 /* ============================================================
-   viz — 態勢圖（v8.5.1：加 touch 縮放）
+   viz — 態勢圖（touch 縮放）
    ============================================================ */
 const viz = (() => {
   const NODE_RADIUS = 14;
@@ -43,7 +46,6 @@ const viz = (() => {
   let snapshotSecs = [];
   let currentSec = 0;
 
-  /* v8.5.1：touch 縮放 */
   let vizScale = 1;
   let vizPinchStartDist = 0;
   let vizPinchStartScale = 1;
@@ -70,7 +72,6 @@ const viz = (() => {
       computeLayout(); resizeCanvases(); renderStatic(); renderLive(currentSec);
     });
 
-    /* v8.5.1：touch 縮放（pinch） */
     containerEl.addEventListener('touchstart', (e) => {
       if(e.touches.length === 2){
         vizPinchStartDist = touchDist(e.touches[0], e.touches[1]);
@@ -440,13 +441,7 @@ const R = (() => {
     ).join('');
   }
 
-  function getAllianceAvgPowerLocal(a){
-    if(typeof a.avgPower === 'number' && a.avgPower > 0) return a.avgPower;
-    const mc = Number(a.memberCount) || 0;
-    const tp = Number(a.totalPower) || 0;
-    return mc > 0 ? tp / mc : 0;
-  }
-
+  /* v8.5.6：盟清單（戰力顯示億） */
   function renderAlliances(){
     const tbody = document.getElementById('allianceTableBody');
     if(!tbody) return;
@@ -472,9 +467,9 @@ const R = (() => {
         <td class="col-name"><span class="alliance-tag ${tagCls}"></span>${icon ? `<span class="alliance-icon">${icon}</span>` : ''}${esc(a.name)}${isEditing ? '<span class="editing-badge">編輯中</span>' : ''}${cap ? ` <span style="color:var(--neon-yellow);font-size:10px;">👑 ${esc(cap.name)}</span>` : ''}</td>
         <td><span class="chip ${chipCls}">${allianceSideLabel(a.side)}</span></td>
         <td class="col-num">${(a.memberCount||0).toLocaleString()}</td>
-        <td class="col-num">${totalPower.toLocaleString()}</td>
-        <td class="col-num">${allocatedPower.toLocaleString()}</td>
-        <td class="col-num" style="color:${remainColor};">${remain.toLocaleString()}</td>
+        <td class="col-num">${formatPower(totalPower)}</td>
+        <td class="col-num">${formatPower(allocatedPower)}</td>
+        <td class="col-num" style="color:${remainColor};">${formatPower(remain)}</td>
         <td class="col-num">${pct}%</td>
         <td class="col-actions">
           <button class="btn btn-primary btn-sm" data-action="edit-alliance" data-id="${a.id}">✏️</button>
@@ -501,20 +496,19 @@ const R = (() => {
     const consume = (state.settings.consumeMinPerMin + state.settings.consumeMaxPerMin) / 2;
     let html = '<table class="matrix-table"><thead><tr><th>發起方 ↓ / 對手 →</th>';
     state.alliances.forEach(a => {
-      const avg = getAllianceAvgPowerLocal(a);
       const icon = a.icon ? a.icon + ' ' : '';
-      html += `<th>${icon}${esc(a.name)}<br><span style="font-size:9px;color:var(--text-dim);">均戰 ${avg.toLocaleString(undefined,{maximumFractionDigits:2})}</span></th>`;
+      html += `<th>${icon}${esc(a.name)}</th>`;
     });
     html += '</tr></thead><tbody>';
     state.alliances.forEach(y => {
-      const yAvg = getAllianceAvgPowerLocal(y);
+      const yAvg = y.avgPower || 1;
       const yIcon = y.icon ? y.icon + ' ' : '';
       html += `<tr><td class="row-label">${yIcon}${esc(y.name)}</td>`;
       state.alliances.forEach(x => {
         if(y.id === x.id){
           html += '<td style="color:#334155;">—</td>';
         } else {
-          const xAvg = getAllianceAvgPowerLocal(x);
+          const xAvg = x.avgPower || 1;
           const total = yAvg + xAvg;
           const val = total > 0 ? (xAvg / total) * consume : 0;
           html += `<td>${val.toFixed(2)}</td>`;
@@ -548,6 +542,7 @@ const R = (() => {
     }
   }
 
+  /* v8.5.6：城池卡片（戰力顯示億、均戰顯示萬） */
   function renderCities(){
     const el = document.getElementById('cityList');
     if(!el) return;
@@ -571,7 +566,6 @@ const R = (() => {
         const alloc = computeAllocation(c);
         const overCls = alloc.over ? 'overdraft' : '';
         const capCls = c.isCapital ? 'capital' : '';
-        /* v8.5.5：防守時間動態計算後顯示 */
         const defStart = c.defStartTime || '19:00';
         const defEnd = minutesToHHMM(hhmmToMinutes(defStart) + state.settings.timeLimitMin);
         const allianceIcon = (alliance && alliance.icon) ? alliance.icon : '';
@@ -581,7 +575,8 @@ const R = (() => {
           html += `<div class="text-dim" style="margin-bottom:4px;">同盟：${allianceIcon ? `<span class="alliance-icon">${allianceIcon}</span>` : ''}${esc(alliance.name)}</div>`;
         }
         html += `<div class="flex-row" style="margin-bottom:4px;"><span class="chip time">🕐 防守 ${esc(defStart)} – ${esc(defEnd)}</span></div>`;
-        html += `<div class="flex-row" style="font-size:11px;color:var(--text-secondary);gap:12px;"><span>戰力 ${(c.totalPower||0).toLocaleString()}</span><span>隊數 ${c.totalTeams}</span><span>均戰 ${c.avgPower}</span></div>`;
+        /* v8.5.6：戰力顯示億、均戰顯示萬 */
+        html += `<div class="flex-row" style="font-size:11px;color:var(--text-secondary);gap:12px;"><span>戰力 ${formatPower(c.totalPower)}</span><span>隊數 ${c.totalTeams}</span><span>均戰 ${formatAvgPower(c.avgPower)}</span></div>`;
         if(alloc.over){
           html += `<div class="flex-row" style="font-size:11px;margin-top:4px;"><span class="text-warn">⚠️ 戰前派兵合計 ${alloc.allocated} 隊 ＞ 總隊數 ${alloc.totalTeams} 隊</span></div>`;
         } else {
@@ -672,7 +667,6 @@ const R = (() => {
     renderHealth(); renderHost(); renderMembers();
     renderAlliances(); renderZones(); renderCities();
     renderChat(); renderChatBadge();
-    /* v8.5.3：概覽面板（若存在） */
     if(typeof window.SLG.renderOverview === 'function') window.SLG.renderOverview();
   }
 
@@ -824,7 +818,7 @@ const DYN = (() => {
 })();
 
 /* ============================================================
-   DEPLOY — 佈兵總覽
+   DEPLOY — 佈兵總覽（顯示隊數，不涉及戰力單位）
    ============================================================ */
 const DEPLOY = (() => {
   let currentView = 'attack';
@@ -1295,7 +1289,7 @@ const DEPLOY = (() => {
   return { init, render, populateZoneFilter };
 })();
 
-/* ⚠️ 第 1/2 部分結束——下方接續第 2/2 部分（CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 暴露） */
+/* ⚠️ 第 1/2 部分結束——下方接續第 2/2 部分（CityManager / WarManager 清單 / DeployInstr 清單 / RouteManager / GameMap / 概覽 / 暴露） */
 /* ============================================================
    CityManager — 城池清單表格 + 批次操作
    ============================================================ */
@@ -1438,7 +1432,7 @@ const CityManager = (() => {
           const alliance = state.alliances.find(a => a.id === c.allianceId);
           const avg = c.totalTeams > 0 ? Math.floor((Number(c.totalPower)||0) / c.totalTeams) : null;
           const icon = (alliance && alliance.icon) ? alliance.icon + ' ' : '';
-          const avgDisplay = avg === null || !isFinite(avg) ? '—' : avg;
+          const avgDisplay = avg === null || !isFinite(avg) ? '—' : formatAvgPower(avg);
 
           return `<tr class="${c.isCapital ? 'row-self' : ''}">
             <td><input type="checkbox" class="city-cb" data-id="${c.id}"></td>
@@ -1448,7 +1442,7 @@ const CityManager = (() => {
             <td>${icon}${alliance ? esc(alliance.name) : '<span class="text-dim">NPC</span>'}</td>
             <td><span class="chip ${sideClass(c.side)}" style="font-size:9px;">${sideLabel(c.side)}</span></td>
             <td class="col-num">${c.memberCount || '—'}</td>
-            <td class="col-num">${(Number(c.totalPower)||0).toLocaleString()}</td>
+            <td class="col-num">${formatPower(c.totalPower)}</td>
             <td class="col-num">${c.totalTeams || '—'}</td>
             <td class="col-num">${avgDisplay}</td>
             <td>
@@ -1533,10 +1527,10 @@ const CityManager = (() => {
       return `<div class="alliance-dist-row">
         <span class="name">${icon}${esc(a.name)}</span>
         <span class="chip ${chipCls}" style="font-size:9px;">${allianceSideLabel(a.side)}</span>
-        <span class="num">${allocatedPower.toLocaleString()} / ${totalPower.toLocaleString()}</span>
+        <span class="num">${formatPower(allocatedPower)} / ${formatPower(totalPower)}</span>
         <div class="bar"><div class="bar-fill ${cls}" style="width:${Math.min(100, pct)}%"></div></div>
         <span class="pct">${pct}%</span>
-        <span class="num" ${remainStyle}>餘 ${remain.toLocaleString()}</span>
+        <span class="num" ${remainStyle}>餘 ${formatPower(remain)}</span>
         <span class="num" style="color:var(--text-dim);">${myCities.length} 城</span>
       </div>`;
     }).join('');
@@ -1546,15 +1540,39 @@ const CityManager = (() => {
 })();
 
 /* ============================================================
-   WarManager — 宣戰指示（v8.5.5：加進攻開始時間）
+   WarManager — 宣戰清單（v8.5.6：表格形式 + 排序 / 分組）
    ============================================================ */
 const WarManager = (() => {
+  const LS_SORT_KEY = 'slg_war_sort_v856';
+  const LS_GROUP_KEY = 'slg_war_group_v856';
+  const DEFAULT_SORT = 'time';
+  const DEFAULT_GROUP = 'none';
+
   function init(){
     const btn = document.getElementById('btnAddWarLine');
     if(btn) btn.addEventListener('click', () => addLine());
+
+    const sortSel = document.getElementById('warSortSelect');
+    if(sortSel){
+      sortSel.addEventListener('change', function(){
+        state.listPrefs.warSort = this.value;
+        try{ localStorage.setItem(LS_SORT_KEY, this.value); }catch(e){}
+        if(window.SLG.saveState) window.SLG.saveState();
+        render();
+      });
+    }
+    const groupSel = document.getElementById('warGroupSelect');
+    if(groupSel){
+      groupSel.addEventListener('change', function(){
+        state.listPrefs.warGroup = this.value;
+        try{ localStorage.setItem(LS_GROUP_KEY, this.value); }catch(e){}
+        if(window.SLG.saveState) window.SLG.saveState();
+        render();
+      });
+    }
   }
 
-  /* 取得所有宣戰指示 */
+  /* 取得所有宣戰指示（合併 attack + assist） */
   function getAllWarLines(){
     const lines = [];
     for(const src of state.cities){
@@ -1584,7 +1602,6 @@ const WarManager = (() => {
     return lines;
   }
 
-  /* 檢查某城是否「正被敵方/NPC進攻」 */
   function isBeingAttacked(cityId){
     for(const o of state.cities){
       if(o.id === cityId) continue;
@@ -1597,45 +1614,38 @@ const WarManager = (() => {
     return false;
   }
 
-/* 依類型取得可選目標城 */
-function getTargetsForType(srcCityId, type){
-  if(type === 'attack'){
-    const src = state.cities.find(c => c.id === srcCityId);
-    if(!src) return [];
-    const srcSide = src.side || 'npc';
-    /* v8.5.5 修正：使用 ATTACK_RULES 動態判斷，考慮出兵城自己的陣營 */
-    const allowedSides = ATTACK_RULES[srcSide] || ['self','ally','enemy','common_enemy','npc'];
-
-    let targets = state.cities.filter(c =>
-      c.id !== srcCityId &&
-      allowedSides.includes(c.side)
-    );
-    /* v8.5.5：若設定需要路線接觸，進一步過濾 */
-    if(state.settings.attackRequireRoute){
-      targets = targets.filter(c => window.SLG.findRoute(srcCityId, c.id));
+  function getTargetsForType(srcCityId, type){
+    if(type === 'attack'){
+      const src = state.cities.find(c => c.id === srcCityId);
+      if(!src) return [];
+      const srcSide = src.side || 'npc';
+      const allowedSides = ATTACK_RULES[srcSide] || ['self','ally','enemy','common_enemy','npc'];
+      let targets = state.cities.filter(c =>
+        c.id !== srcCityId &&
+        allowedSides.includes(c.side)
+      );
+      if(state.settings.attackRequireRoute){
+        targets = targets.filter(c => window.SLG.findRoute(srcCityId, c.id));
+      }
+      return targets;
     }
-    return targets;
+    if(type === 'assist'){
+      const src = state.cities.find(c => c.id === srcCityId);
+      if(!src) return [];
+      const srcAllianceId = src.allianceId || '';
+      if(!srcAllianceId) return [];
+      return state.cities.filter(c => {
+        if(c.id === srcCityId) return false;
+        if((c.allianceId || '') !== srcAllianceId) return false;
+        const alliance = state.alliances.find(a => a.id === srcAllianceId);
+        if(alliance && alliance.name === 'NPC') return false;
+        if(!window.SLG.findRoute(srcCityId, c.id)) return false;
+        return true;
+      });
+    }
+    return [];
   }
 
-  if(type === 'assist'){
-    const src = state.cities.find(c => c.id === srcCityId);
-    if(!src) return [];
-    const srcAllianceId = src.allianceId || '';
-    if(!srcAllianceId) return [];
-
-    return state.cities.filter(c => {
-      if(c.id === srcCityId) return false;
-      if((c.allianceId || '') !== srcAllianceId) return false;
-      const alliance = state.alliances.find(a => a.id === srcAllianceId);
-      if(alliance && alliance.name === 'NPC') return false;
-      if(!window.SLG.findRoute(srcCityId, c.id)) return false;
-      return true;
-    });
-  }
-
-  return [];
-}
-  /* 檢查某方向是否已有宣戰 */
   function findWarLine(srcId, tgtId){
     if(!tgtId) return null;
     const src = state.cities.find(c => c.id === srcId);
@@ -1649,7 +1659,6 @@ function getTargetsForType(srcCityId, type){
     return null;
   }
 
-  /* 新增一行宣戰指示 */
   function addLine(){
     if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
 
@@ -1681,7 +1690,6 @@ function getTargetsForType(srcCityId, type){
       attackStartTime: '19:00',
     });
 
-    /* v8.5.5：重算防守時間 */
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
 
     markDirty(src.id);
@@ -1689,47 +1697,169 @@ function getTargetsForType(srcCityId, type){
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
 
-  /* 渲染 */
-  function render(){
-    const el = document.getElementById('warList');
-    if(!el) return;
-    const lines = getAllWarLines();
+  /* 計算結束時間 = 開始時間 + timeLimitMin */
+  function computeEndTime(startTime, limitMin){
+    if(!startTime) return '待設定';
+    const m = hhmmToMinutes(startTime);
+    if(!m && m !== 0) return '待設定';
+    const endM = m + (parseInt(limitMin) || 120);
+    return minutesToHHMM(endM);
+  }
 
+  /* 排序 / 分組邏輯 */
+  function getSortPref(){
+    let v = state.listPrefs.warSort || DEFAULT_SORT;
+    return v;
+  }
+  function getGroupPref(){
+    let v = state.listPrefs.warGroup || DEFAULT_GROUP;
+    return v;
+  }
+
+  function sortLines(lines, sortBy){
+    const copy = lines.slice();
+    if(sortBy === 'time'){
+      copy.sort((a, b) => {
+        const ta = a.attackStartTime || '';
+        const tb = b.attackStartTime || '';
+        if(ta !== tb) return ta < tb ? -1 : 1;
+        return (a.srcId || '').localeCompare(b.srcId || '');
+      });
+    } else if(sortBy === 'alliance'){
+      copy.sort((a, b) => {
+        const sa = state.cities.find(c => c.id === a.srcId);
+        const sb = state.cities.find(c => c.id === b.srcId);
+        const aa = sa ? (state.alliances.find(al => al.id === sa.allianceId)?.name || '') : '';
+        const ab = sb ? (state.alliances.find(al => al.id === sb.allianceId)?.name || '') : '';
+        if(aa !== ab) return aa.localeCompare(ab, 'zh-Hant');
+        return (sa?.name || '').localeCompare(sb?.name || '', 'zh-Hant');
+      });
+    } else if(sortBy === 'type'){
+      copy.sort((a, b) => {
+        const oa = a.type === 'attack' ? 0 : 1;
+        const ob = b.type === 'attack' ? 0 : 1;
+        if(oa !== ob) return oa - ob;
+        const ta = a.attackStartTime || '';
+        const tb = b.attackStartTime || '';
+        return ta < tb ? -1 : 1;
+      });
+    }
+    return copy;
+  }
+
+  function groupLines(lines, groupBy){
+    if(groupBy === 'none') return [{ key: '__all__', title: '', items: lines }];
+
+    const groups = new Map();
+    for(const l of lines){
+      let key = '', title = '';
+      const src = state.cities.find(c => c.id === l.srcId);
+      const tgt = state.cities.find(c => c.id === l.tgtId);
+      if(groupBy === 'city'){
+        key = l.srcId || '__empty__';
+        title = '🏰 ' + (src ? src.name : '（無效出兵城）');
+      } else if(groupBy === 'type'){
+        key = l.type;
+        title = l.type === 'attack' ? '⚔️ 進攻' : '🤝 協防';
+      } else if(groupBy === 'alliance'){
+        const a = src ? state.alliances.find(al => al.id === src.allianceId) : null;
+        key = a ? a.id : '__none__';
+        title = '🤝 ' + (a ? ((a.icon ? a.icon + ' ' : '') + a.name) : '（無盟）');
+      } else if(groupBy === 'time'){
+        const t = l.attackStartTime || '00:00';
+        key = t.slice(0, 2) + ':00';
+        title = '⏰ ' + key + ' 時段';
+      }
+      if(!groups.has(key)) groups.set(key, { key, title, items: [] });
+      groups.get(key).items.push(l);
+    }
+    const arr = [...groups.values()];
+    if(groupBy === 'type'){
+      arr.sort((a, b) => (a.key === 'attack' ? 0 : 1) - (b.key === 'attack' ? 0 : 1));
+    } else {
+      arr.sort((a, b) => String(a.title).localeCompare(String(b.title), 'zh-Hant'));
+    }
+    return arr;
+  }
+
+  function render(){
+    const container = document.getElementById('warListContainer');
+    if(!container) return;
+
+    /* 同步下拉 */
+    const sortSel = document.getElementById('warSortSelect');
+    if(sortSel) sortSel.value = getSortPref();
+    const groupSel = document.getElementById('warGroupSelect');
+    if(groupSel) groupSel.value = getGroupPref();
+
+    const lines = getAllWarLines();
     if(lines.length === 0){
-      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無宣戰指示</div>';
+      container.innerHTML = '<div class="list-container-empty">尚無宣戰指示。點下方「➕ 新增宣戰指示」開始。</div>';
       return;
     }
 
-    /* v8.5.5：5 欄（出兵城 / 類型 / 目標城 / 時間 / 操作） */
-    const headerHtml = `<div class="war-header">
-      <span>出兵城</span>
-      <span>類型</span>
-      <span>目標城</span>
-      <span>進攻時間</span>
-      <span></span>
-    </div>`;
+    const sorted = sortLines(lines, getSortPref());
+    const grouped = groupLines(sorted, getGroupPref());
+    const limitMin = state.settings.timeLimitMin || 120;
 
-    const linesHtml = lines.map((l, i) => {
+    const theadHtml = `<thead><tr>
+      <th style="width:80px;">開始時間</th>
+      <th style="width:80px;">結束時間</th>
+      <th>出兵城</th>
+      <th style="width:100px;">類型</th>
+      <th>目標城</th>
+      <th style="width:50px;">操作</th>
+    </tr></thead>`;
+
+    const renderRow = (l, idx) => {
       const src = state.cities.find(c => c.id === l.srcId);
       const tgt = state.cities.find(c => c.id === l.tgtId);
-      const valid = src && tgt;
-      const invalidCls = valid ? '' : 'invalid';
-      const typeCls = l.type;
+      const isAttack = l.type === 'attack';
+      const timeVal = isAttack ? (l.attackStartTime || '19:00') : '';
+      const endTime = isAttack
+        ? computeEndTime(timeVal, limitMin)
+        : computeEndTime(
+            (() => {
+              /* 協防：結束時間 = 目標城的防守開始 + limitMin */
+              if(!tgt) return '';
+              const incomingTimes = [];
+              for(const o of state.cities){
+                for(const t of (o.attackTargets || [])){
+                  if(t.cityId === tgt.id && t.attackStartTime) incomingTimes.push(t.attackStartTime);
+                }
+              }
+              if(incomingTimes.length === 0) return '';
+              incomingTimes.sort();
+              return incomingTimes[0];
+            })(),
+            limitMin
+          );
 
+      const rowPending = !l.tgtId;
+      const pendingBadge = `<span class="pending-badge">待設定</span>`;
+
+      /* 出兵城下拉 */
       const srcOpts = state.cities.map(c =>
         `<option value="${c.id}" ${c.id === l.srcId ? 'selected' : ''}>${esc(c.name)}</option>`
       ).join('');
+      const srcIcon = src ? (() => {
+        const a = state.alliances.find(al => al.id === src.allianceId);
+        return (a && a.icon) ? a.icon + ' ' : '';
+      })() : '';
 
+      /* 類型下拉 */
       const typeOpts = `
-        <option value="attack" ${l.type === 'attack' ? 'selected' : ''}>⚔️ 進攻</option>
-        <option value="assist" ${l.type === 'assist' ? 'selected' : ''}>🤝 協防</option>
+        <option value="attack" ${isAttack ? 'selected' : ''}>⚔️ 進攻</option>
+        <option value="assist" ${!isAttack ? 'selected' : ''}>🤝 協防</option>
       `;
 
+      /* 目標城下拉 */
       const validTargets = getTargetsForType(l.srcId, l.type);
       let tgtOpts = '';
-
-      if(validTargets.length === 0){
-        tgtOpts = `<option value="">（無可用目標城）</option>`;
+      if(!l.tgtId){
+        tgtOpts = `<option value="">（待設定）</option>`;
+      } else if(validTargets.length === 0){
+        tgtOpts = `<option value="">（無可用目標）</option>`;
       } else {
         if(!validTargets.find(c => c.id === l.tgtId) && tgt){
           tgtOpts += `<option value="${tgt.id}" selected>${esc(tgt.name)}（不符）</option>`;
@@ -1739,109 +1869,148 @@ function getTargetsForType(srcCityId, type){
         ).join('');
       }
 
-      /* v8.5.5：協防時目標城未被宣戰提示 */
-      let attackHint = '';
-      if(l.type === 'assist' && l.tgtId && tgt){
-        if(!isBeingAttacked(l.tgtId)){
-          attackHint = `<span class="war-hint warn" title="此目標城目前未被任何敵方/NPC宣戰">⚠️ 未被宣戰</span>`;
-        }
-      }
+      /* 時間欄 */
+      const timeCell = isAttack
+        ? `<input type="time" class="inline-time" value="${timeVal}" data-war-time="1" data-idx="${idx}">`
+        : `<span class="col-time end">—</span>`;
 
-      /* v8.5.5：時間欄（僅進攻可編輯） */
-      const isAttack = (l.type === 'attack');
-      const timeVal = l.attackStartTime || '19:00';
-      const timeDisabled = isAttack ? '' : ' disabled';
-      const timeCell = `<input type="time" class="war-time" data-war-time="1" value="${timeVal}"${timeDisabled}>`;
+      const endCell = `<span class="col-time end">${esc(endTime)}</span>`;
 
-      return `<div class="war-line ${invalidCls}" data-line-idx="${i}">
-        <select class="war-src">${srcOpts}</select>
-        <select class="war-type ${typeCls}">${typeOpts}</select>
-        <div class="war-tgt-wrap">
-          <select class="war-tgt">${tgtOpts}</select>
-          ${attackHint}
-        </div>
-        ${timeCell}
-        <button class="btn btn-danger btn-sm war-del">🗑️</button>
+      /* 出兵城：顯示 icon + 名稱 + 下拉 */
+      const srcCell = `<div style="display:flex;align-items:center;gap:4px;">
+        ${srcIcon ? `<span class="alliance-icon">${srcIcon}</span>` : ''}
+        <select class="inline-select" data-war-src="1" data-idx="${idx}" style="flex:1;">${srcOpts}</select>
       </div>`;
-    }).join('');
 
-    el.innerHTML = headerHtml + linesHtml;
+      /* 目標城 */
+      const tgtCell = `<select class="inline-select" data-war-tgt="1" data-idx="${idx}">${tgtOpts}</select>`;
 
-    el.querySelectorAll('.war-line').forEach((lineEl, i) => {
-      const line = lines[i];
+      return `<tr class="${rowPending ? 'row-pending' : ''}" data-war-row="${idx}">
+        <td>${timeCell}</td>
+        <td>${endCell}</td>
+        <td>${srcCell}</td>
+        <td><select class="inline-select col-type ${isAttack ? 'attack' : 'assist'}" data-war-type="1" data-idx="${idx}">${typeOpts}</select></td>
+        <td>${tgtCell}</td>
+        <td class="col-del"><button class="btn btn-danger btn-sm" data-war-del="1" data-idx="${idx}">🗑️</button></td>
+      </tr>`;
+    };
 
-      lineEl.querySelector('.war-src')?.addEventListener('change', function(){
-        const newSrcId = this.value;
-        const validTargets = getTargetsForType(newSrcId, line.type);
-        let newTgtId = line.tgtId;
-        if(!validTargets.find(c => c.id === newTgtId)){
-          newTgtId = validTargets.length > 0 ? validTargets[0].id : '';
-        }
-        if(!newTgtId){
-          changeLineAllowEmpty(line, newSrcId, line.type);
-          return;
-        }
-        changeLine(line, newSrcId, newTgtId, line.type, line.attackStartTime);
+    let html = '';
+    if(getGroupPref() === 'none'){
+      html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
+    } else {
+      let idxCounter = 0;
+      html = grouped.map((g, gi) => {
+        const rows = g.items.map(l => renderRow(l, idxCounter++)).join('');
+        return `<div class="list-group open">
+          <div class="list-group-header">
+            <span class="toggle-icon">▶</span>
+            <span class="group-title">${esc(g.title)}</span>
+            <span class="group-count">${g.items.length} 條</span>
+          </div>
+          <div class="list-group-body">
+            <table class="list-table">${theadHtml}<tbody>${rows}</tbody></table>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    container.innerHTML = html;
+
+    /* 綁定：分組摺疊 */
+    container.querySelectorAll('.list-group-header').forEach(h => {
+      h.addEventListener('click', () => {
+        const group = h.closest('.list-group');
+        if(group) group.classList.toggle('open');
       });
+    });
 
-      lineEl.querySelector('.war-type')?.addEventListener('change', function(){
+    /* 綁定：行內編輯 */
+    bindWarRowEvents(container, sorted);
+  }
+
+  function bindWarRowEvents(container, sortedLines){
+    /* 時間變更 */
+    container.querySelectorAll('[data-war-time]').forEach(inp => {
+      inp.addEventListener('change', function(){
+        const idx = parseInt(this.dataset.idx, 10);
+        const line = sortedLines[idx];
+        if(!line) return;
+        const newTime = this.value || '19:00';
+        updateWarLineTime(line, newTime);
+      });
+    });
+
+    /* 出兵城變更 */
+    container.querySelectorAll('[data-war-src]').forEach(sel => {
+      sel.addEventListener('change', function(){
+        const idx = parseInt(this.dataset.idx, 10);
+        const line = sortedLines[idx];
+        if(!line) return;
+        changeWarLine(line, this.value, line.tgtId, line.type, line.attackStartTime);
+      });
+    });
+
+    /* 類型變更 */
+    container.querySelectorAll('[data-war-type]').forEach(sel => {
+      sel.addEventListener('change', function(){
+        const idx = parseInt(this.dataset.idx, 10);
+        const line = sortedLines[idx];
+        if(!line) return;
         const newType = this.value;
         const validTargets = getTargetsForType(line.srcId, newType);
         let newTgtId = line.tgtId;
         if(!validTargets.find(c => c.id === newTgtId)){
           newTgtId = validTargets.length > 0 ? validTargets[0].id : '';
         }
-        /* v8.5.5：切換類型時，時間也跟著變 */
         let newTime = line.attackStartTime;
-        if(newType === 'assist'){
-          newTime = '';  /* 協防無時間 */
-        } else if(!newTime){
-          newTime = '19:00';  /* 進攻預設 */
-        }
-
+        if(newType === 'assist'){ newTime = ''; }
+        else if(!newTime){ newTime = '19:00'; }
         if(!newTgtId){
-          changeLineAllowEmpty(line, line.srcId, newType, newTime);
+          changeWarLineAllowEmpty(line, line.srcId, newType, newTime);
           return;
         }
-        changeLine(line, line.srcId, newTgtId, newType, newTime);
+        changeWarLine(line, line.srcId, newTgtId, newType, newTime);
       });
+    });
 
-      lineEl.querySelector('.war-tgt')?.addEventListener('change', function(){
+    /* 目標城變更 */
+    container.querySelectorAll('[data-war-tgt]').forEach(sel => {
+      sel.addEventListener('change', function(){
+        const idx = parseInt(this.dataset.idx, 10);
+        const line = sortedLines[idx];
+        if(!line) return;
         const newTgtId = this.value;
         if(!newTgtId) return;
-        changeLine(line, line.srcId, newTgtId, line.type, line.attackStartTime);
+        changeWarLine(line, line.srcId, newTgtId, line.type, line.attackStartTime);
       });
+    });
 
-      /* v8.5.5：時間變更 */
-      lineEl.querySelector('[data-war-time]')?.addEventListener('change', function(){
-        const newTime = this.value || '19:00';
-        updateWarTime(line, newTime);
-      });
-
-      lineEl.querySelector('.war-del')?.addEventListener('click', () => {
-        deleteLine(line);
+    /* 刪除 */
+    container.querySelectorAll('[data-war-del]').forEach(btn => {
+      btn.addEventListener('click', function(){
+        const idx = parseInt(this.dataset.idx, 10);
+        const line = sortedLines[idx];
+        if(!line) return;
+        deleteWarLine(line);
       });
     });
   }
 
-  /* v8.5.5：只更新時間 */
-  function updateWarTime(line, newTime){
+  function updateWarLineTime(line, newTime){
     const src = state.cities.find(c => c.id === line.srcId);
     if(!src) return;
     const arr = line.type === 'attack' ? 'attackTargets' : 'defendTargets';
     const route = (src[arr] || []).find(t => t.cityId === line.tgtId);
     if(!route) return;
     route.attackStartTime = newTime;
-
-    /* v8.5.5：重算防守時間 */
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-
     markDirty(src.id);
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
 
-  function changeLineAllowEmpty(oldLine, newSrcId, newType, newTime){
+  function changeWarLineAllowEmpty(oldLine, newSrcId, newType, newTime){
     deleteLineSilent(oldLine);
     const src = state.cities.find(c => c.id === newSrcId);
     if(!src) return;
@@ -1861,7 +2030,7 @@ function getTargetsForType(srcCityId, type){
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
 
-  function changeLine(oldLine, newSrcId, newTgtId, newType, newTime){
+  function changeWarLine(oldLine, newSrcId, newTgtId, newType, newTime){
     const validTargets = getTargetsForType(newSrcId, newType);
     if(!validTargets.find(c => c.id === newTgtId)){
       alert('此類型不能選擇該目標城');
@@ -1897,26 +2066,12 @@ function getTargetsForType(srcCityId, type){
     });
 
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-
     markDirty(src.id);
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
 
-  function cityName(id){
-    const c = state.cities.find(x => x.id === id);
-    return c ? c.name : id;
-  }
-
-  function markDirty(cityId){
-    state.entityRev.city[cityId] = (state.entityRev.city[cityId] || 0) + 1;
-    if(window.SLG.markDirty) window.SLG.markDirty('city', cityId);
-    if(window.SLG.tickLamport) window.SLG.tickLamport();
-    if(window.SLG.flushPatches) window.SLG.flushPatches();
-    if(window.SLG.saveState) window.SLG.saveState();
-  }
-
-  function deleteLine(line){
+  function deleteWarLine(line){
     deleteLineSilent(line);
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
     if(window.SLG.saveState) window.SLG.saveState();
@@ -1940,162 +2095,292 @@ function getTargetsForType(srcCityId, type){
     if(window.SLG.markDirty) window.SLG.markDirty('city', src.id);
   }
 
+  function cityName(id){
+    const c = state.cities.find(x => x.id === id);
+    return c ? c.name : id;
+  }
+
+  function markDirty(cityId){
+    state.entityRev.city[cityId] = (state.entityRev.city[cityId] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', cityId);
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState();
+  }
+
   return { init, render, findWarLine, isBeingAttacked };
 })();
 
 /* ============================================================
-   DeployInstr — 出兵指示（v8.5.5：加唯讀時間欄）
+   DeployInstr — 出兵清單（v8.5.6：表格形式 + 排序 / 分組）
    ============================================================ */
 const DeployInstr = (() => {
+  const LS_SORT_KEY = 'slg_deploy_sort_v856';
+  const LS_GROUP_KEY = 'slg_deploy_group_v856';
+  const DEFAULT_SORT = 'alliance';
+  const DEFAULT_GROUP = 'none';
+
   function init(){
-    const el = document.getElementById('deployInstructionList');
-    if(el){
-      el.addEventListener('change', e => {
-        const input = e.target.closest('[data-deploy-field]');
-        if(!input) return;
-        const card = input.closest('.deploy-instr-card');
-        if(!card) return;
-        const srcId = card.dataset.srcId;
-        const tgtId = input.dataset.tgtId;
-        const type = input.dataset.type;
-        const field = input.dataset.deployField;
-        updateRoute(srcId, tgtId, type, field, input.value);
+    const el = document.getElementById('deployListContainer');
+    if(!el) return;
+
+    const sortSel = document.getElementById('deploySortSelect');
+    if(sortSel){
+      sortSel.addEventListener('change', function(){
+        state.listPrefs.deploySort = this.value;
+        try{ localStorage.setItem(LS_SORT_KEY, this.value); }catch(e){}
+        if(window.SLG.saveState) window.SLG.saveState();
+        render();
       });
-      el.addEventListener('click', e => {
-        const delBtn = e.target.closest('[data-deploy-del]');
-        if(!delBtn) return;
-        const srcId = delBtn.dataset.srcId;
-        const tgtId = delBtn.dataset.tgtId;
-        const type = delBtn.dataset.type;
-        deleteRoute(srcId, tgtId, type);
+    }
+    const groupSel = document.getElementById('deployGroupSelect');
+    if(groupSel){
+      groupSel.addEventListener('change', function(){
+        state.listPrefs.deployGroup = this.value;
+        try{ localStorage.setItem(LS_GROUP_KEY, this.value); }catch(e){}
+        if(window.SLG.saveState) window.SLG.saveState();
+        render();
       });
     }
   }
 
-  function updateRoute(srcId, tgtId, type, field, value){
-    const src = state.cities.find(c => c.id === srcId);
-    if(!src) return;
-    const arr = type === 'attack' ? 'attackTargets' : 'defendTargets';
-    const route = (src[arr] || []).find(t => t.cityId === tgtId);
-    if(!route) return;
-    route[field] = parseFloat(value) || 0;
-    state.entityRev.city[srcId] = (state.entityRev.city[srcId] || 0) + 1;
-    if(window.SLG.markDirty) window.SLG.markDirty('city', srcId);
-    if(window.SLG.tickLamport) window.SLG.tickLamport();
-    if(window.SLG.flushPatches) window.SLG.flushPatches();
-    if(window.SLG.saveState) window.SLG.saveState();
-    render();
+  function getAllDeployLines(){
+    const lines = [];
+    for(const src of state.cities){
+      for(const t of (src.attackTargets || [])){
+        if(!t.cityId) continue;
+        lines.push({
+          srcId: src.id,
+          tgtId: t.cityId,
+          type: 'attack',
+          preWarPercent: t.preWarPercent,
+          postRevivePercent: t.postRevivePercent,
+          priority: t.priority,
+          attackStartTime: t.attackStartTime || '19:00',
+        });
+      }
+      for(const t of (src.defendTargets || [])){
+        if(!t.cityId) continue;
+        lines.push({
+          srcId: src.id,
+          tgtId: t.cityId,
+          type: 'assist',
+          preWarPercent: t.preWarPercent,
+          postRevivePercent: t.postRevivePercent,
+          priority: t.priority,
+          attackStartTime: '',
+        });
+      }
+    }
+    return lines;
   }
 
-  function deleteRoute(srcId, tgtId, type){
-    const src = state.cities.find(c => c.id === srcId);
-    if(!src) return;
-    const arr = type === 'attack' ? 'attackTargets' : 'defendTargets';
-    src[arr] = (src[arr] || []).filter(t => t.cityId !== tgtId);
-    state.entityRev.city[srcId] = (state.entityRev.city[srcId] || 0) + 1;
-    if(window.SLG.markDirty) window.SLG.markDirty('city', srcId);
-    if(window.SLG.tickLamport) window.SLG.tickLamport();
-    if(window.SLG.flushPatches) window.SLG.flushPatches();
-    if(window.SLG.saveState) window.SLG.saveState();
+  function getSortPref(){ return state.listPrefs.deploySort || DEFAULT_SORT; }
+  function getGroupPref(){ return state.listPrefs.deployGroup || DEFAULT_GROUP; }
 
-    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+  function computeEndTime(startTime, limitMin){
+    if(!startTime) return '待設定';
+    const m = hhmmToMinutes(startTime);
+    const endM = m + (parseInt(limitMin) || 120);
+    return minutesToHHMM(endM);
+  }
 
-    render();
-    if(window.SLG.WarManager) window.SLG.WarManager.render();
+  function getCityDefStart(cityId){
+    const city = state.cities.find(c => c.id === cityId);
+    if(!city) return '';
+    return city.defStartTime || '';
+  }
+
+  function sortLines(lines, sortBy){
+    const copy = lines.slice();
+    if(sortBy === 'alliance'){
+      copy.sort((a, b) => {
+        const sa = state.cities.find(c => c.id === a.srcId);
+        const sb = state.cities.find(c => c.id === b.srcId);
+        const aa = sa ? (state.alliances.find(al => al.id === sa.allianceId)?.name || '') : '';
+        const ab = sb ? (state.alliances.find(al => al.id === sb.allianceId)?.name || '') : '';
+        if(aa !== ab) return aa.localeCompare(ab, 'zh-Hant');
+        return (sa?.name || '').localeCompare(sb?.name || '', 'zh-Hant');
+      });
+    } else if(sortBy === 'type'){
+      copy.sort((a, b) => {
+        const oa = a.type === 'attack' ? 0 : 1;
+        const ob = b.type === 'attack' ? 0 : 1;
+        if(oa !== ob) return oa - ob;
+        return (a.srcId || '').localeCompare(b.srcId || '');
+      });
+    }
+    return copy;
+  }
+
+  function groupLines(lines, groupBy){
+    if(groupBy === 'none') return [{ key: '__all__', title: '', items: lines }];
+    const groups = new Map();
+    for(const l of lines){
+      let key = '', title = '';
+      const src = state.cities.find(c => c.id === l.srcId);
+      if(groupBy === 'city'){
+        key = l.srcId;
+        title = '🏰 ' + (src ? src.name : '（無效）');
+      } else if(groupBy === 'type'){
+        key = l.type;
+        title = l.type === 'attack' ? '⚔️ 進攻' : '🤝 協防';
+      } else if(groupBy === 'alliance'){
+        const a = src ? state.alliances.find(al => al.id === src.allianceId) : null;
+        key = a ? a.id : '__none__';
+        title = '🤝 ' + (a ? ((a.icon ? a.icon + ' ' : '') + a.name) : '（無盟）');
+      }
+      if(!groups.has(key)) groups.set(key, { key, title, items: [] });
+      groups.get(key).items.push(l);
+    }
+    const arr = [...groups.values()];
+    if(groupBy === 'type'){
+      arr.sort((a, b) => (a.key === 'attack' ? 0 : 1) - (b.key === 'attack' ? 0 : 1));
+    } else {
+      arr.sort((a, b) => String(a.title).localeCompare(String(b.title), 'zh-Hant'));
+    }
+    return arr;
   }
 
   function render(){
-    const el = document.getElementById('deployInstructionList');
-    if(!el) return;
+    const container = document.getElementById('deployListContainer');
+    if(!container) return;
 
-    const sources = state.cities.filter(c => {
-      const hasAtk = (c.attackTargets || []).some(t => t.cityId);
-      const hasDef = (c.defendTargets || []).some(t => t.cityId);
-      return hasAtk || hasDef;
-    });
+    const sortSel = document.getElementById('deploySortSelect');
+    if(sortSel) sortSel.value = getSortPref();
+    const groupSel = document.getElementById('deployGroupSelect');
+    if(groupSel) groupSel.value = getGroupPref();
 
-    if(sources.length === 0){
-      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無出兵指示（請先在「⚔️ 宣戰」新增宣戰路線）</div>';
+    const lines = getAllDeployLines();
+    if(lines.length === 0){
+      container.innerHTML = '<div class="list-container-empty">尚無出兵指示。請先在「⚔️ 宣戰」建立宣戰路線。</div>';
       return;
     }
 
-    el.innerHTML = sources.map(src => renderCard(src)).join('');
+    const sorted = sortLines(lines, getSortPref());
+    const grouped = groupLines(sorted, getGroupPref());
+    const limitMin = state.settings.timeLimitMin || 120;
+
+    const theadHtml = `<thead><tr>
+      <th style="width:80px;">開始時間</th>
+      <th style="width:80px;">結束時間</th>
+      <th>出兵城</th>
+      <th style="width:90px;">行動</th>
+      <th>目標城</th>
+      <th style="width:70px;">戰前%</th>
+      <th style="width:70px;">復活%</th>
+      <th style="width:60px;">順序</th>
+    </tr></thead>`;
+
+    const renderRow = (l, idx) => {
+      const src = state.cities.find(c => c.id === l.srcId);
+      const tgt = state.cities.find(c => c.id === l.tgtId);
+      const isAttack = l.type === 'attack';
+
+      let startTime = '', endTime = '';
+      if(isAttack){
+        startTime = l.attackStartTime || '19:00';
+        endTime = computeEndTime(startTime, limitMin);
+      } else {
+        /* 協防：跟隨目標城防守時間 */
+        const defStart = getCityDefStart(l.tgtId);
+        startTime = defStart || '待設定';
+        endTime = defStart ? computeEndTime(defStart, limitMin) : '待設定';
+      }
+
+      const srcIcon = src ? (() => {
+        const a = state.alliances.find(al => al.id === src.allianceId);
+        return (a && a.icon) ? a.icon + ' ' : '';
+      })() : '';
+      const tgtIcon = tgt ? (() => {
+        const a = state.alliances.find(al => al.id === tgt.allianceId);
+        return (a && a.icon) ? a.icon + ' ' : '';
+      })() : '';
+
+      const preOpts = PERCENT_OPTIONS.map(p =>
+        `<option value="${p}" ${p === l.preWarPercent ? 'selected' : ''}>${p}%</option>`
+      ).join('');
+      const postOpts = PERCENT_OPTIONS.map(p =>
+        `<option value="${p}" ${p === l.postRevivePercent ? 'selected' : ''}>${p}%</option>`
+      ).join('');
+
+      return `<tr data-deploy-row="${idx}">
+        <td><span class="col-time start">${esc(startTime)}</span></td>
+        <td><span class="col-time end">${esc(endTime)}</span></td>
+        <td class="col-city">${srcIcon}${src ? esc(src.name) : '—'}</td>
+        <td><span class="col-type ${isAttack ? 'attack' : 'assist'}">${isAttack ? '⚔️ 進攻' : '🤝 協防'}</span></td>
+        <td class="col-city">${tgtIcon}${tgt ? esc(tgt.name) : '—'}</td>
+        <td><select class="inline-select col-num" data-deploy-field="preWarPercent" data-idx="${idx}">${preOpts}</select></td>
+        <td><select class="inline-select col-num" data-deploy-field="postRevivePercent" data-idx="${idx}">${postOpts}</select></td>
+        <td><input type="number" class="inline-number" data-deploy-field="priority" data-idx="${idx}" value="${l.priority || 1}" min="1" max="99" step="1"></td>
+      </tr>`;
+    };
+
+    let html = '';
+    if(getGroupPref() === 'none'){
+      html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
+    } else {
+      let idxCounter = 0;
+      html = grouped.map(g => {
+        const rows = g.items.map(l => renderRow(l, idxCounter++)).join('');
+        return `<div class="list-group open">
+          <div class="list-group-header">
+            <span class="toggle-icon">▶</span>
+            <span class="group-title">${esc(g.title)}</span>
+            <span class="group-count">${g.items.length} 條</span>
+          </div>
+          <div class="list-group-body">
+            <table class="list-table">${theadHtml}<tbody>${rows}</tbody></table>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('.list-group-header').forEach(h => {
+      h.addEventListener('click', () => {
+        const group = h.closest('.list-group');
+        if(group) group.classList.toggle('open');
+      });
+    });
+
+    bindDeployRowEvents(container, sorted);
   }
 
-  /* v8.5.5：7 欄（類型 / 目標城 / 時間 / 戰前% / 復活% / 順序 / 操作） */
-  function headerRow(){
-    return `<div class="deploy-instr-header-row">
-      <span>類型</span>
-      <span>目標城</span>
-      <span>進攻時間</span>
-      <span>戰前%</span>
-      <span>復活%</span>
-      <span>順序</span>
-      <span>操作</span>
-    </div>`;
+  function bindDeployRowEvents(container, sortedLines){
+    container.querySelectorAll('[data-deploy-field]').forEach(inp => {
+      inp.addEventListener('change', function(){
+        const idx = parseInt(this.dataset.idx, 10);
+        const field = this.dataset.deployField;
+        const line = sortedLines[idx];
+        if(!line) return;
+        const val = this.value;
+        updateDeployField(line, field, val);
+      });
+    });
   }
 
-  function renderCard(src){
-    const totalTeams = Number(src.totalTeams) || 0;
-    const atkLines = (src.attackTargets || [])
-      .filter(t => t.cityId)
-      .map(t => renderLine(src, t, 'attack')).join('');
-    const defLines = (src.defendTargets || [])
-      .filter(t => t.cityId)
-      .map(t => renderLine(src, t, 'defend')).join('');
-
-    let atkSum = 0, defSum = 0;
-    for(const t of (src.attackTargets || [])){ if(t.cityId) atkSum += (Number(t.preWarPercent) || 0); }
-    for(const t of (src.defendTargets || [])){ if(t.cityId) defSum += (Number(t.preWarPercent) || 0); }
-    const total = atkSum + defSum;
-    const isOver = total > 100;
-    const reserve = Math.max(0, 100 - total);
-
-    const hasAtk = atkLines.length > 0;
-    const hasDef = defLines.length > 0;
-
-    return `<div class="deploy-instr-card" data-src-id="${src.id}">
-      <div class="deploy-instr-header">
-        <div class="deploy-instr-title">${src.isCapital ? '👑 ' : ''}${esc(src.name)}</div>
-        <div class="deploy-instr-total">總隊數 ${totalTeams}</div>
-      </div>
-      ${hasAtk ? `<div class="section-label" style="font-size:10px;">⚔️ 進攻指示（${atkSum}%）</div>${headerRow()}${atkLines}` : ''}
-      ${hasDef ? `<div class="section-label" style="font-size:10px;">🛡️ 協防指示（${defSum}%）</div>${headerRow()}${defLines}` : ''}
-      <div class="deploy-instr-footer ${isOver ? 'warn' : ''}">
-        合計 ${total}%　留守 ${reserve}%　${isOver ? '⚠️ 超過 100%' : '✅'}
-      </div>
-    </div>`;
-  }
-
-  function renderLine(src, route, type){
-    const tgt = state.cities.find(c => c.id === route.cityId);
-    if(!tgt) return '';
-    const arrow = type === 'attack' ? '⚔️' : '🛡️';
-    /* v8.5.5：進攻顯示時間，協防顯示「—」 */
-    const timeStr = type === 'attack'
-      ? (route.attackStartTime || '19:00')
-      : '—';
-
-    return `<div class="deploy-instr-line">
-      <span class="label">${arrow}</span>
-      <span class="target">${esc(tgt.name)}</span>
-      <span class="deploy-instr-time" title="${type === 'attack' ? '進攻開始時間（唯讀，請至「⚔️ 宣戰」修改）' : '協防無時間設定'}">${esc(timeStr)}</span>
-      <select data-deploy-field="preWarPercent" data-tgt-id="${route.cityId}" data-type="${type}">
-        ${PERCENT_OPTIONS.map(p => `<option value="${p}" ${p === route.preWarPercent ? 'selected' : ''}>${p}%</option>`).join('')}
-      </select>
-      <select data-deploy-field="postRevivePercent" data-tgt-id="${route.cityId}" data-type="${type}">
-        ${PERCENT_OPTIONS.map(p => `<option value="${p}" ${p === route.postRevivePercent ? 'selected' : ''}>${p}%</option>`).join('')}
-      </select>
-      <input type="number" data-deploy-field="priority" data-tgt-id="${route.cityId}" data-type="${type}" value="${route.priority || 1}" min="1" max="99" step="1">
-      <button class="btn btn-danger btn-sm" data-deploy-del="1" data-tgt-id="${route.cityId}" data-type="${type}" data-src-id="${src.id}">🗑️</button>
-    </div>`;
+  function updateDeployField(line, field, value){
+    const src = state.cities.find(c => c.id === line.srcId);
+    if(!src) return;
+    const arr = line.type === 'attack' ? 'attackTargets' : 'defendTargets';
+    const route = (src[arr] || []).find(t => t.cityId === line.tgtId);
+    if(!route) return;
+    route[field] = parseFloat(value) || 0;
+    state.entityRev.city[src.id] = (state.entityRev.city[src.id] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', src.id);
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState();
+    render();
   }
 
   return { init, render };
 })();
 
 /* ============================================================
-   RouteManager — 地圖路線管理
+   RouteManager — 地圖路線管理（不變）
    ============================================================ */
 const RouteManager = (() => {
   let editingRouteId = null;
@@ -2142,7 +2427,6 @@ const RouteManager = (() => {
             if(window.SLG.saveState) window.SLG.saveState();
             render();
             if(window.SLG.GameMap) window.SLG.GameMap.render();
-            /* v8.5.5：路線變更可能影響協防選項 */
             if(window.SLG.WarManager) window.SLG.WarManager.render();
           }
           return;
@@ -2416,7 +2700,7 @@ const RouteManager = (() => {
 })();
 
 /* ============================================================
-   GameMap — 地圖（力導向 + 盟徽 + 路線 + 拖曳 + touch 縮放）
+   GameMap — 地圖（不變）
    ============================================================ */
 const GameMap = (() => {
   let canvas, ctx, containerEl;
@@ -3047,7 +3331,7 @@ const GameMap = (() => {
 })();
 
 /* ============================================================
-   概覽面板渲染
+   概覽面板渲染（v8.5.6：盟分佈用億）
    ============================================================ */
 function renderOverview(){
   const cityCount = state.cities.length;
@@ -3090,10 +3374,10 @@ function renderOverview(){
         return `<div class="alliance-dist-row">
           <span class="name">${icon}${esc(a.name)}</span>
           <span class="chip ${chipCls}" style="font-size:9px;">${allianceSideLabel(a.side)}</span>
-          <span class="num">${allocatedPower.toLocaleString()} / ${totalPower.toLocaleString()}</span>
+          <span class="num">${formatPower(allocatedPower)} / ${formatPower(totalPower)}</span>
           <div class="bar"><div class="bar-fill ${cls}" style="width:${Math.min(100, pct)}%"></div></div>
           <span class="pct">${pct}%</span>
-          <span class="num" ${remainStyle}>餘 ${remain.toLocaleString()}</span>
+          <span class="num" ${remainStyle}>餘 ${formatPower(remain)}</span>
           <span class="num" style="color:var(--text-dim);">${myCities.length} 城</span>
         </div>`;
       }).join('');
@@ -3128,7 +3412,7 @@ function renderOverview(){
 }
 
 /* ============================================================
-   城池數據子 Tab 切換（v8.5.5：6 個子 Tab）
+   城池數據子 Tab 切換
    ============================================================ */
 let currentCityView = 'overview';
 
@@ -3172,7 +3456,6 @@ function initCitySubtabs(){
     });
   });
 
-  /* v8.5.5：6 個子 Tab */
   let saved = 'overview';
   try{
     const s = localStorage.getItem('slg_city_view_v855');
@@ -3328,14 +3611,21 @@ function renderSandboxData(){
 }
 
 /* ============================================================
-   同盟表單輔助
+   盟表單輔助（v8.5.6：戰力輸入億）
    ============================================================ */
 function updateAllianceAvgPowerPreview(){
   const mc = parseFloat(document.getElementById('allyMemberCount').value) || 0;
-  const tp = parseFloat(document.getElementById('allyTotalPower').value) || 0;
+  /* 讀取輸入值（億），轉完整數字 */
+  const inputVal = document.getElementById('allyTotalPower').value;
+  const totalPower = (() => {
+    const n = parseFloat(inputVal);
+    if(isNaN(n) || n < 0) return 0;
+    return Math.round(n * 1e8);
+  })();
+  const avg = mc > 0 ? (totalPower / mc) : 0;
   const el = document.getElementById('allyAvgPower');
   if(el){
-    el.value = mc > 0 ? (tp / mc).toLocaleString(undefined,{maximumFractionDigits:2}) : '0';
+    el.value = formatAvgPower(avg);
   }
 }
 
@@ -3346,7 +3636,7 @@ function resetAllianceForm(){
   document.getElementById('allyIcon').value = '';
   document.getElementById('allySide').value = 'ally';
   document.getElementById('allyMemberCount').value = 100;
-  document.getElementById('allyTotalPower').value = 20000;
+  document.getElementById('allyTotalPower').value = '2';  /* v8.5.6：預設 2 億 */
   document.getElementById('btnCancelAllianceEdit').style.display = 'none';
   document.getElementById('btnSaveAlliance').textContent = '💾 儲存';
   updateAllianceAvgPowerPreview();
@@ -3362,7 +3652,9 @@ function startEditAlliance(id){
   document.getElementById('allyIcon').value = a.icon || '';
   document.getElementById('allySide').value = a.side || 'ally';
   document.getElementById('allyMemberCount').value = a.memberCount || 100;
-  document.getElementById('allyTotalPower').value = a.totalPower || 20000;
+  /* v8.5.6：完整數字 → 億（輸入框） */
+  const yi = (Number(a.totalPower) || 0) / 1e8;
+  document.getElementById('allyTotalPower').value = yi.toFixed(2);
   document.getElementById('btnCancelAllianceEdit').style.display = 'inline-flex';
   document.getElementById('btnSaveAlliance').textContent = '💾 更新';
   updateAllianceAvgPowerPreview();
@@ -3370,17 +3662,23 @@ function startEditAlliance(id){
 }
 
 /* ============================================================
-   城池表單（v8.5.5：移除防守開始時間）
+   城池表單（v8.5.6：戰力輸入億、均戰顯示萬）
    ============================================================ */
 let editingCityId = null;
 
 function updateAutoCalcFields(){
   const t = parseFloat(document.getElementById('cm_totalTeams').value)||0;
-  const p = parseFloat(document.getElementById('cm_totalPower').value)||0;
+  const pInput = document.getElementById('cm_totalPower').value;
+  const p = (() => {
+    const n = parseFloat(pInput);
+    if(isNaN(n) || n < 0) return 0;
+    return Math.round(n * 1e8);
+  })();
   const el = document.getElementById('cm_avgPower');
   if(!el) return;
   if(t > 0 && p > 0){
-    el.value = Math.floor(p/t);
+    const avg = Math.floor(p/t);
+    el.value = formatAvgPower(avg);
   } else {
     el.value = '—';
   }
@@ -3426,12 +3724,13 @@ function openCityModal(cityId){
     document.getElementById('cm_side').value = city.side;
     document.getElementById('cm_level').value = city.level || 1;
     document.getElementById('cm_memberCount').value = city.memberCount || '';
-    document.getElementById('cm_totalPower').value = city.totalPower || '';
+    /* v8.5.6：完整數字 → 億（輸入框） */
+    const yi = (Number(city.totalPower) || 0) / 1e8;
+    document.getElementById('cm_totalPower').value = yi > 0 ? yi.toFixed(2) : '';
     document.getElementById('cm_totalTeams').value = city.totalTeams || '';
     document.getElementById('cm_cooldownMin').value = city.cooldownMin;
     document.getElementById('cm_wallMin').value = city.wallMin;
     document.getElementById('cm_isCapital').checked = !!city.isCapital;
-    /* v8.5.5：不再有 cm_defStartTime 欄位 */
   }
   updateAutoCalcFields();
   document.getElementById('cityModal').classList.add('show');
@@ -3457,7 +3756,9 @@ function saveCityFromModal(){
   const side = document.getElementById('cm_side').value;
   const level = parseInt(document.getElementById('cm_level').value) || 1;
   const memberCount = parseFloat(document.getElementById('cm_memberCount').value) || 0;
-  const totalPower = parseFloat(document.getElementById('cm_totalPower').value) || 0;
+  /* v8.5.6：億 → 完整數字 */
+  const pInput = parseFloat(document.getElementById('cm_totalPower').value) || 0;
+  const totalPower = Math.round(pInput * 1e8);
   const totalTeams = parseFloat(document.getElementById('cm_totalTeams').value) || 0;
   const cooldownMin = parseFloat(document.getElementById('cm_cooldownMin').value) || 0;
   const wallMin = parseFloat(document.getElementById('cm_wallMin').value) || 0;
@@ -3466,7 +3767,6 @@ function saveCityFromModal(){
   const existingCity = editingCityId ? state.cities.find(c => c.id === editingCityId) : null;
   const attackTargets = existingCity ? (existingCity.attackTargets || []) : [];
   const defendTargets = existingCity ? (existingCity.defendTargets || []) : [];
-  /* v8.5.5：保留現有 defStartTime（動態計算用），新建預設 19:00 */
   const defStartTime = existingCity ? (existingCity.defStartTime || '19:00') : '19:00';
 
   const avgPower = totalTeams > 0 ? Math.floor(totalPower / totalTeams) : 0;
@@ -3490,7 +3790,6 @@ function saveCityFromModal(){
   };
   window.SLG.upsertEntity('city', entity);
 
-  /* v8.5.5：重算防守開始時間 */
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
 
   closeCityModal();
@@ -3548,5 +3847,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.5.5）
+ * ui.js 結束（v8.5.6）
  * ========================================================================== */

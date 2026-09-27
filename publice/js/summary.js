@@ -1,5 +1,6 @@
 /* ============================================================================
- * summary.js — 推演總結（v8.4）
+ * summary.js — 推演總結（v8.5.6）
+ * v8.5.6：盟兵力分佈改用 formatPower（億）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -12,6 +13,9 @@ const {
   sideLabel, sideClass,
   minutesToHHMM,
   ROLE,
+  /* v8.5.6：戰力單位工具 */
+  formatPower,
+  formatAvgPower,
 } = window.SLG;
 
 const Summary = (() => {
@@ -55,7 +59,7 @@ const Summary = (() => {
     };
   }
 
-  /* ── 盟兵力分佈 ── */
+  /* ── 盟兵力分佈（v8.5.6：戰力顯示億） ── */
   function buildAllianceDist(alliances, cities) {
     return alliances.map(a => {
       const myCities = cities.filter(c => c.allianceId === a.id);
@@ -157,11 +161,9 @@ const Summary = (() => {
   /* ── 時間軸 ── */
   function buildTimeline(narrativeLines, baseMin) {
     if(!narrativeLines) return [];
-    /* 只留關鍵事件 */
     return narrativeLines
       .filter(l => l.type === 'warn' || l.type === 'capture')
       .map(l => {
-        /* 擷取時間戳「【HH:MM:SS】」 */
         const m = l.text.match(/【(\d{2}:\d{2}:\d{2})】/);
         const time = m ? m[1] : '';
         const text = l.text.replace(/【.*?】/, '').trim();
@@ -205,6 +207,7 @@ const Summary = (() => {
     `;
   }
 
+  /* v8.5.6：盟分佈使用億為單位 */
   function renderAllianceDist(list) {
     const el = document.getElementById('summaryAllianceDist');
     if(!el) return;
@@ -219,10 +222,10 @@ const Summary = (() => {
       return `<div class="alliance-dist-row">
         <span class="name">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</span>
         <span class="chip ${chipCls}" style="font-size:9px;">${sideLabel(a.side)}</span>
-        <span class="num">${a.allocatedPower.toLocaleString()} / ${a.totalPower.toLocaleString()}</span>
+        <span class="num">${formatPower(a.allocatedPower)} / ${formatPower(a.totalPower)}</span>
         <div class="bar"><div class="bar-fill ${barCls}" style="width:${Math.min(100, a.usedPct)}%"></div></div>
         <span class="pct">${a.usedPct}%</span>
-        <span class="num" ${remainCls}>餘 ${a.remainPower.toLocaleString()}</span>
+        <span class="num" ${remainCls}>餘 ${formatPower(a.remainPower)}</span>
         <span class="num" style="color:var(--text-dim);">${a.cityCount} 城</span>
       </div>`;
     }).join('');
@@ -269,7 +272,6 @@ const Summary = (() => {
         cities: g.cities,
       }));
     } else {
-      /* status */
       const survived = cityStates.filter(c => !c.fallen);
       const fallen = cityStates.filter(c => c.fallen);
       if(survived.length > 0) groups.push({ key: 'survived', title: '✅ 存活', cls: 'ok', cities: survived });
@@ -278,7 +280,6 @@ const Summary = (() => {
 
     el.innerHTML = groups.map(g => renderCityGroup(g)).join('');
 
-    /* 綁定展開/收起 */
     el.querySelectorAll('.summary-group-header').forEach(h => {
       h.addEventListener('click', () => {
         const body = h.nextElementSibling;
@@ -374,7 +375,6 @@ const Summary = (() => {
      初始化
      ============================================================ */
   function init() {
-    /* 視角切換 */
     document.querySelectorAll('.summary-view-tab').forEach(tab => {
       tab.addEventListener('click', function(){
         document.querySelectorAll('.summary-view-tab').forEach(t => t.classList.remove('active'));

@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI
- * v8.5.5
+ * v8.5.6：戰力單位換算（億/萬）+ 舊資料遷移
  * ========================================================================== */
 (function(){
 'use strict';
@@ -30,6 +30,12 @@ const ROOM_SNAPSHOT_DEBOUNCE = 2000;
 /* v8.5：NPC 預設盟名稱 */
 const NPC_ALLIANCE_NAME = 'NPC';
 const NPC_ALLIANCE_ICON = '🏰';
+
+/* v8.5.6：戰力單位換算 */
+const POWER_YI = 1e8;      /* 1 億 = 100,000,000 */
+const POWER_WAN = 1e4;     /* 1 萬 = 10,000 */
+/* 舊資料遷移閾值：若值 < 100 萬，視為舊資料（億為單位），自動 × 10⁸ */
+const POWER_MIGRATE_THRESHOLD = 1e6;
 
 const PERCENT_OPTIONS = [0, 17, 33, 50, 67, 84, 100];
 
@@ -146,6 +152,69 @@ function timeAgo(ts){
 function buildSandboxFileName(displayName, updatedAt){
   const safe = (displayName || '匿名').replace(/[\\/:*?"<>|]/g, '_');
   return `${safe}_${formatDateCompact(updatedAt)}`;
+}
+
+/* ============================================================
+   v8.5.6：戰力單位換算工具
+   ============================================================ */
+
+/**
+ * 格式化完整數字為「億」
+ * @param {number} num - 完整數字（如 200000000）
+ * @returns {string} - 如 "2.00 億"
+ */
+function formatPower(num){
+  const n = Number(num) || 0;
+  if(n === 0) return '0.00 億';
+  const yi = n / POWER_YI;
+  return yi.toFixed(2) + ' 億';
+}
+
+/**
+ * 格式化平均戰力為「萬」（無小數）
+ * @param {number} num - 完整數字（如 1500000）
+ * @returns {string} - 如 "150 萬"
+ */
+function formatAvgPower(num){
+  const n = Number(num) || 0;
+  if(n === 0) return '0 萬';
+  const wan = Math.round(n / POWER_WAN);
+  return wan.toLocaleString() + ' 萬';
+}
+
+/**
+ * 解析使用者輸入（億）為完整數字
+ * @param {string|number} input - 如 "2" 或 "1.5"
+ * @returns {number} - 如 200000000
+ */
+function parsePowerInput(input){
+  const n = parseFloat(input);
+  if(isNaN(n) || n < 0) return 0;
+  return Math.round(n * POWER_YI);
+}
+
+/**
+ * 遷移舊資料：若值過小，視為「億」單位，乘以 10⁸
+ * @param {number} num
+ * @returns {number}
+ */
+function migratePower(num){
+  const n = Number(num) || 0;
+  if(n === 0) return 0;
+  /* 若 < 100 萬，視為舊資料的「億」單位 */
+  if(n < POWER_MIGRATE_THRESHOLD) return Math.round(n * POWER_YI);
+  return n;
+}
+
+/**
+ * 將完整數字轉為「億」為單位的顯示字串（用於輸入框 value）
+ * @param {number} num
+ * @returns {string} - 如 "2.00"
+ */
+function powerToYiInput(num){
+  const n = Number(num) || 0;
+  if(n === 0) return '0.00';
+  return (n / POWER_YI).toFixed(2);
 }
 
 /* ============================================================
@@ -300,6 +369,13 @@ const state = {
   roomSnapshot: null,
   roomHasSnapshot: false,
   pendingUploadSandbox: null,
+  /* v8.5.6：清單檢視偏好 */
+  listPrefs: {
+    warSort: 'time',
+    warGroup: 'none',
+    deploySort: 'alliance',
+    deployGroup: 'none',
+  },
 };
 
 /* ============================================================
@@ -369,6 +445,7 @@ function saveState(){
       dynRows: state.dynRows.slice(-5000),
       narrativeLines: state.narrativeLines.slice(-1000),
       chatMessages: state.chatMessages.slice(-200),
+      listPrefs: state.listPrefs,
     }));
   }catch(e){ console.warn('儲存失敗', e); }
   if(state.mode === 'local'){
@@ -376,6 +453,32 @@ function saveState(){
   }
   if(state.mode === 'room' && state.isHost){
     triggerRoomSnapshotSync();
+  }
+}
+
+/* ============================================================
+   v8.5.6：遷移盟 / 城的戰力單位
+   ============================================================ */
+function migratePowerInState(){
+  /* 盟 */
+  if(Array.isArray(state.alliances)){
+    for(const a of state.alliances){
+      const oldTotal = Number(a.totalPower) || 0;
+      a.totalPower = migratePower(oldTotal);
+      const mc = Number(a.memberCount) || 0;
+      a.avgPower = mc > 0 ? (a.totalPower / mc) : 0;
+      /* v8.5：舊欄位 power 相容 */
+      if(typeof a.power === 'number') a.power = a.totalPower;
+    }
+  }
+  /* 城 */
+  if(Array.isArray(state.cities)){
+    for(const c of state.cities){
+      const oldTotal = Number(c.totalPower) || 0;
+      c.totalPower = migratePower(oldTotal);
+      const tt = Number(c.totalTeams) || 0;
+      c.avgPower = tt > 0 ? Math.floor(c.totalPower / tt) : 0;
+    }
   }
 }
 
@@ -453,6 +556,14 @@ function loadState(){
     if(Array.isArray(d.dynRows)) state.dynRows = d.dynRows.slice(-5000);
     if(Array.isArray(d.narrativeLines)) state.narrativeLines = d.narrativeLines.slice(-1000);
     if(Array.isArray(d.chatMessages)) state.chatMessages = d.chatMessages.slice(-200);
+
+    /* v8.5.6：清單偏好 */
+    if(d.listPrefs){
+      state.listPrefs = Object.assign(state.listPrefs, d.listPrefs);
+    }
+
+    /* v8.5.6：遷移戰力單位 */
+    migratePowerInState();
   }catch(e){ console.warn('讀取失敗', e); }
 }
 
@@ -649,6 +760,8 @@ function applyFullSnapshot(snap){
     }
   }
   tickLamport(snap.lamport || 0);
+  /* v8.5.6：遷移戰力單位 */
+  migratePowerInState();
   return true;
 }
 
@@ -684,6 +797,8 @@ function applySandboxData(data){
       state.entityRev[kind][ent.id] = 1;
     }
   }
+  /* v8.5.6：遷移戰力單位 */
+  migratePowerInState();
   return true;
 }
 
@@ -966,8 +1081,14 @@ Object.assign(window.SLG, {
   ATTACK_RULES, DEFEND_RULES, SIDE_LABELS, ALLIANCE_SIDE_LABELS,
   ROLE, ROLE_LABELS, ROLE_CLASS, ROLE_ORDER, EVT,
 
+  /* v8.5.6：戰力單位常量 */
+  POWER_YI, POWER_WAN, POWER_MIGRATE_THRESHOLD,
+
   uid, nowTime, esc, sideLabel, allianceSideLabel, sideClass, logSystem,
   formatDateCompact, timeAgo, buildSandboxFileName,
+
+  /* v8.5.6：戰力單位工具 */
+  formatPower, formatAvgPower, parsePowerInput, migratePower, powerToYiInput,
 
   AI,
 
@@ -1013,6 +1134,9 @@ Object.assign(window.SLG, {
 
   /* v8.5.5：防守時間推算 */
   computeDefStartTimes,
+
+  /* v8.5.6：內部遷移函式（給 firebase.js 用） */
+  migratePowerInState,
 });
 
 })();
