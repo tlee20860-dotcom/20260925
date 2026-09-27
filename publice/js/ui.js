@@ -1,6 +1,10 @@
 /* ============================================================================
  * ui.js — 所有渲染（viz / R / DYN / DEPLOY / CityManager / WarManager / DeployInstr / RouteManager / GameMap）
- * v8.5.4：協防邏輯（同盟 + 有路線）+ 目標城被宣戰提示
+ * v8.5.5：宣戰進攻時間 + 出兵唯讀時間 + 子 Tab 6 個
+ *
+ * ⚠️ 此檔案分為 2 部分交付；實際部署時合併為單一 js/ui.js。
+ *    第 1/2 部分：viz / R / DYN / DEPLOY
+ *    第 2/2 部分：CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 暴露
  * ========================================================================== */
 (function(){
 'use strict';
@@ -29,7 +33,7 @@ const Auth = () => window.SLG.Auth;
 const hasTogglePerm = () => typeof window.SLG.togglePerm === 'function';
 
 /* ============================================================
-   viz — 態勢圖（touch 縮放）
+   viz — 態勢圖（v8.5.1：加 touch 縮放）
    ============================================================ */
 const viz = (() => {
   const NODE_RADIUS = 14;
@@ -39,6 +43,7 @@ const viz = (() => {
   let snapshotSecs = [];
   let currentSec = 0;
 
+  /* v8.5.1：touch 縮放 */
   let vizScale = 1;
   let vizPinchStartDist = 0;
   let vizPinchStartScale = 1;
@@ -65,6 +70,7 @@ const viz = (() => {
       computeLayout(); resizeCanvases(); renderStatic(); renderLive(currentSec);
     });
 
+    /* v8.5.1：touch 縮放（pinch） */
     containerEl.addEventListener('touchstart', (e) => {
       if(e.touches.length === 2){
         vizPinchStartDist = touchDist(e.touches[0], e.touches[1]);
@@ -233,11 +239,13 @@ const viz = (() => {
       if(!from) continue;
       for(const t of (c.attackTargets || [])){
         if((t.preWarPercent||0)<=0) continue;
+        if(!t.cityId) continue;
         const to = layout.nodes.get(t.cityId); if(!to) continue;
         drawArrow(ctxStatic, from, to, 'rgba(255,68,102,0.35)', t.preWarPercent);
       }
       for(const t of (c.defendTargets || [])){
         if((t.preWarPercent||0)<=0) continue;
+        if(!t.cityId) continue;
         const to = layout.nodes.get(t.cityId); if(!to) continue;
         drawArrow(ctxStatic, from, to, 'rgba(34,255,136,0.28)', t.preWarPercent);
       }
@@ -563,6 +571,7 @@ const R = (() => {
         const alloc = computeAllocation(c);
         const overCls = alloc.over ? 'overdraft' : '';
         const capCls = c.isCapital ? 'capital' : '';
+        /* v8.5.5：防守時間動態計算後顯示 */
         const defStart = c.defStartTime || '19:00';
         const defEnd = minutesToHHMM(hhmmToMinutes(defStart) + state.settings.timeLimitMin);
         const allianceIcon = (alliance && alliance.icon) ? alliance.icon : '';
@@ -571,7 +580,7 @@ const R = (() => {
         if(alliance){
           html += `<div class="text-dim" style="margin-bottom:4px;">同盟：${allianceIcon ? `<span class="alliance-icon">${allianceIcon}</span>` : ''}${esc(alliance.name)}</div>`;
         }
-        html += `<div class="flex-row" style="margin-bottom:4px;"><span class="chip time">🕐 ${esc(defStart)} – ${esc(defEnd)}</span></div>`;
+        html += `<div class="flex-row" style="margin-bottom:4px;"><span class="chip time">🕐 防守 ${esc(defStart)} – ${esc(defEnd)}</span></div>`;
         html += `<div class="flex-row" style="font-size:11px;color:var(--text-secondary);gap:12px;"><span>戰力 ${(c.totalPower||0).toLocaleString()}</span><span>隊數 ${c.totalTeams}</span><span>均戰 ${c.avgPower}</span></div>`;
         if(alloc.over){
           html += `<div class="flex-row" style="font-size:11px;margin-top:4px;"><span class="text-warn">⚠️ 戰前派兵合計 ${alloc.allocated} 隊 ＞ 總隊數 ${alloc.totalTeams} 隊</span></div>`;
@@ -580,14 +589,14 @@ const R = (() => {
         }
         html += `<div class="flex-row" style="font-size:11px;color:var(--text-dim);gap:12px;margin-top:4px;"><span>冷卻 ${c.cooldownMin}分</span><span>城牆 ${c.wallMin}分</span></div>`;
         if(c.attackTargets?.length){
-          const list = c.attackTargets.filter(t => (t.preWarPercent||0)>0).map(t => {
+          const list = c.attackTargets.filter(t => (t.preWarPercent||0)>0 && t.cityId).map(t => {
             const tgt = state.cities.find(cc => cc.id === t.cityId);
-            return tgt ? `<span class="chip enemy">${esc(tgt.name)} 戰${t.preWarPercent}% 復${t.postRevivePercent}% #${t.priority}</span>` : null;
+            return tgt ? `<span class="chip enemy">${esc(tgt.name)} 戰${t.preWarPercent}% 復${t.postRevivePercent}% #${t.priority}${t.attackStartTime ? ' @'+t.attackStartTime : ''}</span>` : null;
           }).filter(Boolean);
           if(list.length) html += `<div style="margin-top:4px;">⚔️ ${list.join(' ')}</div>`;
         }
         if(c.defendTargets?.length){
-          const list = c.defendTargets.filter(t => (t.preWarPercent||0)>0).map(t => {
+          const list = c.defendTargets.filter(t => (t.preWarPercent||0)>0 && t.cityId).map(t => {
             const tgt = state.cities.find(cc => cc.id === t.cityId);
             return tgt ? `<span class="chip ally">${esc(tgt.name)} 戰${t.preWarPercent}% 復${t.postRevivePercent}% #${t.priority}</span>` : null;
           }).filter(Boolean);
@@ -663,6 +672,7 @@ const R = (() => {
     renderHealth(); renderHost(); renderMembers();
     renderAlliances(); renderZones(); renderCities();
     renderChat(); renderChatBadge();
+    /* v8.5.3：概覽面板（若存在） */
     if(typeof window.SLG.renderOverview === 'function') window.SLG.renderOverview();
   }
 
@@ -922,7 +932,8 @@ const DEPLOY = (() => {
       const atkChips = (c.attackTargets || []).filter(t => (t.preWarPercent||0) > 0 && t.cityId).map(t => {
         const tgt = state.cities.find(cc => cc.id === t.cityId);
         if (!tgt) return '';
-        return `<span class="deploy-chip atk">→ ${esc(tgt.name)} <span class="pct">${t.preWarPercent}%</span><span class="pr">#${t.priority}</span></span>`;
+        const timeStr = t.attackStartTime ? ` @${t.attackStartTime}` : '';
+        return `<span class="deploy-chip atk">→ ${esc(tgt.name)} <span class="pct">${t.preWarPercent}%</span><span class="pr">#${t.priority}${timeStr}</span></span>`;
       }).join('');
       const defChips = (c.defendTargets || []).filter(t => (t.preWarPercent||0) > 0 && t.cityId).map(t => {
         const tgt = state.cities.find(cc => cc.id === t.cityId);
@@ -960,7 +971,8 @@ const DEPLOY = (() => {
         (o.attackTargets||[]).some(t => t.cityId === c.id && (t.preWarPercent||0) > 0)
       ).map(o => {
         const t = o.attackTargets.find(t => t.cityId === c.id);
-        return `<span class="deploy-chip atk">← ${esc(o.name)} <span class="pct">${t.preWarPercent}%</span><span class="pr">#${t.priority}</span></span>`;
+        const timeStr = t.attackStartTime ? ` @${t.attackStartTime}` : '';
+        return `<span class="deploy-chip atk">← ${esc(o.name)} <span class="pct">${t.preWarPercent}%</span><span class="pr">#${t.priority}${timeStr}</span></span>`;
       }).join('');
       const defenderChips = state.cities.filter(o =>
         (o.defendTargets||[]).some(t => t.cityId === c.id && (t.preWarPercent||0) > 0)
@@ -1222,7 +1234,9 @@ const DEPLOY = (() => {
         const info = conflictMap.get(c.id) || { incoming: 0, conflict: false };
         const atkStr = (c.attackTargets||[]).filter(t => (t.preWarPercent||0)>0 && t.cityId).map(t => {
           const tgt = state.cities.find(cc => cc.id === t.cityId);
-          return tgt ? `${tgt.name} ${t.preWarPercent}% #${t.priority}` : '';
+          if (!tgt) return '';
+          const timeStr = t.attackStartTime ? ` @${t.attackStartTime}` : '';
+          return `${tgt.name} ${t.preWarPercent}% #${t.priority}${timeStr}`;
         }).filter(Boolean).join(' | ');
         const defStr = (c.defendTargets||[]).filter(t => (t.preWarPercent||0)>0 && t.cityId).map(t => {
           const tgt = state.cities.find(cc => cc.id === t.cityId);
@@ -1236,7 +1250,11 @@ const DEPLOY = (() => {
       rows = cities.map(c => {
         const info = conflictMap.get(c.id) || { incoming: 0, conflict: false };
         const atkStr = state.cities.filter(o => (o.attackTargets||[]).some(t => t.cityId === c.id && (t.preWarPercent||0)>0))
-          .map(o => { const t = o.attackTargets.find(t => t.cityId === c.id); return `${o.name} ${t.preWarPercent}% #${t.priority}`; }).join(' | ');
+          .map(o => {
+            const t = o.attackTargets.find(t => t.cityId === c.id);
+            const timeStr = t.attackStartTime ? ` @${t.attackStartTime}` : '';
+            return `${o.name} ${t.preWarPercent}% #${t.priority}${timeStr}`;
+          }).join(' | ');
         const defStr = state.cities.filter(o => (o.defendTargets||[]).some(t => t.cityId === c.id && (t.preWarPercent||0)>0))
           .map(o => { const t = o.defendTargets.find(t => t.cityId === c.id); return `${o.name} ${t.preWarPercent}% #${t.priority}`; }).join(' | ');
         return [c.name, sideLabel(c.side), c.totalTeams, atkStr || '-', defStr || '-', info.incoming, info.conflict ? '⚠️ 警示' : '正常'];
@@ -1277,6 +1295,7 @@ const DEPLOY = (() => {
   return { init, render, populateZoneFilter };
 })();
 
+/* ⚠️ 第 1/2 部分結束——下方接續第 2/2 部分（CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 暴露） */
 /* ============================================================
    CityManager — 城池清單表格 + 批次操作
    ============================================================ */
@@ -1343,6 +1362,7 @@ const CityManager = (() => {
             for(const id of ids){
               window.SLG.deleteEntity('city', id);
             }
+            if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
             render();
             if(window.SLG.saveState) window.SLG.saveState();
           });
@@ -1454,6 +1474,7 @@ const CityManager = (() => {
           if(typeof window.SLG.showConfirm === 'function'){
             window.SLG.showConfirm('刪除城池', `確定刪除「${c.name}」？`, () => {
               window.SLG.deleteEntity('city', id);
+              if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
               render();
               if(window.SLG.saveState) window.SLG.saveState();
             });
@@ -1525,7 +1546,7 @@ const CityManager = (() => {
 })();
 
 /* ============================================================
-   WarManager — 宣戰指示（v8.5.4）
+   WarManager — 宣戰指示（v8.5.5：加進攻開始時間）
    ============================================================ */
 const WarManager = (() => {
   function init(){
@@ -1545,6 +1566,7 @@ const WarManager = (() => {
           preWarPercent: t.preWarPercent,
           postRevivePercent: t.postRevivePercent,
           priority: t.priority,
+          attackStartTime: t.attackStartTime || '19:00',
         });
       }
       for(const t of (src.defendTargets || [])){
@@ -1555,6 +1577,7 @@ const WarManager = (() => {
           preWarPercent: t.preWarPercent,
           postRevivePercent: t.postRevivePercent,
           priority: t.priority,
+          attackStartTime: '',
         });
       }
     }
@@ -1577,27 +1600,28 @@ const WarManager = (() => {
   /* 依類型取得可選目標城 */
   function getTargetsForType(srcCityId, type){
     if(type === 'attack'){
-      return state.cities.filter(c =>
+      let targets = state.cities.filter(c =>
         c.id !== srcCityId &&
         (c.side === 'enemy' || c.side === 'common_enemy' || c.side === 'npc')
       );
+      /* v8.5.5：若設定需要路線接觸，進一步過濾 */
+      if(state.settings.attackRequireRoute){
+        targets = targets.filter(c => window.SLG.findRoute(srcCityId, c.id));
+      }
+      return targets;
     }
 
     if(type === 'assist'){
       const src = state.cities.find(c => c.id === srcCityId);
       if(!src) return [];
       const srcAllianceId = src.allianceId || '';
-      /* 若出兵城無盟（NPC盟），不可協防 */
       if(!srcAllianceId) return [];
 
       return state.cities.filter(c => {
         if(c.id === srcCityId) return false;
-        /* ① 目標城必須與出兵城同一個盟 */
         if((c.allianceId || '') !== srcAllianceId) return false;
-        /* ② NPC 盟不可協防 */
         const alliance = state.alliances.find(a => a.id === srcAllianceId);
         if(alliance && alliance.name === 'NPC') return false;
-        /* ③ 必須與出兵城有地圖路線接觸 */
         if(!window.SLG.findRoute(srcCityId, c.id)) return false;
         return true;
       });
@@ -1649,7 +1673,11 @@ const WarManager = (() => {
       preWarPercent: 50,
       postRevivePercent: 50,
       priority: 1,
+      attackStartTime: '19:00',
     });
+
+    /* v8.5.5：重算防守時間 */
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
 
     markDirty(src.id);
     render();
@@ -1667,10 +1695,12 @@ const WarManager = (() => {
       return;
     }
 
+    /* v8.5.5：5 欄（出兵城 / 類型 / 目標城 / 時間 / 操作） */
     const headerHtml = `<div class="war-header">
       <span>出兵城</span>
       <span>類型</span>
       <span>目標城</span>
+      <span>進攻時間</span>
       <span></span>
     </div>`;
 
@@ -1704,13 +1734,19 @@ const WarManager = (() => {
         ).join('');
       }
 
-      /* v8.5.4：協防時，若目標城未被宣戰，顯示提示 */
+      /* v8.5.5：協防時目標城未被宣戰提示 */
       let attackHint = '';
       if(l.type === 'assist' && l.tgtId && tgt){
         if(!isBeingAttacked(l.tgtId)){
           attackHint = `<span class="war-hint warn" title="此目標城目前未被任何敵方/NPC宣戰">⚠️ 未被宣戰</span>`;
         }
       }
+
+      /* v8.5.5：時間欄（僅進攻可編輯） */
+      const isAttack = (l.type === 'attack');
+      const timeVal = l.attackStartTime || '19:00';
+      const timeDisabled = isAttack ? '' : ' disabled';
+      const timeCell = `<input type="time" class="war-time" data-war-time="1" value="${timeVal}"${timeDisabled}>`;
 
       return `<div class="war-line ${invalidCls}" data-line-idx="${i}">
         <select class="war-src">${srcOpts}</select>
@@ -1719,6 +1755,7 @@ const WarManager = (() => {
           <select class="war-tgt">${tgtOpts}</select>
           ${attackHint}
         </div>
+        ${timeCell}
         <button class="btn btn-danger btn-sm war-del">🗑️</button>
       </div>`;
     }).join('');
@@ -1739,7 +1776,7 @@ const WarManager = (() => {
           changeLineAllowEmpty(line, newSrcId, line.type);
           return;
         }
-        changeLine(line, newSrcId, newTgtId, line.type);
+        changeLine(line, newSrcId, newTgtId, line.type, line.attackStartTime);
       });
 
       lineEl.querySelector('.war-type')?.addEventListener('change', function(){
@@ -1749,17 +1786,31 @@ const WarManager = (() => {
         if(!validTargets.find(c => c.id === newTgtId)){
           newTgtId = validTargets.length > 0 ? validTargets[0].id : '';
         }
+        /* v8.5.5：切換類型時，時間也跟著變 */
+        let newTime = line.attackStartTime;
+        if(newType === 'assist'){
+          newTime = '';  /* 協防無時間 */
+        } else if(!newTime){
+          newTime = '19:00';  /* 進攻預設 */
+        }
+
         if(!newTgtId){
-          changeLineAllowEmpty(line, line.srcId, newType);
+          changeLineAllowEmpty(line, line.srcId, newType, newTime);
           return;
         }
-        changeLine(line, line.srcId, newTgtId, newType);
+        changeLine(line, line.srcId, newTgtId, newType, newTime);
       });
 
       lineEl.querySelector('.war-tgt')?.addEventListener('change', function(){
         const newTgtId = this.value;
         if(!newTgtId) return;
-        changeLine(line, line.srcId, newTgtId, line.type);
+        changeLine(line, line.srcId, newTgtId, line.type, line.attackStartTime);
+      });
+
+      /* v8.5.5：時間變更 */
+      lineEl.querySelector('[data-war-time]')?.addEventListener('change', function(){
+        const newTime = this.value || '19:00';
+        updateWarTime(line, newTime);
       });
 
       lineEl.querySelector('.war-del')?.addEventListener('click', () => {
@@ -1768,7 +1819,24 @@ const WarManager = (() => {
     });
   }
 
-  function changeLineAllowEmpty(oldLine, newSrcId, newType){
+  /* v8.5.5：只更新時間 */
+  function updateWarTime(line, newTime){
+    const src = state.cities.find(c => c.id === line.srcId);
+    if(!src) return;
+    const arr = line.type === 'attack' ? 'attackTargets' : 'defendTargets';
+    const route = (src[arr] || []).find(t => t.cityId === line.tgtId);
+    if(!route) return;
+    route.attackStartTime = newTime;
+
+    /* v8.5.5：重算防守時間 */
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+
+    markDirty(src.id);
+    render();
+    if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+  }
+
+  function changeLineAllowEmpty(oldLine, newSrcId, newType, newTime){
     deleteLineSilent(oldLine);
     const src = state.cities.find(c => c.id === newSrcId);
     if(!src) return;
@@ -1780,13 +1848,15 @@ const WarManager = (() => {
       preWarPercent: oldLine.preWarPercent || 50,
       postRevivePercent: oldLine.postRevivePercent || 50,
       priority: oldLine.priority || 1,
+      attackStartTime: isAttack ? (newTime || '19:00') : '',
     });
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
     markDirty(src.id);
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
 
-  function changeLine(oldLine, newSrcId, newTgtId, newType){
+  function changeLine(oldLine, newSrcId, newTgtId, newType, newTime){
     const validTargets = getTargetsForType(newSrcId, newType);
     if(!validTargets.find(c => c.id === newTgtId)){
       alert('此類型不能選擇該目標城');
@@ -1818,7 +1888,10 @@ const WarManager = (() => {
       preWarPercent: oldLine.preWarPercent || 50,
       postRevivePercent: oldLine.postRevivePercent || 50,
       priority: oldLine.priority || 1,
+      attackStartTime: isAttack ? (newTime || '19:00') : '',
     });
+
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
 
     markDirty(src.id);
     render();
@@ -1840,6 +1913,7 @@ const WarManager = (() => {
 
   function deleteLine(line){
     deleteLineSilent(line);
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
     if(window.SLG.saveState) window.SLG.saveState();
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
@@ -1865,7 +1939,7 @@ const WarManager = (() => {
 })();
 
 /* ============================================================
-   DeployInstr — 出兵指示（v8.5.4：過濾空 cityId）
+   DeployInstr — 出兵指示（v8.5.5：加唯讀時間欄）
    ============================================================ */
 const DeployInstr = (() => {
   function init(){
@@ -1918,6 +1992,9 @@ const DeployInstr = (() => {
     if(window.SLG.tickLamport) window.SLG.tickLamport();
     if(window.SLG.flushPatches) window.SLG.flushPatches();
     if(window.SLG.saveState) window.SLG.saveState();
+
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+
     render();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
   }
@@ -1926,7 +2003,6 @@ const DeployInstr = (() => {
     const el = document.getElementById('deployInstructionList');
     if(!el) return;
 
-    /* v8.5.4：過濾掉沒有實際目標城的宣戰指示 */
     const sources = state.cities.filter(c => {
       const hasAtk = (c.attackTargets || []).some(t => t.cityId);
       const hasDef = (c.defendTargets || []).some(t => t.cityId);
@@ -1934,17 +2010,19 @@ const DeployInstr = (() => {
     });
 
     if(sources.length === 0){
-      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無出兵指示（請先在上方新增宣戰指示）</div>';
+      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無出兵指示（請先在「⚔️ 宣戰」新增宣戰路線）</div>';
       return;
     }
 
     el.innerHTML = sources.map(src => renderCard(src)).join('');
   }
 
+  /* v8.5.5：7 欄（類型 / 目標城 / 時間 / 戰前% / 復活% / 順序 / 操作） */
   function headerRow(){
     return `<div class="deploy-instr-header-row">
       <span>類型</span>
       <span>目標城</span>
+      <span>進攻時間</span>
       <span>戰前%</span>
       <span>復活%</span>
       <span>順序</span>
@@ -1954,7 +2032,6 @@ const DeployInstr = (() => {
 
   function renderCard(src){
     const totalTeams = Number(src.totalTeams) || 0;
-    /* v8.5.4：只顯示有 cityId 的路線 */
     const atkLines = (src.attackTargets || [])
       .filter(t => t.cityId)
       .map(t => renderLine(src, t, 'attack')).join('');
@@ -1989,10 +2066,15 @@ const DeployInstr = (() => {
     const tgt = state.cities.find(c => c.id === route.cityId);
     if(!tgt) return '';
     const arrow = type === 'attack' ? '⚔️' : '🛡️';
+    /* v8.5.5：進攻顯示時間，協防顯示「—」 */
+    const timeStr = type === 'attack'
+      ? (route.attackStartTime || '19:00')
+      : '—';
 
     return `<div class="deploy-instr-line">
       <span class="label">${arrow}</span>
       <span class="target">${esc(tgt.name)}</span>
+      <span class="deploy-instr-time" title="${type === 'attack' ? '進攻開始時間（唯讀，請至「⚔️ 宣戰」修改）' : '協防無時間設定'}">${esc(timeStr)}</span>
       <select data-deploy-field="preWarPercent" data-tgt-id="${route.cityId}" data-type="${type}">
         ${PERCENT_OPTIONS.map(p => `<option value="${p}" ${p === route.preWarPercent ? 'selected' : ''}>${p}%</option>`).join('')}
       </select>
@@ -2055,6 +2137,8 @@ const RouteManager = (() => {
             if(window.SLG.saveState) window.SLG.saveState();
             render();
             if(window.SLG.GameMap) window.SLG.GameMap.render();
+            /* v8.5.5：路線變更可能影響協防選項 */
+            if(window.SLG.WarManager) window.SLG.WarManager.render();
           }
           return;
         }
@@ -2083,6 +2167,7 @@ const RouteManager = (() => {
           if(window.SLG.saveState) window.SLG.saveState();
           render();
           if(window.SLG.GameMap) window.SLG.GameMap.render();
+          if(window.SLG.WarManager) window.SLG.WarManager.render();
           return;
         }
 
@@ -2093,6 +2178,7 @@ const RouteManager = (() => {
         if(window.SLG.saveState) window.SLG.saveState();
         render();
         if(window.SLG.GameMap) window.SLG.GameMap.render();
+        if(window.SLG.WarManager) window.SLG.WarManager.render();
       });
     }
 
@@ -2122,6 +2208,7 @@ const RouteManager = (() => {
       if(window.SLG.saveState) window.SLG.saveState();
       render();
       if(window.SLG.GameMap) window.SLG.GameMap.render();
+      if(window.SLG.WarManager) window.SLG.WarManager.render();
       logSystem('🛣️ 已新增路線');
     }
   }
@@ -2140,6 +2227,7 @@ const RouteManager = (() => {
             if(window.SLG.saveState) window.SLG.saveState();
             render();
             if(window.SLG.GameMap) window.SLG.GameMap.render();
+            if(window.SLG.WarManager) window.SLG.WarManager.render();
             return;
           }
         }
@@ -2299,6 +2387,7 @@ const RouteManager = (() => {
     closeRouteEditModal();
     render();
     if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(window.SLG.WarManager) window.SLG.WarManager.render();
     logSystem('🛣️ 已更新路線');
   }
 
@@ -2314,6 +2403,7 @@ const RouteManager = (() => {
     closeRouteEditModal();
     render();
     if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(window.SLG.WarManager) window.SLG.WarManager.render();
     logSystem('🛣️ 已刪除路線');
   }
 
@@ -2321,7 +2411,7 @@ const RouteManager = (() => {
 })();
 
 /* ============================================================
-   GameMap — 地圖
+   GameMap — 地圖（力導向 + 盟徽 + 路線 + 拖曳 + touch 縮放）
    ============================================================ */
 const GameMap = (() => {
   let canvas, ctx, containerEl;
@@ -2541,6 +2631,7 @@ const GameMap = (() => {
           }
           if(window.SLG.saveState) window.SLG.saveState();
           if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+          if(window.SLG.WarManager) window.SLG.WarManager.render();
         }
         routeDragFrom = null;
         routeDragEnd = null;
@@ -2658,6 +2749,7 @@ const GameMap = (() => {
         }
         if(window.SLG.saveState) window.SLG.saveState();
         if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+        if(window.SLG.WarManager) window.SLG.WarManager.render();
       }
       routeDragFrom = null;
       routeDragEnd = null;
@@ -3031,7 +3123,7 @@ function renderOverview(){
 }
 
 /* ============================================================
-   城池數據子 Tab 切換
+   城池數據子 Tab 切換（v8.5.5：6 個子 Tab）
    ============================================================ */
 let currentCityView = 'overview';
 
@@ -3052,12 +3144,13 @@ function switchCityView(view){
     CityManager.render();
   } else if(view === 'war'){
     WarManager.render();
+  } else if(view === 'deploy'){
     DeployInstr.render();
   } else if(view === 'routes'){
     RouteManager.render();
   }
 
-  try{ localStorage.setItem('slg_city_view_v853', view); }catch(e){}
+  try{ localStorage.setItem('slg_city_view_v855', view); }catch(e){}
 }
 
 function initCitySubtabs(){
@@ -3074,10 +3167,11 @@ function initCitySubtabs(){
     });
   });
 
+  /* v8.5.5：6 個子 Tab */
   let saved = 'overview';
   try{
-    const s = localStorage.getItem('slg_city_view_v853');
-    if(s && ['overview','zones','cities','war','routes'].includes(s)) saved = s;
+    const s = localStorage.getItem('slg_city_view_v855');
+    if(s && ['overview','zones','cities','war','deploy','routes'].includes(s)) saved = s;
   }catch(e){}
   switchCityView(saved);
 }
@@ -3271,7 +3365,7 @@ function startEditAlliance(id){
 }
 
 /* ============================================================
-   城池表單
+   城池表單（v8.5.5：移除防守開始時間）
    ============================================================ */
 let editingCityId = null;
 
@@ -3318,7 +3412,6 @@ function openCityModal(cityId){
     document.getElementById('cm_totalTeams').value = '';
     document.getElementById('cm_cooldownMin').value = 5;
     document.getElementById('cm_wallMin').value = 30;
-    document.getElementById('cm_defStartTime').value = '19:00';
     document.getElementById('cm_isCapital').checked = false;
     if(state.zones.length > 0) zoneSel.value = state.zones[0].id;
   } else {
@@ -3332,8 +3425,8 @@ function openCityModal(cityId){
     document.getElementById('cm_totalTeams').value = city.totalTeams || '';
     document.getElementById('cm_cooldownMin').value = city.cooldownMin;
     document.getElementById('cm_wallMin').value = city.wallMin;
-    document.getElementById('cm_defStartTime').value = city.defStartTime || '19:00';
     document.getElementById('cm_isCapital').checked = !!city.isCapital;
+    /* v8.5.5：不再有 cm_defStartTime 欄位 */
   }
   updateAutoCalcFields();
   document.getElementById('cityModal').classList.add('show');
@@ -3363,12 +3456,13 @@ function saveCityFromModal(){
   const totalTeams = parseFloat(document.getElementById('cm_totalTeams').value) || 0;
   const cooldownMin = parseFloat(document.getElementById('cm_cooldownMin').value) || 0;
   const wallMin = parseFloat(document.getElementById('cm_wallMin').value) || 0;
-  const defStartTime = document.getElementById('cm_defStartTime').value || '19:00';
   const isCapital = document.getElementById('cm_isCapital').checked;
 
   const existingCity = editingCityId ? state.cities.find(c => c.id === editingCityId) : null;
   const attackTargets = existingCity ? (existingCity.attackTargets || []) : [];
   const defendTargets = existingCity ? (existingCity.defendTargets || []) : [];
+  /* v8.5.5：保留現有 defStartTime（動態計算用），新建預設 19:00 */
+  const defStartTime = existingCity ? (existingCity.defStartTime || '19:00') : '19:00';
 
   const avgPower = totalTeams > 0 ? Math.floor(totalPower / totalTeams) : 0;
   const id = editingCityId || uid();
@@ -3390,6 +3484,10 @@ function saveCityFromModal(){
     attackTargets, defendTargets
   };
   window.SLG.upsertEntity('city', entity);
+
+  /* v8.5.5：重算防守開始時間 */
+  if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+
   closeCityModal();
   R.renderCities();
   if(window.SLG.CityManager) window.SLG.CityManager.render();
@@ -3445,5 +3543,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.5.4）
+ * ui.js 結束（v8.5.5）
  * ========================================================================== */

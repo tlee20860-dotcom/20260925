@@ -1,6 +1,6 @@
 /* ============================================================================
- * data.js — Excel/CSV 匯入匯出（v8.5）
- * v8.5：盟名單 / 地圖路線 / 城池等級 / 手動選擇匯入
+ * data.js — Excel/CSV 匯入匯出（v8.5.5）
+ * v8.5.5：宣戰表加進攻開始時間；城池表移除防守開始時間
  * ========================================================================== */
 (function(){
 'use strict';
@@ -69,7 +69,7 @@ function findFieldIndex(headers, aliases){
 }
 
 /* ============================================================
-   欄位別名（v8.5：加入 level / allianceName）
+   欄位別名
    ============================================================ */
 const ALLIANCE_FIELD_ALIASES = {
   name:        ['盟名稱','同盟名稱','名稱','盟名','name','alliancename'],
@@ -79,6 +79,7 @@ const ALLIANCE_FIELD_ALIASES = {
   side:        ['陣營','side','faction'],
 };
 
+/* v8.5.5：移除 defStartTime（防守開始時間）欄位 */
 const CITY_FIELD_ALIASES = {
   name:        ['城池名稱','城池','城名','名稱','name','cityname','city'],
   zone:        ['戰區','分區','區域','zone','zoneid','region'],
@@ -90,17 +91,18 @@ const CITY_FIELD_ALIASES = {
   totalTeams:  ['總隊數','隊數','兵力','隊伍數','totalteams','teams'],
   cooldownMin: ['冷卻','冷卻分鐘','冷卻復活','冷卻(分)','cooldownmin','cooldown'],
   wallMin:     ['城牆','城牆耐久','城牆分鐘','城牆(分)','wallmin','wall'],
-  defStartTime:['防守開始','防守開始時間','開始時間','防守時間','defstarttime','defstart'],
   isCapital:   ['首都','盟首都','主城','iscapital','capital'],
 };
 
+/* v8.5.5：新增 attackStartTime（進攻開始時間） */
 const ROUTE_FIELD_ALIASES = {
-  src:      ['出兵城','進攻城','來源城','出兵','src','srccity','from'],
-  tgt:      ['目標城','目標','tgt','tgtcity','to'],
-  type:     ['類型','行動','type','action'],
-  pre:      ['戰前%','戰前','戰前派兵%','pre','prewar','prewarpercent'],
-  post:     ['復活%','復活','復活後派兵%','post','postrevive','postrevivepercent'],
-  priority: ['順序','優先順序','優先','priority','pr'],
+  src:             ['出兵城','進攻城','來源城','出兵','src','srccity','from'],
+  tgt:             ['目標城','目標','tgt','tgtcity','to'],
+  type:            ['類型','行動','type','action'],
+  pre:             ['戰前%','戰前','戰前派兵%','pre','prewar','prewarpercent'],
+  post:            ['復活%','復活','復活後派兵%','post','postrevive','postrevivepercent'],
+  priority:        ['順序','優先順序','優先','priority','pr'],
+  attackStartTime: ['進攻開始時間','進攻時間','開始時間','attackstarttime','attackstart','starttime','start'],
 };
 
 const MAP_ROUTE_FIELD_ALIASES = {
@@ -116,6 +118,33 @@ const SIDE_PARSE_MAP = {
   'npc':'npc','NPC':'npc','中立':'npc','中立城':'npc',
 };
 const TRUTHY_SET = new Set(['是','y','yes','true','1','✓','√','v','有','首都','主城']);
+
+/* ============================================================
+   v8.5.5：時間格式正規化（HH:MM）
+   ============================================================ */
+function normalizeTimeString(s){
+  if(!s) return '';
+  s = String(s).trim();
+  /* 已是 HH:MM */
+  if(/^\d{1,2}:\d{2}$/.test(s)){
+    const [h, m] = s.split(':');
+    return String(parseInt(h,10)).padStart(2,'0') + ':' + m.padStart(2,'0');
+  }
+  /* HHMM 格式（4 位數字） */
+  if(/^\d{4}$/.test(s)){
+    return s.slice(0,2) + ':' + s.slice(2,4);
+  }
+  /* HHMMSS 格式（6 位數字） */
+  if(/^\d{6}$/.test(s)){
+    return s.slice(0,2) + ':' + s.slice(2,4);
+  }
+  /* 帶秒的 HH:MM:SS */
+  if(/^\d{1,2}:\d{2}:\d{2}$/.test(s)){
+    const [h, m] = s.split(':');
+    return String(parseInt(h,10)).padStart(2,'0') + ':' + m.padStart(2,'0');
+  }
+  return '';
+}
 
 /* ============================================================
    解析：盟名單
@@ -164,7 +193,7 @@ function parseAlliancesTable(rows){
 }
 
 /* ============================================================
-   解析：城池表（v8.5：加入 level、盟名稱查找）
+   解析：城池表（v8.5.5：移除防守開始時間）
    ============================================================ */
 function parseCitiesTable(rows){
   if(!rows || rows.length < 2) return { cities: [], errors: ['城池表至少需要表頭 + 1 筆資料'] };
@@ -204,7 +233,6 @@ function parseCitiesTable(rows){
     const totalTeams = parseFloat(get('totalTeams', '0')) || 0;
     const cooldownMin = parseFloat(get('cooldownMin', '5')) || 5;
     const wallMin = parseFloat(get('wallMin', '30')) || 30;
-    const defStartTime = get('defStartTime', '19:00');
     const capRaw = String(get('isCapital', '')).toLowerCase().trim();
     const isCapital = TRUTHY_SET.has(capRaw);
 
@@ -222,7 +250,8 @@ function parseCitiesTable(rows){
     cities.push({
       name, zoneName, allianceName, side,
       level, memberCount, totalPower, totalTeams,
-      cooldownMin, wallMin, defStartTime, isCapital,
+      cooldownMin, wallMin, isCapital,
+      /* v8.5.5：defStartTime 不再從匯入讀取，由宣戰推算 */
     });
   }
 
@@ -234,7 +263,7 @@ function parseCitiesTable(rows){
 }
 
 /* ============================================================
-   解析：宣戰路線表（沿用現有）
+   解析：宣戰路線表（v8.5.5：新增進攻開始時間）
    ============================================================ */
 function parseRoutesTable(rows){
   if(!rows || rows.length < 2) return { routes: [], errors: ['宣戰表至少需要表頭 + 1 筆資料'] };
@@ -251,7 +280,7 @@ function parseRoutesTable(rows){
   const errors = [];
   const TYPE_MAP = {
     '攻':'attack','進攻':'attack','attack':'attack','a':'attack','攻擊':'attack',
-    '防':'defend','防守':'defend','協防':'defend','defend':'defend','d':'defend','守':'defend',
+    '防':'assist','防守':'assist','協防':'assist','defend':'assist','d':'assist','assist':'assist','守':'assist',
   };
 
   for(let i = 1; i < rows.length; i++){
@@ -274,10 +303,26 @@ function parseRoutesTable(rows){
     const post = idx.post >= 0 ? clamp(getNum('post', pre), 0, 100) : pre;
     const priority = idx.priority >= 0 ? Math.floor(getNum('priority', 1)) : 1;
 
+    /* v8.5.5：解析進攻開始時間（僅進攻類型需要） */
+    let attackStartTime = '';
+    if(idx.attackStartTime >= 0){
+      const raw = String(r[idx.attackStartTime] || '').trim();
+      attackStartTime = normalizeTimeString(raw);
+    }
+    /* 進攻若無時間，預設 19:00 */
+    if(type === 'attack' && !attackStartTime){
+      attackStartTime = '19:00';
+    }
+    /* 協防不需時間 */
+    if(type === 'assist'){
+      attackStartTime = '';
+    }
+
     routes.push({
       srcName: src, tgtName: tgt, isAttack: type === 'attack',
       preWarPercent: pre, postRevivePercent: post,
       priority: Math.max(1, priority),
+      attackStartTime,
     });
   }
 
@@ -285,9 +330,7 @@ function parseRoutesTable(rows){
 }
 
 /* ============================================================
-   解析：地圖路線表（v8.5 新增）
-   格式 1：城池A-城池B（一行一條）
-   格式 2：城池A,城池B（CSV）
+   解析：地圖路線表
    ============================================================ */
 function parseMapRoutesTable(text){
   if(!text) return { routes: [], errors: [] };
@@ -466,7 +509,7 @@ function closeExcelImportModal(){
 }
 
 /* ============================================================
-   v8.5：手動選擇匯入（4 個獨立按鈕）
+   手動選擇匯入
    ============================================================ */
 
 /* ① 匯入盟名單 */
@@ -488,7 +531,6 @@ function doImportAlliances(){
   );
   if(!ok) return;
 
-  // 清空現有盟
   state.alliances.length = 0;
 
   for(const a of result.alliances){
@@ -519,7 +561,7 @@ function doImportAlliances(){
   logSystem(`📥 盟名單匯入完成：${result.alliances.length} 個`);
 }
 
-/* ② 匯入城池表 */
+/* ② 匯入城池表（v8.5.5：不匯入防守開始時間） */
 function doImportCities(){
   const text = document.getElementById('excelCitiesText')?.value.trim() || '';
   if(!text){ alert('請填入城池表'); return; }
@@ -538,7 +580,6 @@ function doImportCities(){
   );
   if(!ok) return;
 
-  // 清空現有城池
   const oldIds = state.cities.map(c => c.id);
   state.cities.length = 0;
   for(const id of oldIds){
@@ -546,7 +587,6 @@ function doImportCities(){
     markDirty('cityDeleted', id);
   }
 
-  // 建立 zone 對照
   const zoneMap = new Map();
   for(const z of state.zones) zoneMap.set(z.name, z.id);
   const ensureZone = (name) => {
@@ -560,14 +600,12 @@ function doImportCities(){
     return id;
   };
 
-  // 建立盟對照（找不到 → NPC）
   const allianceByName = new Map();
   for(const a of state.alliances) allianceByName.set(a.name, a.id);
 
   for(const cd of result.cities){
     const zoneId = ensureZone(cd.zoneName);
 
-    // 找盟（找不到 → NPC）
     let allianceId = '';
     let side = cd.side;
     if(cd.allianceName){
@@ -577,13 +615,11 @@ function doImportCities(){
         const a = state.alliances.find(x => x.id === aid);
         if(a && a.side) side = a.side;
       } else {
-        // 找不到 → NPC
         const npc = ensureNpcAlliance();
         allianceId = npc.id;
         side = 'npc';
       }
     } else {
-      // 未指定盟 → NPC
       const npc = ensureNpcAlliance();
       allianceId = npc.id;
       side = 'npc';
@@ -604,7 +640,8 @@ function doImportCities(){
       avgPower,
       cooldownMin: cd.cooldownMin,
       wallMin: cd.wallMin,
-      defStartTime: cd.defStartTime,
+      /* v8.5.5：defStartTime 由宣戰推算，匯入時給預設 */
+      defStartTime: '19:00',
       isCapital: cd.isCapital,
       attackTargets: [],
       defendTargets: [],
@@ -646,11 +683,9 @@ function doImportMapRoutes(){
   );
   if(!ok) return;
 
-  // 建立城池名稱 → id 對照
   const cityByName = new Map();
   for(const c of state.cities) cityByName.set(c.name, c.id);
 
-  // 清空現有路線
   state.routes.length = 0;
 
   let added = 0, skipped = 0;
@@ -673,7 +708,7 @@ function doImportMapRoutes(){
   logSystem(`📥 地圖路線匯入完成：${added} 條`);
 }
 
-/* ④ 匯入宣戰表 */
+/* ④ 匯入宣戰表（v8.5.5：加進攻開始時間） */
 function doImportRoutes(){
   const text = document.getElementById('excelRoutesText')?.value.trim() || '';
   if(!text){ alert('請填入宣戰表'); return; }
@@ -687,12 +722,11 @@ function doImportRoutes(){
 
   const ok = confirm(
     `即將匯入 ${result.routes.length} 條宣戰指示。\n\n` +
-    `⚠️ 此操作會覆蓋現有沙場的「所有宣戰指示」。\n\n` +
+    `⚠️ 此操作會覆蓋現有沙盤的「所有宣戰指示」。\n\n` +
     `確定執行？`
   );
   if(!ok) return;
 
-  // 清空所有城的宣戰
   for(const c of state.cities){
     c.attackTargets = [];
     c.defendTargets = [];
@@ -700,7 +734,6 @@ function doImportRoutes(){
     markDirty('city', c.id);
   }
 
-  // 建立城池名稱 → id 對照
   const cityByName = new Map();
   for(const c of state.cities) cityByName.set(c.name, c.id);
 
@@ -716,6 +749,8 @@ function doImportRoutes(){
       preWarPercent: route.preWarPercent,
       postRevivePercent: route.postRevivePercent,
       priority: route.priority,
+      /* v8.5.5：進攻帶時間，協防空 */
+      attackStartTime: route.isAttack ? (route.attackStartTime || '19:00') : '',
     };
     const existingIdx = arr.findIndex(t => t.cityId === tgtCityId);
     if(existingIdx >= 0) arr[existingIdx] = newRoute;
@@ -724,6 +759,11 @@ function doImportRoutes(){
     state.entityRev.city[srcCity.id] = (state.entityRev.city[srcCity.id] || 0) + 1;
     markDirty('city', srcCity.id);
     added++;
+  }
+
+  /* v8.5.5：匯入後重新計算防守開始時間 */
+  if(window.SLG.computeDefStartTimes){
+    window.SLG.computeDefStartTimes(state.cities);
   }
 
   tickLamport();
@@ -752,10 +792,10 @@ function downloadCSV(csv, filename){
   URL.revokeObjectURL(url);
 }
 
-/* v8.5：加入「等級」欄位 */
+/* v8.5.5：移除「防守開始」欄位 */
 function exportCitiesCSV(){
   if(state.cities.length === 0){ alert('目前沒有任何城池'); return; }
-  const headers = ['城池名稱','戰區','同盟','陣營','等級','人數','總戰力','總隊數','冷卻','城牆','防守開始','首都'];
+  const headers = ['城池名稱','戰區','同盟','陣營','等級','人數','總戰力','總隊數','冷卻','城牆','首都'];
   const rows = state.cities.map(c => {
     const zone = state.zones.find(z => z.id === c.zoneId);
     const alliance = state.alliances.find(a => a.id === c.allianceId);
@@ -770,7 +810,6 @@ function exportCitiesCSV(){
       c.totalTeams || '',
       c.cooldownMin,
       c.wallMin,
-      c.defStartTime || '19:00',
       c.isCapital ? '是' : '',
     ];
   });
@@ -779,7 +818,7 @@ function exportCitiesCSV(){
   logSystem('📤 已匯出城池表 CSV');
 }
 
-/* v8.5：匯出盟名單 */
+/* 匯出盟名單 */
 function exportAlliancesCSV(){
   if(state.alliances.length === 0){ alert('目前沒有任何盟'); return; }
   const headers = ['盟名稱','盟徽','人數','總戰力','陣營'];
@@ -795,7 +834,7 @@ function exportAlliancesCSV(){
   logSystem('📤 已匯出盟名單 CSV');
 }
 
-/* v8.5：匯出地圖路線 */
+/* 匯出地圖路線 */
 function exportMapRoutesCSV(){
   if(state.routes.length === 0){ alert('目前沒有任何地圖路線'); return; }
   const cityById = new Map(state.cities.map(c => [c.id, c]));
@@ -810,20 +849,31 @@ function exportMapRoutesCSV(){
   logSystem(`📤 已匯出地圖路線 CSV（${rows.length} 條）`);
 }
 
+/* v8.5.5：宣戰表加進攻開始時間 */
 function exportRoutesCSV(){
-  const headers = ['出兵城','目標城','類型','戰前%','復活%','順序'];
+  const headers = ['出兵城','目標城','類型','戰前%','復活%','順序','進攻開始時間'];
   const rows = [];
   const cityById = new Map(state.cities.map(c => [c.id, c]));
   for(const src of state.cities){
     for(const t of (src.attackTargets || [])){
+      if(!t.cityId) continue;
       const tgt = cityById.get(t.cityId);
       if(!tgt) continue;
-      rows.push([src.name, tgt.name, '進攻', t.preWarPercent, t.postRevivePercent, t.priority]);
+      rows.push([
+        src.name, tgt.name, '進攻',
+        t.preWarPercent, t.postRevivePercent, t.priority,
+        t.attackStartTime || '19:00'
+      ]);
     }
     for(const t of (src.defendTargets || [])){
+      if(!t.cityId) continue;
       const tgt = cityById.get(t.cityId);
       if(!tgt) continue;
-      rows.push([src.name, tgt.name, '防守', t.preWarPercent, t.postRevivePercent, t.priority]);
+      rows.push([
+        src.name, tgt.name, '協防',
+        t.preWarPercent, t.postRevivePercent, t.priority,
+        ''  /* 協防無時間 */
+      ]);
     }
   }
   if(rows.length === 0){ alert('目前沒有任何宣戰指示'); return; }
@@ -832,7 +882,7 @@ function exportRoutesCSV(){
   logSystem(`📤 已匯出宣戰表 CSV（${rows.length} 條）`);
 }
 
-/* v8.5：更新範本說明 */
+/* v8.5.5：更新範本說明 */
 function downloadExcelTemplate(){
   const template = `【盟名單欄位說明】
 盟名稱,盟徽,人數,總戰力,陣營
@@ -846,15 +896,16 @@ function downloadExcelTemplate(){
 
 ─────────────────────────────────────────────
 
-【城池表欄位說明】
-城池名稱,戰區,同盟,陣營,等級,人數,總戰力,總隊數,冷卻,城牆,防守開始,首都
-洛陽,司隸,鼎盟,敵方,10,100,100000,100,5,30,19:00,是
-函谷關,司隸,秦盟,敵方,9,80,80000,80,5,20,19:00,
+【城池表欄位說明】（v8.5.5 移除「防守開始」）
+城池名稱,戰區,同盟,陣營,等級,人數,總戰力,總隊數,冷卻,城牆,首都
+洛陽,司隸,鼎盟,敵方,10,100,100000,100,5,30,是
+函谷關,司隸,秦盟,敵方,9,80,80000,80,5,20,
 
 ■ 同盟：填盟名稱，會自動對應盟徽（找不到 → NPC）
 ■ 等級：1~10（可留空，預設 1）
 ■ 人數 / 總戰力 / 總隊數：可留空
 ■ 冷卻 / 城牆：單位為分鐘
+■ 防守開始時間：由宣戰指示推算（不再手動輸入）
 
 ─────────────────────────────────────────────
 
@@ -870,15 +921,19 @@ function downloadExcelTemplate(){
 
 ─────────────────────────────────────────────
 
-【宣戰表欄位說明】
-出兵城,目標城,類型,戰前%,復活%,順序
-洛陽,函谷關,進攻,50,50,1
-洛陽北,洛陽,防守,30,30,1
+【宣戰表欄位說明】（v8.5.5 新增「進攻開始時間」）
+出兵城,目標城,類型,戰前%,復活%,順序,進攻開始時間
+洛陽,函谷關,進攻,50,50,1,19:00
+洛陽北,洛陽,協防,30,30,1,
 
-■ 類型：進攻 / 防守 / 協防
+■ 類型：進攻 / 協防（防守已移除）
 ■ 戰前%：開局派出的兵力百分比
 ■ 復活%：復活後派出的兵力百分比
 ■ 順序：數字越小越優先
+■ 進攻開始時間（HH:MM）：即目標城的防守開始時間
+   - 若該城被多條宣戰指向，以「最早的進攻開始時間」為該城的防守開始時間
+   - 例：A城 19:00 進攻 B城，C城 20:00 進攻 B城 → B城防守從 19:00 開始，時長 120 分
+■ 協防的進攻開始時間：留空（協防跟隨目標城的防守時間）
 `;
   const blob = new Blob(['\uFEFF' + template], {type:'text/plain;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -894,6 +949,7 @@ function downloadExcelTemplate(){
    ============================================================ */
 Object.assign(window.SLG, {
   parseDelimited, normalizeHeader, findFieldIndex,
+  normalizeTimeString,
   parseAlliancesTable,
   parseCitiesTable,
   parseRoutesTable,

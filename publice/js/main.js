@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.5.3
+ * v8.5.5
  * ========================================================================== */
 (function(){
 'use strict';
@@ -136,6 +136,7 @@ function applyPermissions(){
   disableInputs([
     'globalTimeLimit','globalMarchTimeSec','globalConsumeMinPerMin','globalConsumeMaxPerMin',
     'globalSiegeEfficiency','globalMaxLossRatio','globalMinLossRatio',
+    'globalAttackRequireRoute',
     'aiR25','aiR20','aiR15','aiR12','aiR10','aiR08','aiR06','aiR00',
     'aiTeamFactor','aiWallFactor1','aiWallFactor2','aiDefendFactor','aiMinPct'
   ], !canEditSettings);
@@ -162,6 +163,9 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnMapEditRoute'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnMapRelayout'), true, '');
   togglePerm(document.getElementById('btnMapFit'), true, '');
+
+  /* v8.5.5：宣戰按鈕 */
+  togglePerm(document.getElementById('btnAddWarLine'), canEditData, '需要編輯資料權限');
 
   /* ── 6. Excel 匯入區 ── */
   const canImportExcel = effectiveCanImportExcel();
@@ -218,16 +222,26 @@ function executeSimulation(zoneId){
   const marchTimeSec = parseInt(document.getElementById('globalMarchTimeSec').value) || 0;
   const maxLossRatio = (parseFloat(document.getElementById('globalMaxLossRatio').value) || 90) / 100;
   const minLossRatio = (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100;
+  /* v8.5.5：進攻路線接觸參數 */
+  const attackRequireRouteEl = document.getElementById('globalAttackRequireRoute');
+  const attackRequireRoute = attackRequireRouteEl ? !!attackRequireRouteEl.checked : false;
 
   Object.assign(state.settings, {
     timeLimitMin, consumeMinPerMin, consumeMaxPerMin,
-    siegeEfficiency, marchTimeSec, maxLossRatio, minLossRatio
+    siegeEfficiency, marchTimeSec, maxLossRatio, minLossRatio,
+    attackRequireRoute,
   });
   state.settingsRev++;
   saveState();
 
   const cities = collectCitiesForSim(zoneId);
   if(cities.length === 0){ logSystem('❌ 無城池資料'); return; }
+
+  /* v8.5.5：動態計算每座城的防守開始時間（取所有進攻該城的最早進攻時間） */
+  if(window.SLG.computeDefStartTimes){
+    window.SLG.computeDefStartTimes(cities);
+  }
+
   const v = validateCrossDay(cities, timeLimitMin);
   if(!v.ok){ logSystem('❌ ' + v.msg); return; }
 
@@ -680,7 +694,6 @@ function bindUI(){
       }
 
       if(tabId === 'tab-cities'){
-        /* v8.5.3：進入城池數據，依當前子檢視重繪 */
         R().renderCities();
         if(window.SLG.CityManager) window.SLG.CityManager.render();
         if(window.SLG.RouteManager) window.SLG.RouteManager.render();
@@ -729,7 +742,6 @@ function bindUI(){
       if(sidebar) sidebar.classList.remove('open');
     });
   }
-  /* 點側邊欄外部關閉（手機版） */
   document.addEventListener('click', (e) => {
     if(window.innerWidth > 768) return;
     const sidebar = document.getElementById('sidebar');
@@ -739,7 +751,6 @@ function bindUI(){
     if(hamburgerEl && hamburgerEl.contains(e.target)) return;
     sidebar.classList.remove('open');
   });
-  /* ESC 關閉 */
   document.addEventListener('keydown', (e) => {
     if(e.key === 'Escape'){
       const sidebar = document.getElementById('sidebar');
@@ -754,7 +765,7 @@ function bindUI(){
     });
   });
 
-  /* ── v8.5.3：城池數據子 Tab 初始化 ── */
+  /* ── 城池數據子 Tab 初始化 ── */
   if(window.SLG.initCitySubtabs) window.SLG.initCitySubtabs();
 
   /* ── 模式切換 ── */
@@ -930,10 +941,11 @@ function bindUI(){
     });
   }
 
-  /* ── 儲存戰鬥參數 ── */
+  /* ── 儲存戰鬥參數（v8.5.5：加入 attackRequireRoute） ── */
   const btnSaveSettings = document.getElementById('btnSaveSettings');
   if(btnSaveSettings) btnSaveSettings.addEventListener('click', () => {
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改戰鬥參數')) return;
+    const attackRequireRouteEl = document.getElementById('globalAttackRequireRoute');
     window.SLG.updateSettings({
       timeLimitMin: parseInt(document.getElementById('globalTimeLimit').value) || 120,
       consumeMinPerMin: parseFloat(document.getElementById('globalConsumeMinPerMin').value) || 10,
@@ -942,8 +954,11 @@ function bindUI(){
       marchTimeSec: parseInt(document.getElementById('globalMarchTimeSec').value) || 0,
       maxLossRatio: (parseFloat(document.getElementById('globalMaxLossRatio').value) || 90) / 100,
       minLossRatio: (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100,
+      attackRequireRoute: attackRequireRouteEl ? !!attackRequireRouteEl.checked : false,
     });
     R().renderMatrix();
+    /* v8.5.5：參數變更後，宣戰目標城選項可能變動，重繪 */
+    if(window.SLG.WarManager) window.SLG.WarManager.render();
     alert('戰鬥參數已儲存');
   });
 
@@ -959,7 +974,8 @@ function bindUI(){
         if(db && state.auth.accountUid){
           state.settings = {
             timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
-            siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1
+            siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
+            attackRequireRoute: false,
           };
           state.alliances = [];
           state.zones = [];
@@ -1110,6 +1126,7 @@ function bindUI(){
       if(!requirePerm(() => effectiveCanEditData(), '刪除城池')) return;
       showConfirm('刪除城池', '確定刪除？', () => {
         window.SLG.deleteEntity('city', delBtn.dataset.id);
+        if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
         R().renderCities();
         if(window.SLG.CityManager) window.SLG.CityManager.render();
         if(window.SLG.renderOverview) window.SLG.renderOverview();
@@ -1200,7 +1217,6 @@ function bindUI(){
   const excelCancel = document.getElementById('excelImportCancel');
   if(excelCancel) excelCancel.addEventListener('click', window.SLG.closeExcelImportModal);
 
-  /* 4 個獨立匯入按鈕 */
   const btnImpAll = document.getElementById('excelImportAlliancesBtn');
   if(btnImpAll) btnImpAll.addEventListener('click', window.SLG.doImportAlliances);
 
@@ -1213,13 +1229,11 @@ function bindUI(){
   const btnImpRoutes = document.getElementById('excelImportRoutesBtn');
   if(btnImpRoutes) btnImpRoutes.addEventListener('click', window.SLG.doImportRoutes);
 
-  /* 4 個 textarea 的 input 預覽更新 */
   ['excelAlliancesText','excelCitiesText','excelMapRoutesText','excelRoutesText'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.addEventListener('input', window.SLG.updateExcelPreview);
   });
 
-  /* 4 個上傳檔案按鈕 */
   document.querySelectorAll('[data-excel-upload]').forEach(btn => {
     btn.addEventListener('click', () => {
       const which = btn.dataset.excelUpload;
@@ -1242,7 +1256,6 @@ function bindUI(){
     });
   });
 
-  /* 4 個檔案 input */
   const fileMap = {
     excelCitiesFile: 'excelCitiesText',
     excelRoutesFile: 'excelRoutesText',
@@ -1387,6 +1400,9 @@ function bindEvents(){
   });
 
   on(EVT.DATA, () => {
+    /* v8.5.5：資料變更後重算防守開始時間 */
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+
     R().renderAlliances();
     R().renderZones();
     R().renderCities();
@@ -1417,6 +1433,9 @@ function bindEvents(){
     if(gml) gml.value = Math.round(state.settings.maxLossRatio * 100);
     const gmn = document.getElementById('globalMinLossRatio');
     if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
+    /* v8.5.5：attackRequireRoute */
+    const garr = document.getElementById('globalAttackRequireRoute');
+    if(garr) garr.checked = !!state.settings.attackRequireRoute;
 
     if (document.getElementById('tab-deploy').classList.contains('active')) DEPLOY().render();
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
@@ -1427,7 +1446,6 @@ function bindEvents(){
     DYN().populateCityFilters();
   });
 
-  /* v8.5：路線更新事件 */
   on(EVT.ROUTES_UPDATED, () => {
     if(window.SLG.RouteManager) window.SLG.RouteManager.render();
     if(window.SLG.GameMap){
@@ -1438,6 +1456,8 @@ function bindEvents(){
       }
     }
     if(window.SLG.renderOverview) window.SLG.renderOverview();
+    /* v8.5.5：路線變更影響協防選項 */
+    if(window.SLG.WarManager) window.SLG.WarManager.render();
   });
 
   on(EVT.SIM_TRIGGER, payload => {
@@ -1514,6 +1534,9 @@ function boot(){
   if(gml) gml.value = Math.round(state.settings.maxLossRatio * 100);
   const gmn = document.getElementById('globalMinLossRatio');
   if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
+  /* v8.5.5：attackRequireRoute */
+  const garr = document.getElementById('globalAttackRequireRoute');
+  if(garr) garr.checked = !!state.settings.attackRequireRoute;
   syncAIParamsToUI();
 
   /* 3. 初始化 Firebase */
@@ -1562,6 +1585,7 @@ function boot(){
   if(window.SLG.DeployInstr) window.SLG.DeployInstr.init();
 
   /* 9. 首繪 */
+  if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
   R().renderAll();
   DYN().setRows(state.dynRows);
   DYN().populateCityFilters();
@@ -1605,7 +1629,7 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.5.3] 城池數據 UI 重構（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.5.5] 宣戰時間 + 出兵唯讀時間（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 if(document.readyState === 'loading'){

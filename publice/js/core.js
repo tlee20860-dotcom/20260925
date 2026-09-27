@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI
- * v8.5
+ * v8.5.5
  * ========================================================================== */
 (function(){
 'use strict';
@@ -269,7 +269,9 @@ const state = {
   members:{}, editLocks:{}, isSimulating:false,
   settings:{
     timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
-    siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1
+    siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
+    /* v8.5.5：進攻是否需要路線接觸 */
+    attackRequireRoute: false,
   },
   alliances:[], zones:[], cities:[],
   /* v8.5：地圖路線（無向圖） */
@@ -394,6 +396,10 @@ function loadState(){
     if(typeof state.settings.maxLossRatio !== 'number') state.settings.maxLossRatio = 0.9;
     if(typeof state.settings.minLossRatio !== 'number') state.settings.minLossRatio = 0.1;
     if(typeof state.settings.marchTimeSec !== 'number') state.settings.marchTimeSec = 0;
+    /* v8.5.5：相容處理 */
+    if(typeof state.settings.attackRequireRoute !== 'boolean'){
+      state.settings.attackRequireRoute = false;
+    }
 
     if(d.entityRev) state.entityRev = d.entityRev;
 
@@ -415,8 +421,9 @@ function loadState(){
 
     if(Array.isArray(d.cities)){
       state.cities = d.cities.map(c => {
+        /* v8.5.5：defStartTime 改為相容欄位（推演時動態計算） */
         if(!c.defStartTime) c.defStartTime = '19:00';
-        /* v8.5：舊沙盤相容：level 預設 1 */
+        /* v8.5：level 預設 1 */
         if(typeof c.level !== 'number') c.level = 1;
         const migrate = arr => (arr||[]).map(t => ({
           cityId: t.cityId,
@@ -425,6 +432,8 @@ function loadState(){
             : (t.teams ? Math.round(t.teams / (c.totalTeams||100) * 100) : 50),
           postRevivePercent: t.postRevivePercent !== undefined ? t.postRevivePercent : 50,
           priority: t.priority !== undefined ? t.priority : 1,
+          /* v8.5.5：相容處理，舊資料無 attackStartTime 則給預設 */
+          attackStartTime: t.attackStartTime || '19:00',
         }));
         c.attackTargets = migrate(c.attackTargets);
         c.defendTargets = migrate(c.defendTargets);
@@ -432,7 +441,7 @@ function loadState(){
       });
     }
 
-    /* v8.5：舊沙盤相容：routes 預設空 */
+    /* v8.5：routes 預設空 */
     if(Array.isArray(d.routes)){
       state.routes = d.routes.map(r => ({
         id: r.id || uid(),
@@ -656,6 +665,10 @@ function buildSandboxData(){
 function applySandboxData(data){
   if(!data) return false;
   if(data.settings) Object.assign(state.settings, data.settings);
+  /* v8.5.5：相容處理 */
+  if(typeof state.settings.attackRequireRoute !== 'boolean'){
+    state.settings.attackRequireRoute = false;
+  }
   state.alliances = JSON.parse(JSON.stringify(data.alliances || []));
   state.zones     = JSON.parse(JSON.stringify(data.zones     || []));
   state.cities    = JSON.parse(JSON.stringify(data.cities    || []));
@@ -685,17 +698,13 @@ function getAllianceDist(allianceId){
 }
 
 /* ============================================================
-   v8.5：盟查找 / NPC 預設
+   盟查找 / NPC 預設
    ============================================================ */
 function getAllianceByName(name){
   if(!name) return null;
   return state.alliances.find(a => a.name === name) || null;
 }
 
-/**
- * 確保有 NPC 盟存在，若無則建立
- * @returns {Object} NPC 盟物件
- */
 function ensureNpcAlliance(){
   let npc = getAllianceByName(NPC_ALLIANCE_NAME);
   if(npc) return npc;
@@ -715,7 +724,7 @@ function ensureNpcAlliance(){
 }
 
 /* ============================================================
-   v8.5：路線 CRUD
+   路線 CRUD
    ============================================================ */
 function findRoute(cityAId, cityBId){
   return state.routes.find(r =>
@@ -748,6 +757,32 @@ function getReachableCityIds(cityId){
     else if(r.cityBId === cityId) ids.push(r.cityAId);
   }
   return ids;
+}
+
+/* ============================================================
+   v8.5.5：防守開始時間推算
+   為每座城計算「被攻擊的最早時間」作為該城的防守開始時間
+   ============================================================ */
+function computeDefStartTimes(cities){
+  const list = cities || state.cities;
+  for(const city of list){
+    const incomingTimes = [];
+    for(const o of list){
+      for(const t of (o.attackTargets || [])){
+        if(t.cityId === city.id && t.attackStartTime){
+          incomingTimes.push(t.attackStartTime);
+        }
+      }
+    }
+    if(incomingTimes.length > 0){
+      /* 取最早（字串比較在 HH:MM 格式下等同時間比較） */
+      incomingTimes.sort();
+      city.defStartTime = incomingTimes[0];
+    } else {
+      /* 無任何城進攻 → 保留 fallback 或預設 */
+      if(!city.defStartTime) city.defStartTime = '19:00';
+    }
+  }
 }
 
 /* ============================================================
@@ -970,11 +1005,14 @@ Object.assign(window.SLG, {
   getAllianceByName,
   ensureNpcAlliance,
 
-  /* v8.5：路線 API */
+  /* 路線 API */
   findRoute,
   addRoute,
   removeRoute,
   getReachableCityIds,
+
+  /* v8.5.5：防守時間推算 */
+  computeDefStartTimes,
 });
 
 })();
