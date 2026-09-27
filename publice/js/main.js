@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.5.6
+ * v8.6.0：盟拖曳重置、盟徽禁止重複、城矩陣過濾、距離工具初始化
  * ========================================================================== */
 (function(){
 'use strict';
@@ -22,6 +22,9 @@ const {
   getWorker, releaseWorker, bumpSimRunId,
   buildSandboxFileName,
   timeAgo,
+  /* v8.6.0 */
+  isAllianceIconUsed,
+  resetAllianceOrder,
 } = window.SLG;
 
 const Auth = () => window.SLG.Auth;
@@ -82,7 +85,6 @@ function effectiveCanImportExcel(){
 function applyPermissions(){
   const signedIn = state.auth.signedIn;
 
-  /* ── 1. Tab 可見性 ── */
   const guestAllowed  = ['tab-rules'];
   const memberAllowed = [
     'tab-room', 'tab-alliances', 'tab-cities', 'tab-deploy',
@@ -103,16 +105,10 @@ function applyPermissions(){
   document.querySelectorAll('.top-nav button[data-tab]').forEach(btn => {
     const tabId = btn.dataset.tab;
     let allowed = false;
-
-    if(!signedIn){
-      allowed = guestAllowed.includes(tabId);
-    } else if(Auth() && Auth().isSuperAdmin()){
-      allowed = superAllowed.includes(tabId);
-    } else if(Auth() && Auth().isAdmin()){
-      allowed = adminAllowed.includes(tabId);
-    } else {
-      allowed = memberAllowed.includes(tabId);
-    }
+    if(!signedIn){ allowed = guestAllowed.includes(tabId); }
+    else if(Auth() && Auth().isSuperAdmin()){ allowed = superAllowed.includes(tabId); }
+    else if(Auth() && Auth().isAdmin()){ allowed = adminAllowed.includes(tabId); }
+    else { allowed = memberAllowed.includes(tabId); }
     btn.style.display = allowed ? '' : 'none';
   });
 
@@ -123,12 +119,10 @@ function applyPermissions(){
     if(firstVisible) firstVisible.click();
   }
 
-  /* ── 2. 房間連線區 ── */
   togglePerm(document.getElementById('btnCreateRoom'),
     Auth() && Auth().canCreateRoom(), '需要幹部以上權限');
   togglePerm(document.getElementById('btnJoinRoom'), signedIn, '請先登入');
 
-  /* ── 3. 參數 Tab ── */
   const canEditSettings = Auth() && Auth().canEditSettings();
   ['btnSaveSettings', 'btnResetAll', 'btnAISave', 'btnAIReset'].forEach(id => {
     togglePerm(document.getElementById(id), canEditSettings, '需要管理員以上權限');
@@ -141,13 +135,12 @@ function applyPermissions(){
     'aiTeamFactor','aiWallFactor1','aiWallFactor2','aiDefendFactor','aiMinPct'
   ], !canEditSettings);
 
-  /* ── 4. 參戰盟 Tab ── */
   const canEditData = effectiveCanEditData();
   togglePerm(document.getElementById('btnSaveAlliance'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnCancelAllianceEdit'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnResetAllianceOrder'), canEditData, '需要編輯資料權限');
   disableInputs(['allyName','allyIcon','allySide','allyMemberCount','allyTotalPower'], !canEditData);
 
-  /* ── 5. 城池 Tab ── */
   togglePerm(document.getElementById('btnAddZone'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnOpenNewCity'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnSimulate'),
@@ -155,7 +148,6 @@ function applyPermissions(){
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
 
-  /* 路線管理按鈕 */
   togglePerm(document.getElementById('btnAddRouteLine'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnQuickAddRoute'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnExpandAllRouteGroups'), true, '');
@@ -163,11 +155,10 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnMapEditRoute'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnMapRelayout'), true, '');
   togglePerm(document.getElementById('btnMapFit'), true, '');
+  togglePerm(document.getElementById('btnMapClearHighlight'), true, '');
 
-  /* 宣戰按鈕 */
   togglePerm(document.getElementById('btnAddWarLine'), canEditData, '需要編輯資料權限');
 
-  /* ── 6. Excel 匯入區 ── */
   const canImportExcel = effectiveCanImportExcel();
   togglePerm(document.getElementById('btnOpenExcelImport'), canImportExcel, '需要 Excel 匯入權限');
   togglePerm(document.getElementById('btnExportCitiesCSV'), signedIn, '請先登入');
@@ -175,12 +166,10 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnExportMapRoutesCSV'), signedIn, '請先登入');
   togglePerm(document.getElementById('btnExportAlliancesCSV'), signedIn, '請先登入');
 
-  /* ── 7. 聊天室 ── */
   togglePerm(document.getElementById('btnSendChat'), signedIn, '請先登入');
   const chatInputEl = document.getElementById('chatInput');
   if(chatInputEl) chatInputEl.disabled = !signedIn;
 
-  /* ── 8. 動態生成的編輯/刪除按鈕 ── */
   document.querySelectorAll(
     '[data-action="edit-city"],[data-action="del-city"],' +
     '[data-action="edit-alliance"],[data-action="del-alliance"],' +
@@ -189,7 +178,7 @@ function applyPermissions(){
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
 
-  /* v8.5.6：清單內的編輯欄位（唯讀：非編輯者不可改） */
+  /* 清單內編輯欄位 */
   document.querySelectorAll(
     '.list-table [data-war-time],' +
     '.list-table [data-war-src],' +
@@ -205,7 +194,24 @@ function applyPermissions(){
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
 
-  /* ── 9. P6 房間編輯按鈕 / 房間沙盤按鈕 ── */
+  /* 盟拖曳：無權限時停用 */
+  document.querySelectorAll('#allianceTableBody tr[draggable]').forEach(tr => {
+    tr.draggable = canEditData;
+  });
+  document.querySelectorAll('#allianceTableBody .drag-handle').forEach(el => {
+    el.style.cursor = canEditData ? 'grab' : 'not-allowed';
+    el.style.opacity = canEditData ? '' : '.35';
+  });
+
+  /* 盟徽快速選擇：無權限時停用 */
+  document.querySelectorAll('#iconQuickRow .icon-quick').forEach(b => {
+    if(!canEditData){
+      b.disabled = true;
+      b.style.pointerEvents = 'none';
+      b.style.opacity = '.35';
+    }
+  });
+
   if(window.SLG.updateRoomEditButton) window.SLG.updateRoomEditButton();
   if(window.SLG.updateRoomSandboxActions) window.SLG.updateRoomSandboxActions();
 }
@@ -252,10 +258,7 @@ function executeSimulation(zoneId){
   const cities = collectCitiesForSim(zoneId);
   if(cities.length === 0){ logSystem('❌ 無城池資料'); return; }
 
-  /* v8.5.5：動態計算每座城的防守開始時間（取所有進攻該城的最早進攻時間） */
-  if(window.SLG.computeDefStartTimes){
-    window.SLG.computeDefStartTimes(cities);
-  }
+  if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(cities);
 
   const v = validateCrossDay(cities, timeLimitMin);
   if(!v.ok){ logSystem('❌ ' + v.msg); return; }
@@ -409,22 +412,13 @@ function renderEditRequestReview(){
   if(!list || !modal) return;
 
   const canReview = state.isHost || (Auth() && Auth().isAdmin());
-  if(!canReview){
-    modal.classList.remove('show');
-    return;
-  }
+  if(!canReview){ modal.classList.remove('show'); return; }
 
   const reqs = Object.entries(state.pendingEditRequests || {});
-  if(reqs.length === 0){
-    modal.classList.remove('show');
-    return;
-  }
+  if(reqs.length === 0){ modal.classList.remove('show'); return; }
 
   const visibleReqs = reqs.filter(([uid]) => uid !== state.auth.accountUid);
-  if(visibleReqs.length === 0){
-    modal.classList.remove('show');
-    return;
-  }
+  if(visibleReqs.length === 0){ modal.classList.remove('show'); return; }
 
   list.innerHTML = visibleReqs.map(([uid, r]) => {
     const time = r.requestedAt
@@ -473,24 +467,17 @@ function showRoomEmptyPrompt(){
   if(!modal) return;
   modal.classList.add('show');
 }
-
 function hideRoomEmptyPrompt(){
   const modal = document.getElementById('roomEmptyPromptModal');
   if(modal) modal.classList.remove('show');
 }
 
 /* ============================================================
-   上載沙盤至房間
+   上載沙盤至房間 / 沙盤清單 / 下載
    ============================================================ */
 async function uploadMySandboxToRoom(){
-  if(!window.SLG.canUploadSandboxToRoom()){
-    alert('您沒有上載沙盤的權限');
-    return;
-  }
-  if(!window.SLG.isConnected()){
-    alert('請先加入房間');
-    return;
-  }
+  if(!window.SLG.canUploadSandboxToRoom()){ alert('您沒有上載沙盤的權限'); return; }
+  if(!window.SLG.isConnected()){ alert('請先加入房間'); return; }
   const myData = window.SLG.buildSandboxData();
   const fileName = buildSandboxFileName(state.auth.displayName, Date.now());
   if(!confirm(`確定要將「我的沙盤」上載到房間嗎？\n\n這會覆蓋房間目前的沙盤。`)) return;
@@ -500,34 +487,25 @@ async function uploadMySandboxToRoom(){
     alert('✅ 已上載沙盤到房間！');
     R().renderAll();
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
-  }catch(e){
-    console.warn(e);
-  }
+  }catch(e){ console.warn(e); }
 }
 
-/* ============================================================
-   從沙盤清單選一個上載到房間
-   ============================================================ */
 async function openSandboxPicker(){
   const modal = document.getElementById('sandboxPickerModal');
   const tbody = document.getElementById('sandboxPickerTableBody');
   if(!modal || !tbody) return;
-
   modal.classList.add('show');
   tbody.innerHTML = '<tr><td colspan="5" class="sandbox-empty">載入中...</td></tr>';
-
   try{
     const all = await window.SLG.fetchAllSandboxes();
     const list = Object.entries(all)
       .map(([uid, sb]) => ({ uid, ...sb }))
       .filter(sb => window.SLG.canViewSandboxOf(sb.uid, sb.role || 'member'))
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
     if(list.length === 0){
       tbody.innerHTML = '<tr><td colspan="5" class="sandbox-empty">無可用沙盤</td></tr>';
       return;
     }
-
     tbody.innerHTML = list.map(sb => {
       const isSelf = sb.uid === state.auth.accountUid;
       const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
@@ -542,18 +520,13 @@ async function openSandboxPicker(){
         </td>
       </tr>`;
     }).join('');
-
     tbody.querySelectorAll('[data-action="pick-sandbox"]').forEach(btn => {
       btn.addEventListener('click', async function(){
         const uid = this.dataset.uid;
         const sb = all[uid];
-        if(!sb || !sb.data){
-          alert('沙盤資料為空');
-          return;
-        }
+        if(!sb || !sb.data){ alert('沙盤資料為空'); return; }
         const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
         if(!confirm(`確定要將「${fileName}」上載到房間嗎？\n\n這會覆蓋房間目前的沙盤。`)) return;
-
         modal.classList.remove('show');
         try{
           await window.SLG.uploadSandboxToRoom(sb.data, fileName);
@@ -561,9 +534,7 @@ async function openSandboxPicker(){
           alert('✅ 已上載沙盤到房間！');
           R().renderAll();
           if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
-        }catch(e){
-          console.warn(e);
-        }
+        }catch(e){ console.warn(e); }
       });
     });
   }catch(e){
@@ -572,18 +543,10 @@ async function openSandboxPicker(){
   }
 }
 
-/* ============================================================
-   下載房間沙盤到我的沙盤
-   ============================================================ */
 async function downloadRoomSandbox(){
-  if(!state.roomHasSnapshot || !state.roomSnapshot){
-    alert('房間尚無沙盤');
-    return;
-  }
-
+  if(!state.roomHasSnapshot || !state.roomSnapshot){ alert('房間尚無沙盤'); return; }
   const fileName = window.SLG.buildSandboxFileName(state.auth.displayName, Date.now());
   if(!confirm(`確定要把房間沙盤下載到你的個人沙盤嗎？\n\n這會覆蓋你目前的個人沙盤。`)) return;
-
   try{
     backupCurrentSandbox();
     window.SLG.applySandboxData(state.roomSnapshot.data);
@@ -600,28 +563,19 @@ async function downloadRoomSandbox(){
   }
 }
 
-/* ============================================================
-   從沙盤清單載入
-   ============================================================ */
 async function loadSandboxFromList(uid){
   if(!uid) return;
   try{
     const sb = await window.SLG.fetchUserSandbox(uid);
-    if(!sb || !sb.data){
-      alert('沙盤資料為空');
-      return;
-    }
+    if(!sb || !sb.data){ alert('沙盤資料為空'); return; }
     const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
-
     const ok = confirm(
       `確定要載入「${fileName}」嗎？\n\n` +
       `這會覆蓋你目前的個人沙盤。\n` +
       `（原沙盤會自動備份到本機）`
     );
     if(!ok) return;
-
     backupCurrentSandbox();
-
     window.SLG.applySandboxData(sb.data);
     saveState();
     await window.SLG.saveMySandbox();
@@ -650,35 +604,30 @@ function backupCurrentSandbox(){
     };
     localStorage.setItem(key, JSON.stringify(data));
     logSystem(`💾 已備份目前沙盤（key: ${key}）`);
-
     const keys = [];
     for(let i = 0; i < localStorage.length; i++){
       const k = localStorage.key(i);
       if(k && k.startsWith(LS_PREFIX + 'sandboxBackup_')) keys.push(k);
     }
     keys.sort();
-    while(keys.length > 5){
-      localStorage.removeItem(keys.shift());
-    }
+    while(keys.length > 5){ localStorage.removeItem(keys.shift()); }
   }catch(e){ console.warn('備份失敗', e); }
 }
 
 /* ============================================================
    地圖子檢視切換
    ============================================================ */
-let currentMapView = 'route';   /* 'route' | 'dynamic' */
+let currentMapView = 'route';
 
 function switchMapView(view){
   currentMapView = view;
   document.querySelectorAll('.map-view-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.mapView === view);
   });
-
   const routeWrap = document.getElementById('mapRouteWrap');
   const dynamicWrap = document.getElementById('mapDynamicWrap');
   if(routeWrap) routeWrap.style.display = (view === 'route') ? '' : 'none';
   if(dynamicWrap) dynamicWrap.style.display = (view === 'dynamic') ? '' : 'none';
-
   if(view === 'route'){
     if(window.SLG.GameMap) window.SLG.GameMap.activate();
   } else {
@@ -687,7 +636,7 @@ function switchMapView(view){
 }
 
 /* ============================================================
-   清單偏好初始化（v8.5.6）
+   清單偏好初始化
    ============================================================ */
 function initListPrefs(){
   try{
@@ -700,7 +649,6 @@ function initListPrefs(){
     const dg = localStorage.getItem('slg_deploy_group_v856');
     if(dg) state.listPrefs.deployGroup = dg;
   }catch(e){}
-  /* 同步下拉初始值 */
   const ws = document.getElementById('warSortSelect');
   if(ws) ws.value = state.listPrefs.warSort || 'time';
   const wg = document.getElementById('warGroupSelect');
@@ -736,19 +684,18 @@ function bindUI(){
         if(window.SLG.RouteManager) window.SLG.RouteManager.render();
         if(window.SLG.renderOverview) window.SLG.renderOverview();
       }
-      if(tabId === 'tab-alliances') R().renderAlliances();
+      if(tabId === 'tab-alliances'){
+        R().renderAlliances();
+        if(R().renderMatrix) R().renderMatrix();
+      }
       if(tabId === 'tab-dyn'){ DYN().setRows(state.dynRows); DYN().populateCityFilters(); }
       if(tabId === 'tab-narrative'){ R().renderNarrative(state.narrativeLines); }
-      if(tabId === 'tab-map'){
-        switchMapView(currentMapView);
-      }
+      if(tabId === 'tab-map'){ switchMapView(currentMapView); }
       if(tabId === 'tab-params') syncAIParamsToUI();
       if(tabId === 'tab-summary'){
         if(window.SLG.Summary) window.SLG.Summary.render(window.SLG.Summary.getLast());
       }
-      if(tabId === 'tab-sandbox'){
-        refreshSandboxList();
-      }
+      if(tabId === 'tab-sandbox'){ refreshSandboxList(); }
       if(tabId === 'tab-accounts'){
         if(Auth() && (Auth().isSuperAdmin() || Auth().isAdmin())){
           window.SLG.Accounts.refresh();
@@ -764,7 +711,7 @@ function bindUI(){
     });
   });
 
-  /* ── 手機漢堡選單 ── */
+  /* ── 手機選單 ── */
   const hamburger = document.getElementById('hamburger');
   if(hamburger){
     hamburger.addEventListener('click', () => {
@@ -802,11 +749,43 @@ function bindUI(){
     });
   });
 
-  /* ── 城池數據子 Tab 初始化 ── */
+  /* ── 城池數據子 Tab ── */
   if(window.SLG.initCitySubtabs) window.SLG.initCitySubtabs();
 
-  /* ── v8.5.6：清單偏好初始化 ── */
+  /* ── 清單偏好 ── */
   initListPrefs();
+
+  /* ── v8.6.0：距離工具初始化 ── */
+  if(window.SLG.DistanceTool) window.SLG.DistanceTool.init();
+
+  /* ── v8.6.0：城矩陣過濾器 ── */
+  const cityMatrixZoneSel = document.getElementById('cityMatrixZone');
+  if(cityMatrixZoneSel){
+    cityMatrixZoneSel.addEventListener('change', () => {
+      if(R().renderCityMatrix) R().renderCityMatrix();
+    });
+  }
+  const cityMatrixFilterSel = document.getElementById('cityMatrixFilter');
+  if(cityMatrixFilterSel){
+    cityMatrixFilterSel.addEventListener('change', () => {
+      if(R().renderCityMatrix) R().renderCityMatrix();
+    });
+  }
+
+  /* ── v8.6.0：重置盟排序 ── */
+  const btnResetOrder = document.getElementById('btnResetAllianceOrder');
+  if(btnResetOrder){
+    btnResetOrder.addEventListener('click', () => {
+      if(!requirePerm(() => effectiveCanEditData(), '重置盟排序')) return;
+      showConfirm('重置盟排序', '確定要依「陣營 + 建立時間」重新排序嗎？', () => {
+        if(resetAllianceOrder) resetAllianceOrder();
+        R().renderAlliances();
+        if(R().renderMatrix) R().renderMatrix();
+        if(window.SLG.renderOverview) window.SLG.renderOverview();
+        logSystem('🔄 盟排序已重置');
+      });
+    });
+  }
 
   /* ── 模式切換 ── */
   const btnSwitchMode = document.getElementById('btnSwitchMode');
@@ -815,17 +794,13 @@ function bindUI(){
   /* ── 帳號 UI ── */
   if(window.SLG.bindAuthUI) window.SLG.bindAuthUI();
 
-  /* ── 登出按鈕 ── */
+  /* ── 登出 ── */
   const btnLogout = document.getElementById('btnLogout');
   if(btnLogout){
     btnLogout.addEventListener('click', async () => {
       showConfirm('登出', '確定要登出嗎？\n\n登出前會自動儲存你的個人沙盤，並中斷目前的房間連線。', async () => {
-        try{
-          await Auth().logout();
-        }catch(e){
-          console.warn('登出失敗', e);
-          alert('登出失敗：' + e.message);
-        }
+        try{ await Auth().logout(); }
+        catch(e){ console.warn('登出失敗', e); alert('登出失敗：' + e.message); }
       });
     });
   }
@@ -846,7 +821,6 @@ function bindUI(){
     const db = window.SLG.getDb();
     if(!db){ alert('Firebase 尚未初始化'); return; }
     state.commanderName = name;
-
     let code = null;
     for(let i = 0; i < 10; i++){
       const candidate = String(Math.floor(100000 + Math.random()*900000));
@@ -856,7 +830,6 @@ function bindUI(){
       }catch(e){ code = candidate; break; }
     }
     if(!code){ alert('無法生成房間碼'); return; }
-
     document.getElementById('roomCode').value = code;
     window.SLG.connectFirebase(code, true);
     saveState();
@@ -881,19 +854,17 @@ function bindUI(){
     window.SLG.requestDisconnect();
   });
 
-  /* ── 離開房間對話框按鈕綁定 ── */
+  /* ── 離開房間對話框 ── */
   document.querySelectorAll('[data-exit-choice]').forEach(btn => {
     if(!btn.dataset.bound){
       btn.dataset.bound = '1';
       btn.addEventListener('click', function(){
-        const choice = this.dataset.exitChoice;
         if(typeof window.SLG.confirmExit === 'function'){
-          window.SLG.confirmExit(choice);
+          window.SLG.confirmExit(this.dataset.exitChoice);
         }
       });
     }
   });
-
   const exitRoomCancel = document.getElementById('exitRoomCancel');
   if(exitRoomCancel && !exitRoomCancel.dataset.bound){
     exitRoomCancel.dataset.bound = '1';
@@ -905,7 +876,6 @@ function bindUI(){
   /* ── 房間沙盤操作 ── */
   const btnUploadSandbox = document.getElementById('btnUploadSandboxToRoom');
   if(btnUploadSandbox) btnUploadSandbox.addEventListener('click', uploadMySandboxToRoom);
-
   const btnDownloadRoomSandbox = document.getElementById('btnDownloadRoomSandbox');
   if(btnDownloadRoomSandbox) btnDownloadRoomSandbox.addEventListener('click', downloadRoomSandbox);
 
@@ -929,17 +899,11 @@ function bindUI(){
   document.querySelectorAll('[data-room-action]').forEach(btn => {
     btn.addEventListener('click', function(){
       const action = this.dataset.roomAction;
-      if(action === 'uploadMine'){
-        uploadMySandboxToRoom();
-      } else if(action === 'pickFromList'){
-        hideRoomEmptyPrompt();
-        openSandboxPicker();
-      } else if(action === 'stayEmpty'){
-        hideRoomEmptyPrompt();
-      }
+      if(action === 'uploadMine'){ uploadMySandboxToRoom(); }
+      else if(action === 'pickFromList'){ hideRoomEmptyPrompt(); openSandboxPicker(); }
+      else if(action === 'stayEmpty'){ hideRoomEmptyPrompt(); }
     });
   });
-
   const roomEmptyCancel = document.getElementById('roomEmptyCancel');
   if(roomEmptyCancel) roomEmptyCancel.addEventListener('click', hideRoomEmptyPrompt);
 
@@ -959,12 +923,8 @@ function bindUI(){
     btnRescue.addEventListener('click', async () => {
       const roomCode = document.getElementById('rescueRoomCode').value.trim();
       const statusEl = document.getElementById('rescueStatus');
-      if(!roomCode || roomCode.length !== 6){
-        alert('請輸入 6 位數房間碼');
-        return;
-      }
+      if(!roomCode || roomCode.length !== 6){ alert('請輸入 6 位數房間碼'); return; }
       if(!confirm(`確定要重建房間 ${roomCode} 的沙盤嗎？\n\n⚠️ 這會覆蓋該房間目前的 latestSnapshot！`)) return;
-
       statusEl.textContent = '⏳ 正在重播事件流...';
       btnRescue.disabled = true;
       try{
@@ -996,7 +956,9 @@ function bindUI(){
       minLossRatio: (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100,
       attackRequireRoute: attackRequireRouteEl ? !!attackRequireRouteEl.checked : false,
     });
-    R().renderMatrix();
+    /* v8.6.0：重繪矩陣（消耗值變更）*/
+    if(R().renderMatrix) R().renderMatrix();
+    if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
     alert('戰鬥參數已儲存');
   });
@@ -1064,10 +1026,17 @@ function bindUI(){
     const icon = document.getElementById('allyIcon').value.trim();
     const side = document.getElementById('allySide').value;
     const memberCount = parseFloat(document.getElementById('allyMemberCount').value) || 0;
-    /* v8.5.6：億 → 完整數字 */
     const pInput = parseFloat(document.getElementById('allyTotalPower').value) || 0;
     const totalPower = Math.round(pInput * 1e8);
     if(memberCount <= 0){ alert('總人數必須大於 0'); return; }
+
+    /* v8.6.0：盟徽禁止重複 */
+    const isEditingId = state.editingAllianceId || null;
+    if(icon && isAllianceIconUsed && isAllianceIconUsed(icon, isEditingId)){
+      alert('❌ 此盟徽已被其他盟使用，請更換');
+      return;
+    }
+
     const avgPower = totalPower / memberCount;
     if(side === 'self'){
       state.alliances.forEach(a => {
@@ -1079,11 +1048,22 @@ function bindUI(){
       });
     }
     const id = state.editingAllianceId || uid();
+    const existing = state.alliances.find(a => a.id === id);
+    /* v8.6.0：新盟給 order = 最大值 + 1（加到最後）*/
+    let order = existing ? existing.order : null;
+    if(typeof order !== 'number'){
+      const maxOrder = state.alliances.reduce((m, a) =>
+        Math.max(m, typeof a.order === 'number' ? a.order : -1), -1);
+      order = maxOrder + 1;
+    }
     window.SLG.upsertEntity('alliance', {
-      id, name, icon, side, memberCount, totalPower, avgPower, power: totalPower
+      id, name, icon, side, memberCount, totalPower, avgPower, power: totalPower,
+      order,
+      createdAt: existing ? existing.createdAt : Date.now(),
     });
     window.SLG.resetAllianceForm();
     R().renderAlliances();
+    if(R().renderMatrix) R().renderMatrix();
     if(window.SLG.CityManager) window.SLG.CityManager.render();
     if(window.SLG.GameMap) window.SLG.GameMap.render();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
@@ -1093,11 +1073,8 @@ function bindUI(){
   const btnCancelAllianceEdit = document.getElementById('btnCancelAllianceEdit');
   if(btnCancelAllianceEdit) btnCancelAllianceEdit.addEventListener('click', window.SLG.resetAllianceForm);
 
-  document.querySelectorAll('.icon-quick').forEach(btn => {
-    btn.addEventListener('click', function(){
-      document.getElementById('allyIcon').value = this.dataset.icon || '';
-    });
-  });
+  /* 盟徽快速選擇：由 ui.js 的 renderIconQuickRow 動態生成並綁定（事件委派）*/
+  /* 這裡不需額外綁定 */
 
   const allianceTbody = document.getElementById('allianceTableBody');
   if(allianceTbody) allianceTbody.addEventListener('click', e => {
@@ -1116,6 +1093,7 @@ function bindUI(){
         if(state.editingAllianceId === a.id) window.SLG.resetAllianceForm();
         window.SLG.deleteEntity('alliance', a.id);
         R().renderAlliances();
+        if(R().renderMatrix) R().renderMatrix();
         if(window.SLG.renderOverview) window.SLG.renderOverview();
         saveState();
       });
@@ -1131,6 +1109,8 @@ function bindUI(){
     window.SLG.upsertEntity('zone', { id: uid(), name });
     document.getElementById('newZoneName').value = '';
     R().renderZones(); R().renderCities();
+    if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
+    if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     saveState();
   });
@@ -1143,6 +1123,8 @@ function bindUI(){
     showConfirm('刪除戰區', '確定刪除？', () => {
       window.SLG.deleteEntity('zone', btn.dataset.id);
       R().renderZones(); R().renderCities();
+      if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
+      if(R().renderCityMatrix) R().renderCityMatrix();
       if(window.SLG.renderOverview) window.SLG.renderOverview();
       saveState();
     });
@@ -1172,6 +1154,7 @@ function bindUI(){
         if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
         R().renderCities();
         if(window.SLG.CityManager) window.SLG.CityManager.render();
+        if(R().renderCityMatrix) R().renderCityMatrix();
         if(window.SLG.renderOverview) window.SLG.renderOverview();
         saveState();
       });
@@ -1207,7 +1190,7 @@ function bindUI(){
   /* ── 地圖 ── */
   if(window.SLG.GameMap) window.SLG.GameMap.init();
 
-  /* ── 地圖按鈕 ── */
+  /* ── 匯出按鈕 ── */
   const btnExportMapRoutes = document.getElementById('btnExportMapRoutesCSV');
   if(btnExportMapRoutes) btnExportMapRoutes.addEventListener('click', window.SLG.exportMapRoutesCSV);
 
@@ -1397,16 +1380,12 @@ function bindEvents(){
     if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
     applyPermissions();
     updateModeBar();
-
     if(!state.auth.signedIn){
       hideAllTabContent();
     } else {
       const roomBtn = document.querySelector('.top-nav button[data-tab="tab-room"]');
-      if(roomBtn && roomBtn.style.display !== 'none'){
-        roomBtn.click();
-      }
+      if(roomBtn && roomBtn.style.display !== 'none'){ roomBtn.click(); }
     }
-
     if(state.auth.signedIn && Auth() && (Auth().isSuperAdmin() || Auth().isAdmin())){
       const accTab = document.getElementById('tab-accounts');
       if(accTab && accTab.classList.contains('active')){
@@ -1449,7 +1428,6 @@ function bindEvents(){
   });
 
   on(EVT.DATA, () => {
-    /* v8.5.5：資料變更後重算防守開始時間 */
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
 
     R().renderAlliances();
@@ -1459,6 +1437,9 @@ function bindEvents(){
     if(window.SLG.WarManager) window.SLG.WarManager.render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
     if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+    if(R().renderMatrix) R().renderMatrix();
+    if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
+    if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.GameMap){
       window.SLG.GameMap.reset();
@@ -1466,6 +1447,9 @@ function bindEvents(){
       if(mapTab && mapTab.classList.contains('active')){
         window.SLG.GameMap.activate();
       }
+    }
+    if(window.SLG.DistanceTool && state.distanceResult){
+      window.SLG.DistanceTool.renderResult();
     }
 
     const gt = document.getElementById('globalTimeLimit');
@@ -1505,6 +1489,10 @@ function bindEvents(){
     }
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
+    /* 距離計算可能受路線影響 */
+    if(window.SLG.DistanceTool && state.distanceResult){
+      window.SLG.DistanceTool.renderResult();
+    }
   });
 
   on(EVT.SIM_TRIGGER, payload => {
@@ -1528,9 +1516,7 @@ function bindEvents(){
     if(window.SLG.renderOverview) window.SLG.renderOverview();
   });
 
-  on(EVT.ROOM_PENDING, () => {
-    renderEditRequestReview();
-  });
+  on(EVT.ROOM_PENDING, () => { renderEditRequestReview(); });
 
   on(EVT.ROOM_SNAPSHOT_UPDATED, () => {
     if(window.SLG.updateRoomSandboxActions) window.SLG.updateRoomSandboxActions();
@@ -1594,7 +1580,7 @@ function boot(){
     window.SLG.EntryGate.show();
   }
 
-  /* 5. 註冊雲端同步函式 */
+  /* 5. 註冊雲端同步 */
   window.SLG.registerCloudSync(() => {
     if(state.auth.signedIn){
       window.SLG.saveMySandbox().catch(e => console.warn('雲端同步失敗', e));
@@ -1627,7 +1613,6 @@ function boot(){
   window.SLG.resetAllianceForm();
   if(window.SLG.Summary) window.SLG.Summary.init();
   if(window.SLG.CityManager) window.SLG.CityManager.init();
-  /* WarManager / DeployInstr / RouteManager / GameMap 的 init 已在 bindUI 內呼叫 */
 
   /* 9. 首繪 */
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
@@ -1644,19 +1629,19 @@ function boot(){
   if(window.SLG.RouteManager) window.SLG.RouteManager.render();
   if(window.SLG.WarManager) window.SLG.WarManager.render();
   if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+  if(R().renderMatrix) R().renderMatrix();
+  if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
+  if(R().renderCityMatrix) R().renderCityMatrix();
+  if(window.SLG.DistanceTool) window.SLG.DistanceTool.render();
   if(window.SLG.renderOverview) window.SLG.renderOverview();
   applyPermissions();
 
   /* 10. 非同步初始化認證 */
   (async () => {
     let ok = false;
-    if(window.SLG.Auth){
-      ok = await window.SLG.Auth.initFirebaseAuth();
-    }
+    if(window.SLG.Auth){ ok = await window.SLG.Auth.initFirebaseAuth(); }
     let loggedIn = false;
-    if(ok){
-      loggedIn = await window.SLG.Auth.restoreSession();
-    }
+    if(ok){ loggedIn = await window.SLG.Auth.restoreSession(); }
 
     if(loggedIn){
       if(window.SLG.EntryGate) window.SLG.EntryGate.hide();
@@ -1665,6 +1650,9 @@ function boot(){
       R().renderAll();
       if(window.SLG.WarManager) window.SLG.WarManager.render();
       if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+      if(R().renderMatrix) R().renderMatrix();
+      if(R().renderCityMatrix) R().renderCityMatrix();
+      if(window.SLG.DistanceTool) window.SLG.DistanceTool.render();
       if(window.SLG.renderOverview) window.SLG.renderOverview();
       logSystem('🚪 已自動登入，跳過入口');
       if(document.getElementById('tab-sandbox')?.classList.contains('active')){
@@ -1678,7 +1666,7 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.5.6] 戰力單位 + 宣戰/出兵清單（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.6.0] 盟排序 + 盟/城矩陣 + 距離計算（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 if(document.readyState === 'loading'){

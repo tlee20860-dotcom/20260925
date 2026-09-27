@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI
- * v8.5.6：戰力單位換算（億/萬）+ 舊資料遷移
+ * v8.6.0：盟徽擴充 + 拖曳排序 + 距離計算（BFS）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -23,19 +23,32 @@ const ACCOUNT_UID_KEY = 'slg_sandtable_v82_accountUid';
 const HOST_TIMEOUT = 15000;
 const EDIT_LOCK_TTL = 30000;
 
-/* v8.2 雲端同步 debounce */
 const SANDBOX_SYNC_DEBOUNCE = 1500;
 const ROOM_SNAPSHOT_DEBOUNCE = 2000;
 
-/* v8.5：NPC 預設盟名稱 */
 const NPC_ALLIANCE_NAME = 'NPC';
 const NPC_ALLIANCE_ICON = '🏰';
 
 /* v8.5.6：戰力單位換算 */
-const POWER_YI = 1e8;      /* 1 億 = 100,000,000 */
-const POWER_WAN = 1e4;     /* 1 萬 = 10,000 */
-/* 舊資料遷移閾值：若值 < 100 萬，視為舊資料（億為單位），自動 × 10⁸ */
+const POWER_YI = 1e8;
+const POWER_WAN = 1e4;
 const POWER_MIGRATE_THRESHOLD = 1e6;
+
+/* v8.6.0：盟徽清單（取消文字圖案，擴充兵種 emoji） */
+const DEFAULT_ALLIANCE_ICONS = [
+  /* ── 古代兵種 ── */
+  '⚔️','🗡️','🏹','🔱','🪓','🛡️','⚒️','🔨','🪃','⚜️','🏰','🚩',
+  /* ── 現代兵種 ── */
+  '🎯','🔫','🚁','✈️','🚢','🛩️','🚀','💣','🧨','🛰️','🪖','🎖️',
+  /* ── 動物 ── */
+  '🐉','🦅','🐺','🦁','💀','🦂','🐍','🦈','🐻',
+  /* ── 神話 / 旗幟 ── */
+  '👑','🌟','💎','✨','☀️','🌙','⭐','💫','🏴','🏳️','🎌',
+  /* ── 自然 ── */
+  '⚡','🔥','❄️','🌊','🌪️','🌋','🏔️','🌲','🍀',
+  /* ── 特殊 ── */
+  '🎪','🎭','🎨','🎵','☯️'
+];
 
 const PERCENT_OPTIONS = [0, 17, 33, 50, 67, 84, 100];
 
@@ -108,8 +121,10 @@ const EVT = {
   MY_SANDBOX_UPDATED:'sandbox:mine',
   SANDBOXES_LIST_UPDATED:'sandbox:list',
   ROOM_SNAPSHOT_UPDATED:'room:snapshot',
-  /* v8.5：路線事件 */
   ROUTES_UPDATED:'routes:updated',
+  /* v8.6.0：距離計算高亮 */
+  DISTANCE_HIGHLIGHT:'distance:highlight',
+  DISTANCE_CLEAR:'distance:clear',
 };
 
 /* ============================================================
@@ -157,12 +172,6 @@ function buildSandboxFileName(displayName, updatedAt){
 /* ============================================================
    v8.5.6：戰力單位換算工具
    ============================================================ */
-
-/**
- * 格式化完整數字為「億」
- * @param {number} num - 完整數字（如 200000000）
- * @returns {string} - 如 "2.00 億"
- */
 function formatPower(num){
   const n = Number(num) || 0;
   if(n === 0) return '0.00 億';
@@ -170,11 +179,6 @@ function formatPower(num){
   return yi.toFixed(2) + ' 億';
 }
 
-/**
- * 格式化平均戰力為「萬」（無小數）
- * @param {number} num - 完整數字（如 1500000）
- * @returns {string} - 如 "150 萬"
- */
 function formatAvgPower(num){
   const n = Number(num) || 0;
   if(n === 0) return '0 萬';
@@ -182,39 +186,52 @@ function formatAvgPower(num){
   return wan.toLocaleString() + ' 萬';
 }
 
-/**
- * 解析使用者輸入（億）為完整數字
- * @param {string|number} input - 如 "2" 或 "1.5"
- * @returns {number} - 如 200000000
- */
 function parsePowerInput(input){
   const n = parseFloat(input);
   if(isNaN(n) || n < 0) return 0;
   return Math.round(n * POWER_YI);
 }
 
-/**
- * 遷移舊資料：若值過小，視為「億」單位，乘以 10⁸
- * @param {number} num
- * @returns {number}
- */
 function migratePower(num){
   const n = Number(num) || 0;
   if(n === 0) return 0;
-  /* 若 < 100 萬，視為舊資料的「億」單位 */
   if(n < POWER_MIGRATE_THRESHOLD) return Math.round(n * POWER_YI);
   return n;
 }
 
-/**
- * 將完整數字轉為「億」為單位的顯示字串（用於輸入框 value）
- * @param {number} num
- * @returns {string} - 如 "2.00"
- */
 function powerToYiInput(num){
   const n = Number(num) || 0;
   if(n === 0) return '0.00';
   return (n / POWER_YI).toFixed(2);
+}
+
+/* ============================================================
+   v8.6.0：盟徽工具
+   ============================================================ */
+function getAllianceIcons(){
+  return DEFAULT_ALLIANCE_ICONS.slice();
+}
+
+/**
+ * 檢查盟徽是否已被使用
+ * @param {string} icon
+ * @param {string} excludeAllianceId - 排除此盟（編輯時用）
+ * @returns {boolean}
+ */
+function isAllianceIconUsed(icon, excludeAllianceId){
+  if(!icon) return false;
+  return state.alliances.some(a =>
+    a.icon === icon && a.id !== excludeAllianceId
+  );
+}
+
+/**
+ * 取得未被使用的盟徽清單
+ */
+function getAvailableAllianceIcons(excludeAllianceId){
+  return DEFAULT_ALLIANCE_ICONS.filter(icon =>
+    !isAllianceIconUsed(icon, excludeAllianceId)
+  );
 }
 
 /* ============================================================
@@ -339,11 +356,9 @@ const state = {
   settings:{
     timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
     siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
-    /* v8.5.5：進攻是否需要路線接觸 */
     attackRequireRoute: false,
   },
   alliances:[], zones:[], cities:[],
-  /* v8.5：地圖路線（無向圖） */
   routes: [],
   lamport:0, settingsRev:0,
   entityRev:{ alliance:{}, zone:{}, city:{} },
@@ -369,13 +384,16 @@ const state = {
   roomSnapshot: null,
   roomHasSnapshot: false,
   pendingUploadSandbox: null,
-  /* v8.5.6：清單檢視偏好 */
   listPrefs: {
     warSort: 'time',
     warGroup: 'none',
     deploySort: 'alliance',
     deployGroup: 'none',
   },
+  /* v8.6.0：距離計算狀態 */
+  distanceResult: null,
+  distanceView: 'number',  /* number | path | map */
+  distanceHighlight: null, /* 要高亮的 { cityIds:[], routeKeys:[] } */
 };
 
 /* ============================================================
@@ -456,22 +474,17 @@ function saveState(){
   }
 }
 
-/* ============================================================
-   v8.5.6：遷移盟 / 城的戰力單位
-   ============================================================ */
+/* v8.5.6：遷移盟 / 城戰力單位 */
 function migratePowerInState(){
-  /* 盟 */
   if(Array.isArray(state.alliances)){
     for(const a of state.alliances){
       const oldTotal = Number(a.totalPower) || 0;
       a.totalPower = migratePower(oldTotal);
       const mc = Number(a.memberCount) || 0;
       a.avgPower = mc > 0 ? (a.totalPower / mc) : 0;
-      /* v8.5：舊欄位 power 相容 */
       if(typeof a.power === 'number') a.power = a.totalPower;
     }
   }
-  /* 城 */
   if(Array.isArray(state.cities)){
     for(const c of state.cities){
       const oldTotal = Number(c.totalPower) || 0;
@@ -480,6 +493,23 @@ function migratePowerInState(){
       c.avgPower = tt > 0 ? Math.floor(c.totalPower / tt) : 0;
     }
   }
+}
+
+/* v8.6.0：遷移盟排序（舊盟無 order 時，依陣營 + createdAt 給值） */
+function migrateAllianceOrder(){
+  if(!Array.isArray(state.alliances)) return;
+  let hasAnyOrder = state.alliances.some(a => typeof a.order === 'number');
+  if(hasAnyOrder) return;  /* 已遷移 */
+  const sorted = [...state.alliances].sort((a, b) => {
+    const sideOrder = { self: 0, ally: 1, enemy: 2, common_enemy: 3, npc: 4 };
+    const oa = sideOrder[a.side] ?? 9;
+    const ob = sideOrder[b.side] ?? 9;
+    if(oa !== ob) return oa - ob;
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+  sorted.forEach((a, i) => {
+    a.order = i;
+  });
 }
 
 function loadState(){
@@ -499,7 +529,6 @@ function loadState(){
     if(typeof state.settings.maxLossRatio !== 'number') state.settings.maxLossRatio = 0.9;
     if(typeof state.settings.minLossRatio !== 'number') state.settings.minLossRatio = 0.1;
     if(typeof state.settings.marchTimeSec !== 'number') state.settings.marchTimeSec = 0;
-    /* v8.5.5：相容處理 */
     if(typeof state.settings.attackRequireRoute !== 'boolean'){
       state.settings.attackRequireRoute = false;
     }
@@ -517,6 +546,8 @@ function loadState(){
         a.avgPower = a.memberCount > 0 ? (a.totalPower / a.memberCount) : 0;
         if(!['self','ally','enemy'].includes(a.side)) a.side = 'ally';
         if(typeof a.icon !== 'string') a.icon = '';
+        /* v8.6.0：order 欄位（若無，稍後由 migrate 補）*/
+        if(typeof a.order !== 'number') a.order = null;
         return a;
       });
     }
@@ -524,9 +555,7 @@ function loadState(){
 
     if(Array.isArray(d.cities)){
       state.cities = d.cities.map(c => {
-        /* v8.5.5：defStartTime 改為相容欄位（推演時動態計算） */
         if(!c.defStartTime) c.defStartTime = '19:00';
-        /* v8.5：level 預設 1 */
         if(typeof c.level !== 'number') c.level = 1;
         const migrate = arr => (arr||[]).map(t => ({
           cityId: t.cityId,
@@ -535,7 +564,6 @@ function loadState(){
             : (t.teams ? Math.round(t.teams / (c.totalTeams||100) * 100) : 50),
           postRevivePercent: t.postRevivePercent !== undefined ? t.postRevivePercent : 50,
           priority: t.priority !== undefined ? t.priority : 1,
-          /* v8.5.5：相容處理，舊資料無 attackStartTime 則給預設 */
           attackStartTime: t.attackStartTime || '19:00',
         }));
         c.attackTargets = migrate(c.attackTargets);
@@ -544,7 +572,6 @@ function loadState(){
       });
     }
 
-    /* v8.5：routes 預設空 */
     if(Array.isArray(d.routes)){
       state.routes = d.routes.map(r => ({
         id: r.id || uid(),
@@ -557,13 +584,14 @@ function loadState(){
     if(Array.isArray(d.narrativeLines)) state.narrativeLines = d.narrativeLines.slice(-1000);
     if(Array.isArray(d.chatMessages)) state.chatMessages = d.chatMessages.slice(-200);
 
-    /* v8.5.6：清單偏好 */
     if(d.listPrefs){
       state.listPrefs = Object.assign(state.listPrefs, d.listPrefs);
     }
 
     /* v8.5.6：遷移戰力單位 */
     migratePowerInState();
+    /* v8.6.0：遷移盟排序 */
+    migrateAllianceOrder();
   }catch(e){ console.warn('讀取失敗', e); }
 }
 
@@ -760,8 +788,8 @@ function applyFullSnapshot(snap){
     }
   }
   tickLamport(snap.lamport || 0);
-  /* v8.5.6：遷移戰力單位 */
   migratePowerInState();
+  migrateAllianceOrder();
   return true;
 }
 
@@ -778,7 +806,6 @@ function buildSandboxData(){
 function applySandboxData(data){
   if(!data) return false;
   if(data.settings) Object.assign(state.settings, data.settings);
-  /* v8.5.5：相容處理 */
   if(typeof state.settings.attackRequireRoute !== 'boolean'){
     state.settings.attackRequireRoute = false;
   }
@@ -797,8 +824,8 @@ function applySandboxData(data){
       state.entityRev[kind][ent.id] = 1;
     }
   }
-  /* v8.5.6：遷移戰力單位 */
   migratePowerInState();
+  migrateAllianceOrder();
   return true;
 }
 
@@ -832,10 +859,70 @@ function ensureNpcAlliance(){
     totalPower: 0,
     avgPower: 0,
     power: 0,
+    order: 9999,
   };
   state.alliances.push(npc);
   logSystem('已建立預設 NPC 盟');
   return npc;
+}
+
+/* ============================================================
+   v8.6.0：盟排序
+   ============================================================ */
+/**
+ * 取得排序後的盟清單
+ * - 有 order 者依 order
+ * - 無 order 者依 createdAt
+ */
+function getAlliancesSorted(){
+  return [...state.alliances].sort((a, b) => {
+    const oa = typeof a.order === 'number' ? a.order : 9999;
+    const ob = typeof b.order === 'number' ? b.order : 9999;
+    if(oa !== ob) return oa - ob;
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+}
+
+/**
+ * 依給定的 ID 順序重新分配 order
+ * @param {string[]} orderedIds
+ */
+function reorderAlliances(orderedIds){
+  if(!Array.isArray(orderedIds)) return;
+  orderedIds.forEach((id, i) => {
+    const a = state.alliances.find(x => x.id === id);
+    if(!a) return;
+    if(a.order === i) return;
+    a.order = i;
+    state.entityRev.alliance[id] = (state.entityRev.alliance[id] || 0) + 1;
+    markDirty('alliance', id);
+  });
+  tickLamport();
+  flushPatches();
+  saveState();
+  logSystem('🤝 盟排序已更新');
+}
+
+/**
+ * 重設盟排序：依陣營 + createdAt
+ */
+function resetAllianceOrder(){
+  const sideOrder = { self: 0, ally: 1, enemy: 2, common_enemy: 3, npc: 4 };
+  const sorted = [...state.alliances].sort((a, b) => {
+    const oa = sideOrder[a.side] ?? 9;
+    const ob = sideOrder[b.side] ?? 9;
+    if(oa !== ob) return oa - ob;
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+  sorted.forEach((a, i) => {
+    a.order = i;
+    state.entityRev.alliance[a.id] = (state.entityRev.alliance[a.id] || 0) + 1;
+    markDirty('alliance', a.id);
+  });
+  tickLamport();
+  flushPatches();
+  saveState();
+  logSystem('🔄 盟排序已重置');
 }
 
 /* ============================================================
@@ -876,7 +963,6 @@ function getReachableCityIds(cityId){
 
 /* ============================================================
    v8.5.5：防守開始時間推算
-   為每座城計算「被攻擊的最早時間」作為該城的防守開始時間
    ============================================================ */
 function computeDefStartTimes(cities){
   const list = cities || state.cities;
@@ -890,14 +976,188 @@ function computeDefStartTimes(cities){
       }
     }
     if(incomingTimes.length > 0){
-      /* 取最早（字串比較在 HH:MM 格式下等同時間比較） */
       incomingTimes.sort();
       city.defStartTime = incomingTimes[0];
     } else {
-      /* 無任何城進攻 → 保留 fallback 或預設 */
       if(!city.defStartTime) city.defStartTime = '19:00';
     }
   }
+}
+
+/* ============================================================
+   v8.6.0：距離計算（BFS）
+   ============================================================ */
+
+/**
+ * 判斷某城是否為 NPC 城（side = 'npc' 或盟名為 NPC）
+ */
+function isNpcCity(city){
+  if(!city) return false;
+  if(city.side === 'npc') return true;
+  const a = state.alliances.find(al => al.id === city.allianceId);
+  if(a && a.name === NPC_ALLIANCE_NAME) return true;
+  return false;
+}
+
+/**
+ * 判斷某城是否為起點盟的城
+ */
+function isSrcAllianceCity(city, srcAllianceId){
+  if(!city || !srcAllianceId) return false;
+  return (city.allianceId || '') === srcAllianceId;
+}
+
+/**
+ * BFS 搜尋最短路徑
+ * @param {string} srcId
+ * @param {string} tgtId
+ * @param {Function} passableFn - 判斷中途城是否可通行
+ * @returns {string[]|null} - 城 ID 陣列，或 null
+ */
+function bfsPath(srcId, tgtId, passableFn){
+  if(srcId === tgtId) return [srcId];
+  const visited = new Set([srcId]);
+  const queue = [{ id: srcId, path: [srcId] }];
+
+  while(queue.length > 0){
+    const { id, path } = queue.shift();
+    const neighbors = getReachableCityIds(id);
+    for(const nid of neighbors){
+      if(visited.has(nid)) continue;
+      const city = state.cities.find(c => c.id === nid);
+      if(!city) continue;
+
+      /* 目標城永遠可通行（終點）*/
+      if(nid === tgtId){
+        return [...path, nid];
+      }
+      /* 中途城需通過 passableFn */
+      if(!passableFn(city)) continue;
+      visited.add(nid);
+      queue.push({ id: nid, path: [...path, nid] });
+    }
+  }
+  return null;
+}
+
+/**
+ * 計算兩城之間的距離（BFS）
+ * @param {string} srcId
+ * @param {string} tgtId
+ * @returns {Object|null}
+ */
+function computeCityDistance(srcId, tgtId){
+  if(!srcId || !tgtId) return null;
+  const src = state.cities.find(c => c.id === srcId);
+  const tgt = state.cities.find(c => c.id === tgtId);
+  if(!src || !tgt) return null;
+  if(srcId === tgtId) return null;
+
+  const srcAllianceId = src.allianceId || '';
+
+  /* 條件一：可通行路徑（中途城 = 起點盟 or NPC） */
+  const passableFn = (city) => {
+    if(isSrcAllianceCity(city, srcAllianceId)) return true;
+    if(isNpcCity(city)) return true;
+    return false;
+  };
+
+  /* 條件二：征服路徑（中途城任意） */
+  const conquerFn = () => true;
+
+  const passablePath = bfsPath(srcId, tgtId, passableFn);
+  const conquerPath = bfsPath(srcId, tgtId, conquerFn);
+
+  /* 組裝結果 */
+  const buildResult = (path, mode) => {
+    if(!path) return { found: false, path: [], steps: 0, nodes: [], conquerNodes: [] };
+    const nodes = path.map(id => {
+      const c = state.cities.find(x => x.id === id);
+      return c ? {
+        id: c.id,
+        name: c.name,
+        side: c.side,
+        allianceId: c.allianceId,
+        allianceName: (state.alliances.find(a => a.id === c.allianceId)?.name || ''),
+        isNpc: isNpcCity(c),
+        isSrcAlliance: isSrcAllianceCity(c, srcAllianceId),
+        isSrc: id === srcId,
+        isTgt: id === tgtId,
+      } : null;
+    }).filter(Boolean);
+
+    /* 計算需打下的城 */
+    const conquerNodes = [];
+    if(mode === 'passable'){
+      /* 可通行模式：NPC 城需要佔領 */
+      for(let i = 0; i < nodes.length; i++){
+        const n = nodes[i];
+        if(n.isSrc || n.isTgt) continue;
+        if(n.isNpc) conquerNodes.push(n.id);
+      }
+    } else {
+      /* 征服模式：非同盟 + 非 NPC 需要打下 */
+      for(let i = 0; i < nodes.length; i++){
+        const n = nodes[i];
+        if(n.isSrc || n.isTgt) continue;
+        if(n.isNpc) continue;
+        if(n.isSrcAlliance) continue;
+        conquerNodes.push(n.id);
+      }
+    }
+
+    return {
+      found: true,
+      path: path.slice(),
+      steps: path.length - 1,
+      nodes,
+      conquerNodes,
+    };
+  };
+
+  return {
+    src: {
+      id: src.id,
+      name: src.name,
+      side: src.side,
+      allianceId: src.allianceId,
+      allianceName: (state.alliances.find(a => a.id === src.allianceId)?.name || ''),
+    },
+    tgt: {
+      id: tgt.id,
+      name: tgt.name,
+      side: tgt.side,
+      allianceId: tgt.allianceId,
+      allianceName: (state.alliances.find(a => a.id === tgt.allianceId)?.name || ''),
+    },
+    passable: buildResult(passablePath, 'passable'),
+    conquer: buildResult(conquerPath, 'conquer'),
+  };
+}
+
+/**
+ * 設定距離計算高亮（給 GameMap 用）
+ */
+function setDistanceHighlight(result){
+  if(!result || !result.passable || !result.passable.found){
+    state.distanceHighlight = null;
+    emit(EVT.DISTANCE_CLEAR);
+    return;
+  }
+  const path = result.passable.path;
+  const cityIds = path.slice();
+  const routeKeys = [];
+  for(let i = 0; i < path.length - 1; i++){
+    const a = path[i], b = path[i+1];
+    routeKeys.push([a, b].sort().join('|'));
+  }
+  state.distanceHighlight = { cityIds, routeKeys };
+  emit(EVT.DISTANCE_HIGHLIGHT, state.distanceHighlight);
+}
+
+function clearDistanceHighlight(){
+  state.distanceHighlight = null;
+  emit(EVT.DISTANCE_CLEAR);
 }
 
 /* ============================================================
@@ -1013,7 +1273,6 @@ function canViewSandboxes(){
   if(!state.auth.signedIn) return false;
   return true;
 }
-
 function canViewSandboxOf(targetUid, targetRole){
   if(!state.auth.signedIn) return false;
   if(targetUid === state.auth.accountUid) return true;
@@ -1023,18 +1282,15 @@ function canViewSandboxOf(targetUid, targetRole){
   if(state.auth.role === ROLE.MEMBER && targetRole === ROLE.MEMBER) return true;
   return false;
 }
-
 function canViewRoomSandboxes(){
   if(!state.auth.signedIn) return false;
   return window.SLG.Auth && (window.SLG.Auth.isAdmin() || state.auth.role === ROLE.OFFICER);
 }
-
 function canUploadSandboxToRoom(){
   if(!isInRoom()) return false;
   if(!state.auth.signedIn) return false;
   return window.SLG.Auth && (window.SLG.Auth.isAdmin() || window.SLG.Auth.isOfficer());
 }
-
 function canUseRescueTool(){
   if(!state.auth.signedIn) return false;
   return window.SLG.Auth && window.SLG.Auth.isAdmin();
@@ -1084,11 +1340,17 @@ Object.assign(window.SLG, {
   /* v8.5.6：戰力單位常量 */
   POWER_YI, POWER_WAN, POWER_MIGRATE_THRESHOLD,
 
+  /* v8.6.0：盟徽清單 */
+  DEFAULT_ALLIANCE_ICONS,
+
   uid, nowTime, esc, sideLabel, allianceSideLabel, sideClass, logSystem,
   formatDateCompact, timeAgo, buildSandboxFileName,
 
   /* v8.5.6：戰力單位工具 */
   formatPower, formatAvgPower, parsePowerInput, migratePower, powerToYiInput,
+
+  /* v8.6.0：盟徽工具 */
+  getAllianceIcons, isAllianceIconUsed, getAvailableAllianceIcons,
 
   AI,
 
@@ -1135,8 +1397,22 @@ Object.assign(window.SLG, {
   /* v8.5.5：防守時間推算 */
   computeDefStartTimes,
 
-  /* v8.5.6：內部遷移函式（給 firebase.js 用） */
+  /* v8.5.6：遷移 */
   migratePowerInState,
+
+  /* v8.6.0：盟排序 */
+  getAlliancesSorted,
+  reorderAlliances,
+  resetAllianceOrder,
+  migrateAllianceOrder,
+
+  /* v8.6.0：距離計算 */
+  isNpcCity,
+  isSrcAllianceCity,
+  bfsPath,
+  computeCityDistance,
+  setDistanceHighlight,
+  clearDistanceHighlight,
 });
 
 })();
