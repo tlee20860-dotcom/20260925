@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.5.3</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.5.4</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-<link rel="stylesheet" href="style.css?v=20260927_2330">
+<link rel="stylesheet" href="style.css?v=20260927_1516">
 </head>
 <body>
 
@@ -16,13 +16,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.3</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.4</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.3</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.4</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -76,7 +76,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.5.3</span>
+      <span class="sidebar-version">v8.5.4</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -344,7 +344,7 @@
       </div>
     </section>
 
-    <!-- ============ 城池數據（v8.5.3 重構） ============ -->
+    <!-- ============ 城池數據（v8.5.4 重構） ============ -->
     <section id="tab-cities" class="tab-content">
 
       <!-- 🎯 推演啟動（置頂，精簡） -->
@@ -897,7 +897,7 @@
     <!-- ============ 戰鬥規則 ============ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.5.3）</div>
+        <div class="card-title">📖 城戰計算規則（v8.5.4）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -968,7 +968,7 @@
             <li>推演結束後，可至「📊 推演總結」Tab 查看結果。</li>
             <li>顯示：盟兵力分佈、城池最終狀態、推演重點、時間軸。</li>
           </ul>
-          <h2>十二、v8.5.3 城池數據 UI 重構</h2>
+          <h2>十二、v8.5.4 城池數據 UI 重構</h2>
           <ul>
             <li><b>推演啟動置頂</b>：進入城池數據 Tab 即可直接推演。</li>
             <li><b>5 個子 Tab</b>：概覽 / 戰區 / 城池 / 宣戰與出兵 / 路線。</li>
@@ -1090,7 +1090,7 @@
   </div>
 </div>
 
-<!-- ============ 路線編輯 Modal（v8.5.3 新增） ============ -->
+<!-- ============ 路線編輯 Modal（v8.5.4 新增） ============ -->
 <div class="modal-overlay" id="routeEditModal">
   <div class="modal-box" style="max-width:420px;">
     <h3 id="routeEditTitle">🛣️ 編輯路線</h3>
@@ -1276,13 +1276,13 @@
 </div>
 
 <!-- ============ 載入 JS ============ -->
-<script src="js/simulation.js?v=20260927_2330"></script>
-<script src="js/core.js?v=20260927_2330"></script>
-<script src="js/firebase.js?v=20260927_2330"></script>
-<script src="js/auth.js?v=20260927_2330"></script>
-<script src="js/data.js?v=20260927_2330"></script>
-<script src="js/ui.js?v=20260927_2330"></script>
-<script src="js/summary.js?v=20260927_2330"></script>
-<script src="js/main.js?v=20260927_2330"></script>
+<script src="js/simulation.js?v=20260927_1516"></script>
+<script src="js/core.js?v=20260927_1516"></script>
+<script src="js/firebase.js?v=20260927_1516"></script>
+<script src="js/auth.js?v=20260927_1516"></script>
+<script src="js/data.js?v=20260927_1516"></script>
+<script src="js/ui.js?v=20260927_1516"></script>
+<script src="js/summary.js?v=20260927_1516"></script>
+<script src="js/main.js?v=20260927_1516"></script>
 </body>
 </html>

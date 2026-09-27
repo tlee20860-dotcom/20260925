@@ -1130,6 +1130,39 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .alliance-dist-row .bar{flex-basis:100%;order:10;}
   .alliance-dist-row .name{min-width:0;flex:1 1 100%;}
 }
+/* ============================================================
+   v8.5.4：宣戰指示 - 目標城提示
+   ============================================================ */
+.war-tgt-wrap{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.war-tgt-wrap .war-tgt{
+  flex:1;
+  min-width:0;
+}
+.war-hint{
+  flex:0 0 auto;
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:10px;
+  white-space:nowrap;
+  font-weight:600;
+  letter-spacing:.3px;
+}
+.war-hint.warn{
+  color:var(--neon-yellow);
+  background:rgba(255,204,0,.1);
+  border:1px solid rgba(255,204,0,.35);
+  animation:pulse 2s infinite;
+}
+.war-hint.ok{
+  color:var(--neon-green);
+  background:rgba(34,255,136,.08);
+  border:1px solid rgba(34,255,136,.3);
+}
 
 @media (max-width:480px){
   .main-container{padding:8px}.card{padding:10px}.form-row{gap:6px}
