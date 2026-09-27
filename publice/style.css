@@ -1,6 +1,6 @@
 /* ============================================================================
- * style.css — v8.6.0
- * 新增：拖曳排序、距離計算、消耗矩陣
+ * style.css — v8.6.1
+ * v8.6.1：新增宣戰手動輸入區樣式
  * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
@@ -239,7 +239,7 @@ select{
 .city-card.overdraft{border-color:var(--neon-red);box-shadow:0 0 12px rgba(239,68,68,.35)}
 .city-card.capital{border-color:var(--neon-yellow);box-shadow:0 0 12px rgba(255,204,0,.25)}
 
-/* ============ v8.5.6：輸入框單位標籤 ============ */
+/* ============ 輸入框單位標籤 ============ */
 .input-with-unit{
   display:flex;align-items:stretch;
   background:var(--bg-input);
@@ -277,7 +277,7 @@ select{
 }
 .input-with-unit input[readonly]{background:#0a101a;border-style:none;color:var(--text-dim);}
 
-/* ============ v8.6.0：拖曳排序 ============ */
+/* ============ 拖曳排序 ============ */
 .ally-table .drag-handle{
   width:32px;
   text-align:center;
@@ -300,11 +300,8 @@ select{
 .ally-table tr.drag-over-bottom td{
   border-bottom:2px solid var(--neon-blue);
 }
-.ally-table tr.no-drag{
-  /* 拖曳時鎖定，不顯示其他干擾 */
-}
 
-/* ============ v8.6.0：距離計算 ============ */
+/* ============ 距離計算 ============ */
 .distance-tool-card{
   background:linear-gradient(135deg,rgba(30,58,95,.35),rgba(42,74,111,.15));
   border:1px solid rgba(68,170,255,.35);
@@ -461,7 +458,7 @@ select{
 .distance-result .dist-note.warn{color:var(--neon-red);}
 .distance-result .dist-note.info{color:var(--neon-blue);}
 
-/* ============ v8.6.0：城對城矩陣容器 ============ */
+/* ============ 城對城矩陣容器 ============ */
 #cityMatrixWrap{
   max-height:60vh;
   overflow:auto;
@@ -1035,7 +1032,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.5.6：清單工具列（排序 / 分組）
+   清單工具列（排序 / 分組）
    ============================================================ */
 .list-toolbar{
   display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
@@ -1064,7 +1061,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.5.6：清單容器（宣戰 / 出兵）
+   清單容器（宣戰 / 出兵）
    ============================================================ */
 .war-list-container,
 .deploy-list-container{
@@ -1077,7 +1074,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.5.6：清單表格
+   清單表格
    ============================================================ */
 .list-table{
   width:100%;
@@ -1191,7 +1188,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.5.6：分組摺疊
+   分組摺疊
    ============================================================ */
 .list-group{border-bottom:1px solid var(--border);}
 .list-group:last-child{border-bottom:none;}
@@ -1233,6 +1230,66 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   background:#0a101a;
   border:1px dashed var(--border);
   border-radius:var(--radius-sm);
+}
+
+/* ============================================================
+   v8.6.1：宣戰手動新增區
+   ============================================================ */
+.war-add-row{
+  margin-top:12px;
+  padding:10px 12px;
+  background:#0a101a;
+  border:1px dashed var(--border);
+  border-radius:var(--radius-sm);
+}
+.war-add-title{
+  font-size:11px;
+  font-weight:700;
+  color:var(--neon-green);
+  margin-bottom:8px;
+  letter-spacing:.3px;
+}
+.war-add-inputs{
+  display:flex;
+  gap:8px;
+  align-items:flex-end;
+  flex-wrap:wrap;
+}
+.war-add-item{
+  flex:1;
+  min-width:120px;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.war-add-item label{
+  font-size:10px;
+  color:var(--text-dim);
+  font-weight:600;
+  margin-bottom:0;
+}
+.war-add-item select{
+  font-size:12px;
+  padding:6px 24px 6px 8px;
+}
+.war-add-btns{
+  flex:0 0 auto;
+  display:flex;
+  gap:6px;
+  align-items:center;
+}
+
+@media (max-width:600px){
+  .war-add-inputs{
+    flex-direction:column;
+    align-items:stretch;
+  }
+  .war-add-item{min-width:0;}
+  .war-add-btns{
+    width:100%;
+    justify-content:stretch;
+  }
+  .war-add-btns .btn{flex:1;}
 }
 
 /* ============================================================
@@ -1351,7 +1408,6 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .list-table th,.list-table td{padding:5px 6px;}
   .deploy-list-container .list-table .col-time{display:none;}
 
-  /* v8.6.0：距離計算手機版 */
   .distance-input-row{flex-direction:column;gap:6px;}
   .distance-input-item{min-width:0;width:100%;}
   .distance-arrow{
@@ -1392,11 +1448,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .alliance-dist-row{flex-wrap:wrap;gap:6px;}
   .alliance-dist-row .bar{flex-basis:100%;order:10;}
   .alliance-dist-row .name{min-width:0;flex:1 1 100%;}
-
-  /* v8.6.0：拖曳把手縮小 */
   .ally-table .drag-handle{width:24px;font-size:14px;}
-
-  /* v8.6.0：距離結果手機版 */
   .distance-result{padding:10px;font-size:11px;}
   .distance-result .dist-path{gap:3px;}
   .distance-result .dist-node{font-size:10px;padding:1px 6px;}
@@ -1421,7 +1473,5 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .deploy-list-container .list-table .col-time{display:none;}
   .deploy-list-container .list-table .col-type{display:none;}
   .input-with-unit .unit{padding:0 8px;font-size:10px;}
-
-  /* v8.6.0：盟徽快速選擇小螢幕 */
   .icon-quick{width:28px;height:28px;font-size:14px;}
 }
