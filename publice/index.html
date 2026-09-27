@@ -3,26 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.5.4</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.5.5</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-<link rel="stylesheet" href="style.css?v=20260927_1516">
+<link rel="stylesheet" href="style.css?v=20260927_2500">
 </head>
 <body>
 
-<!-- ============ 入口門禁 ============ -->
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.4</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.5</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.4</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.5</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -70,13 +69,12 @@
   </div>
 </div>
 
-<!-- ============ 應用佈局（v8.5：側邊欄 + 主內容） ============ -->
 <div class="app-layout">
 
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.5.4</span>
+      <span class="sidebar-version">v8.5.5</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -233,6 +231,16 @@
             </div>
           </div>
         </div>
+        <div class="param-section">
+          <div class="param-section-title">🎯 宣戰規則</div>
+          <div class="param-item">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+              <input type="checkbox" id="globalAttackRequireRoute" style="width:auto;accent-color:#3b82f6;transform:scale(1.2);">
+              <span>進攻需要路線接觸</span>
+            </label>
+            <div class="param-hint">勾選後，只有與出兵城有地圖路線接觸的敵方城池才能被進攻。預設不勾選（任何敵方城池皆可進攻）。</div>
+          </div>
+        </div>
         <div class="flex-row mt-8">
           <button class="btn btn-primary btn-sm" id="btnSaveSettings">💾 儲存戰鬥參數</button>
           <button class="btn btn-danger btn-sm" id="btnResetAll">🗑️ 重置所有數據</button>
@@ -344,10 +352,10 @@
       </div>
     </section>
 
-    <!-- ============ 城池數據（v8.5.4 重構） ============ -->
+    <!-- ============ 城池數據（v8.5.5） ============ -->
     <section id="tab-cities" class="tab-content">
 
-      <!-- 🎯 推演啟動（置頂，精簡） -->
+      <!-- 🎯 推演啟動（置頂） -->
       <div class="card sim-launch-card">
         <div class="sim-launch-row">
           <div class="sim-launch-zone">
@@ -359,12 +367,13 @@
         <div class="sim-progress"><div class="sim-progress-bar" id="simProgress"></div></div>
       </div>
 
-      <!-- 子 Tab 導航 -->
+      <!-- 子 Tab 導航（v8.5.5：6 個） -->
       <div class="city-subtabs" id="citySubtabs">
         <button class="city-subtab active" data-city-view="overview">📊 概覽</button>
         <button class="city-subtab" data-city-view="zones">🗺️ 戰區</button>
         <button class="city-subtab" data-city-view="cities">🏰 城池</button>
-        <button class="city-subtab" data-city-view="war">⚔️ 宣戰與出兵</button>
+        <button class="city-subtab" data-city-view="war">⚔️ 宣戰</button>
+        <button class="city-subtab" data-city-view="deploy">🎯 出兵</button>
         <button class="city-subtab" data-city-view="routes">🛣️ 路線</button>
       </div>
 
@@ -387,6 +396,7 @@
             <button class="btn btn-primary btn-sm" data-goto-city-view="cities">🏰 管理城池</button>
             <button class="btn btn-primary btn-sm" data-goto-city-view="zones">🗺️ 管理戰區</button>
             <button class="btn btn-primary btn-sm" data-goto-city-view="war">⚔️ 編輯宣戰</button>
+            <button class="btn btn-primary btn-sm" data-goto-city-view="deploy">🎯 編輯出兵</button>
             <button class="btn btn-primary btn-sm" data-goto-city-view="routes">🛣️ 管理路線</button>
           </div>
         </div>
@@ -499,21 +509,27 @@
         </div>
       </div>
 
-      <!-- ── 子面板：⚔️ 宣戰與出兵 ── -->
+      <!-- ── 子面板：⚔️ 宣戰（v8.5.5 獨立） ── -->
       <div class="city-subpanel" id="cityPanel-war">
         <div class="card">
           <div class="card-title">⚔️ 宣戰指示</div>
           <div class="text-dim" style="margin-bottom:8px;">
-            ＊定義「誰打誰」「誰守誰」。每個方向只能一種宣戰類型。
+            ＊定義「誰打誰」與「誰協防誰」。<br>
+            ＊進攻：需要指定「進攻開始時間」= 目標城的防守開始時間。<br>
+            ＊協防：目標城需與出兵城同一盟、且路線上必須有接觸。
           </div>
           <div class="war-list" id="warList"></div>
           <button class="btn btn-primary btn-sm mt-8" id="btnAddWarLine">➕ 新增宣戰指示</button>
         </div>
+      </div>
 
+      <!-- ── 子面板：🎯 出兵（v8.5.5 獨立） ── -->
+      <div class="city-subpanel" id="cityPanel-deploy">
         <div class="card">
           <div class="card-title">🎯 出兵指示</div>
           <div class="text-dim" style="margin-bottom:8px;">
-            ＊每座出兵城一張卡，設定各路線派兵 %。
+            ＊每座出兵城一張卡，設定各路線派兵 %。<br>
+            ＊由宣戰指示衍生，不需重複輸入目標城。
           </div>
           <div id="deployInstructionList"></div>
         </div>
@@ -528,7 +544,6 @@
             ＊也可以到「🗺️ 地圖」Tab 用拖曳方式快速建立。
           </div>
 
-          <!-- 快速新增 -->
           <div class="route-quick-add">
             <div class="route-quick-title">⚡ 快速新增</div>
             <div class="route-quick-row">
@@ -540,7 +555,6 @@
             <div class="text-dim" style="margin-top:4px;font-size:10px;">＊選擇兩城後按「新增」，或按 Enter 快速建立。</div>
           </div>
 
-          <!-- 路線列表（依戰區分組，可摺疊） -->
           <div class="route-groups" id="routeGroups"></div>
 
           <div class="flex-row mt-8">
@@ -897,7 +911,7 @@
     <!-- ============ 戰鬥規則 ============ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.5.4）</div>
+        <div class="card-title">📖 城戰計算規則（v8.5.5）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -920,6 +934,7 @@
             <li>所屬陣營：預設本方</li>
             <li>等級：1~10（可留空，預設 1）</li>
             <li>人數 / 總戰力 / 總隊數：可留空</li>
+            <li><b>防守開始時間：由宣戰推算（不再手動輸入）</b></li>
           </ul>
           <h2>四、行軍模型</h2>
           <ul>
@@ -938,11 +953,12 @@
             <li><b>建立方式</b>：快速新增 / 就地編輯 / Modal 編輯 / 地圖拖曳 / Excel 匯入。</li>
             <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
           </ul>
-          <h2>七、宣戰指示</h2>
+          <h2>七、宣戰指示（v8.5.5）</h2>
           <ul>
-            <li><b>類型</b>：進攻 / 防守 / 協防。</li>
+            <li><b>進攻</b>：不需路線接觸（可用參數開啟）。需指定「進攻開始時間」= 目標城防守開始時間。</li>
+            <li><b>協防</b>：需與出兵城同一盟、且路線上必須有接觸。</li>
             <li><b>去重</b>：每個方向（A→B）只能一種宣戰類型。</li>
-            <li><b>暫不驗證</b>路線接觸（日後可加）。</li>
+            <li><b>防守開始時間推算</b>：以所有進攻該城的宣戰中，最早的「進攻開始時間」為準。</li>
           </ul>
           <h2>八、出兵指示</h2>
           <ul>
@@ -967,12 +983,6 @@
           <ul>
             <li>推演結束後，可至「📊 推演總結」Tab 查看結果。</li>
             <li>顯示：盟兵力分佈、城池最終狀態、推演重點、時間軸。</li>
-          </ul>
-          <h2>十二、v8.5.4 城池數據 UI 重構</h2>
-          <ul>
-            <li><b>推演啟動置頂</b>：進入城池數據 Tab 即可直接推演。</li>
-            <li><b>5 個子 Tab</b>：概覽 / 戰區 / 城池 / 宣戰與出兵 / 路線。</li>
-            <li><b>路線管理</b>：快速新增 + 就地編輯 + Modal 編輯 + 依戰區可摺疊分組。</li>
           </ul>
         </div>
       </div>
@@ -1090,7 +1100,7 @@
   </div>
 </div>
 
-<!-- ============ 路線編輯 Modal（v8.5.4 新增） ============ -->
+<!-- ============ 路線編輯 Modal ============ -->
 <div class="modal-overlay" id="routeEditModal">
   <div class="modal-box" style="max-width:420px;">
     <h3 id="routeEditTitle">🛣️ 編輯路線</h3>
@@ -1142,7 +1152,7 @@
         <span class="text-dim" id="excelCitiesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelCitiesFile" accept=".csv,.txt" style="display:none;">
-      <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,等級,人數,總戰力,總隊數,冷卻,城牆,防守開始,首都&#10;洛陽,司隸,鼎盟,敵方,10,100,100000,100,5,30,19:00,是&#10;函谷關,司隸,秦盟,敵方,9,80,80000,80,5,20,19:00,"></textarea>
+      <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,等級,人數,總戰力,總隊數,冷卻,城牆,首都&#10;洛陽,司隸,鼎盟,敵方,10,100,100000,100,5,30,是&#10;函谷關,司隸,秦盟,敵方,9,80,80000,80,5,20,"></textarea>
 
       <div class="section-label" style="color:var(--neon-yellow);">③ 🛣️ 地圖路線表</div>
       <div class="flex-row" style="gap:6px;">
@@ -1155,6 +1165,7 @@
       <textarea id="excelMapRoutesText" class="excel-textarea" placeholder="洛陽-函谷關&#10;洛陽-洛陽北&#10;洛陽北-洛陽西"></textarea>
 
       <div class="section-label" style="color:var(--neon-red);">④ ⚔️ 宣戰表</div>
+      <div class="text-dim" style="margin:4px 0;font-size:10px;">＊「進攻開始時間」= 目標城防守開始時間（HH:MM）。協防可留空。</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="routes">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="routes">🗑️ 清空</button>
@@ -1162,7 +1173,7 @@
         <span class="text-dim" id="excelRoutesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelRoutesFile" accept=".csv,.txt" style="display:none;">
-      <textarea id="excelRoutesText" class="excel-textarea" placeholder="出兵城,目標城,類型,戰前%,復活%,順序&#10;洛陽,函谷關,進攻,50,50,1&#10;洛陽北,洛陽,防守,30,30,1"></textarea>
+      <textarea id="excelRoutesText" class="excel-textarea" placeholder="出兵城,目標城,類型,戰前%,復活%,順序,進攻開始時間&#10;洛陽,函谷關,進攻,50,50,1,19:00&#10;洛陽北,洛陽,協防,30,30,1,"></textarea>
 
       <div class="excel-preview" id="excelPreview">
         <span class="text-dim">請在任一區塊填入資料</span>
@@ -1174,7 +1185,7 @@
   </div>
 </div>
 
-<!-- ============ 城池編輯 Modal ============ -->
+<!-- ============ 城池編輯 Modal（v8.5.5：移除防守開始時間） ============ -->
 <div class="modal-overlay" id="cityModal">
   <div class="modal-box modal-lg">
     <h3 id="cityModalTitle">🏰 新增城池</h3>
@@ -1211,7 +1222,6 @@
       <div class="form-row">
         <div><label>冷卻復活（分鐘）</label><input type="number" id="cm_cooldownMin" value="5" min="0" step="0.5"></div>
         <div><label>城牆耐久（分鐘）</label><input type="number" id="cm_wallMin" value="30" min="0" step="0.5"></div>
-        <div><label>防守開始時間</label><input type="time" id="cm_defStartTime" value="19:00"></div>
       </div>
 
       <div class="form-row">
@@ -1224,7 +1234,8 @@
       </div>
 
       <div class="text-dim mt-8">
-        ＊路線設定請至「🛣️ 路線」與「⚔️ 宣戰與出兵」子 Tab。
+        ＊「防守開始時間」由宣戰指示推算（取最早進攻時間）。<br>
+        ＊路線設定請至「🛣️ 路線」與「⚔️ 宣戰」子 Tab。
       </div>
     </div>
     <div class="modal-actions">
@@ -1275,14 +1286,13 @@
   </div>
 </div>
 
-<!-- ============ 載入 JS ============ -->
-<script src="js/simulation.js?v=20260927_1516"></script>
-<script src="js/core.js?v=20260927_1516"></script>
-<script src="js/firebase.js?v=20260927_1516"></script>
-<script src="js/auth.js?v=20260927_1516"></script>
-<script src="js/data.js?v=20260927_1516"></script>
-<script src="js/ui.js?v=20260927_1516"></script>
-<script src="js/summary.js?v=20260927_1516"></script>
-<script src="js/main.js?v=20260927_1516"></script>
+<script src="js/simulation.js?v=20260927_2500"></script>
+<script src="js/core.js?v=20260927_2500"></script>
+<script src="js/firebase.js?v=20260927_2500"></script>
+<script src="js/auth.js?v=20260927_2500"></script>
+<script src="js/data.js?v=20260927_2500"></script>
+<script src="js/ui.js?v=20260927_2500"></script>
+<script src="js/summary.js?v=20260927_2500"></script>
+<script src="js/main.js?v=20260927_2500"></script>
 </body>
 </html>

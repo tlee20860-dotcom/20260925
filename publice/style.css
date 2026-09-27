@@ -1,6 +1,6 @@
 /* ============================================================================
- * style.css — v8.5.3
- * 新增：城池數據子 Tab + 推演置頂 + 路線管理新介面 + 概覽面板
+ * style.css — v8.5.5
+ * 新增：宣戰時間欄、出兵唯讀時間、子 Tab 6 個
  * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
@@ -15,7 +15,7 @@ body{background:var(--bg-deep);color:var(--text-primary);
   font-size:13px;line-height:1.5;min-height:100vh;overflow-x:hidden;}
 
 /* ============================================================
-   應用佈局（側邊欄 + 主內容）
+   應用佈局
    ============================================================ */
 .app-layout{display:flex;min-height:100vh;}
 
@@ -485,13 +485,6 @@ select{
 }
 .excel-textarea:focus{border-color:var(--neon-blue);box-shadow:0 0 0 2px rgba(68,170,255,.15);}
 .excel-textarea::placeholder{color:#3a4a5f;font-size:10px;}
-.excel-mode-row{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
-.excel-mode-opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;background:#0a101a;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:all .15s;}
-.excel-mode-opt:hover{border-color:var(--neon-blue);background:rgba(68,170,255,.06);}
-.excel-mode-opt input[type=radio]{margin-top:3px;accent-color:var(--neon-blue);flex:0 0 auto;}
-.excel-mode-opt input:checked ~ div .excel-mode-title{color:var(--neon-blue);}
-.excel-mode-title{font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:2px;}
-.excel-mode-desc{font-size:10px;color:var(--text-dim);line-height:1.4;}
 .excel-preview{margin-top:12px;padding:10px;background:#0a101a;border:1px dashed var(--border);border-radius:var(--radius-sm);font-size:11px;color:var(--text-secondary);line-height:1.6;}
 .excel-preview.has-data{border-color:var(--neon-green);}
 .excel-preview .ok{color:var(--neon-green);font-weight:700;}
@@ -643,7 +636,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .city-table input[type=checkbox]{width:16px;height:16px;accent-color:#3b82f6;cursor:pointer;}
 
 /* ============================================================
-   v8.5.3：推演啟動（置頂）
+   推演啟動（置頂）
    ============================================================ */
 .sim-launch-card{
   background:linear-gradient(135deg,rgba(5,80,55,.35),rgba(16,140,100,.15));
@@ -666,7 +659,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.5.3：城池數據子 Tab
+   城池數據子 Tab（v8.5.5：6 個）
    ============================================================ */
 .city-subtabs{
   display:flex;gap:4px;
@@ -704,7 +697,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 @keyframes subpanelIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
 
 /* ============================================================
-   v8.5.3：📊 概覽面板
+   📊 概覽面板
    ============================================================ */
 .overview-stats{
   display:grid;
@@ -766,7 +759,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.5.3：🛣️ 路線管理（快速新增 + 就地編輯 + Modal + 摺疊）
+   🛣️ 路線管理
    ============================================================ */
 .route-quick-add{
   background:#0a101a;
@@ -788,7 +781,6 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .route-quick-arrow{color:var(--text-dim);font-size:14px;flex:0 0 auto;}
 .route-quick-row .btn{flex:0 0 auto;}
 
-/* 路線分組（依戰區，可摺疊） */
 .route-groups{
   display:flex;flex-direction:column;gap:8px;
 }
@@ -829,7 +821,6 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 .route-group.open .route-group-body{display:flex;}
 
-/* 路線行（就地編輯） */
 .route-line{
   display:grid;
   grid-template-columns:1fr auto 1fr auto auto;
@@ -867,13 +858,13 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   宣戰指示（標題列）
+   宣戰指示（v8.5.5：加入時間欄）
    ============================================================ */
 .war-list{display:flex;flex-direction:column;gap:6px;}
 
 .war-header{
   display:grid;
-  grid-template-columns:2fr 1.2fr 2fr auto;
+  grid-template-columns:1.5fr 1fr 1.5fr 1.1fr auto;
   gap:6px;align-items:center;
   background:#0f1a2a;
   border:1px solid var(--border);
@@ -889,7 +880,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 
 .war-line{
   display:grid;
-  grid-template-columns:2fr 1.2fr 2fr auto;
+  grid-template-columns:1.5fr 1fr 1.5fr 1.1fr auto;
   gap:6px;align-items:center;
   background:#0a101a;border:1px solid var(--border);
   border-radius:var(--radius-sm);
@@ -901,13 +892,68 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .war-line.invalid select{border-color:var(--neon-red);}
 
 .war-line select.war-type.attack{color:var(--neon-red);}
-.war-line select.war-type.defend{color:var(--neon-green);}
 .war-line select.war-type.assist{color:var(--neon-yellow);}
 
 .war-line.has-conflict{border-color:var(--neon-yellow);}
 
+/* 目標城 + 提示 */
+.war-tgt-wrap{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.war-tgt-wrap .war-tgt{
+  flex:1;
+  min-width:0;
+}
+.war-hint{
+  flex:0 0 auto;
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:10px;
+  white-space:nowrap;
+  font-weight:600;
+  letter-spacing:.3px;
+}
+.war-hint.warn{
+  color:var(--neon-yellow);
+  background:rgba(255,204,0,.1);
+  border:1px solid rgba(255,204,0,.35);
+  animation:pulse 2s infinite;
+}
+.war-hint.ok{
+  color:var(--neon-green);
+  background:rgba(34,255,136,.08);
+  border:1px solid rgba(34,255,136,.3);
+}
+
+/* v8.5.5：進攻時間輸入 */
+.war-time{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:11px;
+  padding:5px 8px;
+  background:#060a10;
+  color:var(--neon-blue);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  text-align:center;
+  width:100%;
+}
+.war-time:focus{
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+  outline:none;
+}
+.war-time:disabled{
+  background:#0a0d15;
+  color:var(--text-dim);
+  border-style:dashed;
+  cursor:not-allowed;
+}
+
 /* ============================================================
-   出兵指示（標題列）
+   出兵指示（v8.5.5：加入唯讀時間欄）
    ============================================================ */
 .deploy-instr-card{
   background:#0a101a;border:1px solid var(--border);
@@ -922,9 +968,10 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .deploy-instr-total{font-size:11px;color:var(--text-secondary);}
 .deploy-instr-lines{display:flex;flex-direction:column;gap:4px;}
 
+/* v8.5.5：出兵標題列（7 欄：類型 / 目標城 / 時間 / 戰前% / 復活% / 順序 / 操作） */
 .deploy-instr-header-row{
   display:grid;
-  grid-template-columns:36px 1fr 70px 70px 48px 36px;
+  grid-template-columns:36px 1fr 90px 70px 70px 48px 36px;
   gap:6px;align-items:center;
   font-size:10px;
   font-weight:700;
@@ -939,7 +986,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 
 .deploy-instr-line{
   display:grid;
-  grid-template-columns:36px 1fr 70px 70px 48px 36px;
+  grid-template-columns:36px 1fr 90px 70px 70px 48px 36px;
   gap:6px;align-items:center;
   font-size:11px;padding:4px 0;
 }
@@ -949,6 +996,21 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .deploy-instr-line input[type=number]{width:100%;padding:3px 4px;font-size:11px;text-align:center;}
 .deploy-instr-line .btn{padding:3px 6px;font-size:10px;}
 
+/* v8.5.5：出兵指示的唯讀時間顯示 */
+.deploy-instr-time{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:11px;
+  color:var(--neon-blue);
+  background:#060a10;
+  border:1px dashed var(--border);
+  border-radius:var(--radius-sm);
+  padding:3px 4px;
+  text-align:center;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
 .deploy-instr-footer{
   margin-top:8px;padding-top:8px;
   border-top:1px dashed var(--border);
@@ -957,7 +1019,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .deploy-instr-footer.warn{color:var(--neon-red);}
 
 /* ============================================================
-   盟分配摘要（內部行）
+   盟分配摘要
    ============================================================ */
 .alliance-dist-summary{
   display:flex;flex-direction:column;gap:6px;
@@ -1068,12 +1130,35 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 
   .game-map-container{height:60vh;min-height:350px;}
 
-  /* v8.5.3：推演置頂卡片手機版 */
   .sim-launch-row{flex-direction:column;align-items:stretch;gap:8px;}
   .sim-launch-btn{width:100%;}
 
-  /* v8.5.3：子 Tab 橫向滾動 */
   .city-subtab{padding:9px 12px;font-size:11px;}
+
+  /* 宣戰行：手機版堆疊 */
+  .war-header,
+  .war-line{
+    grid-template-columns:1fr 1fr;
+    gap:4px;
+  }
+  .war-header > span:nth-child(3){grid-column:span 2;}
+  .war-header > span:nth-child(4){grid-column:span 1;}
+  .war-header > span:nth-child(5){display:none;}
+  .war-line .war-tgt-wrap{grid-column:span 2;}
+  .war-line .war-time{grid-column:span 1;}
+  .war-line .btn{grid-column:span 1;justify-self:end;}
+
+  /* 出兵行：手機版隱藏時間欄位 */
+  .deploy-instr-header-row,
+  .deploy-instr-line{
+    grid-template-columns:28px 1fr 60px 60px 42px 32px;
+    gap:4px;
+    font-size:9px;
+  }
+  .deploy-instr-header-row > span:nth-child(3),
+  .deploy-instr-line .deploy-instr-time{
+    display:none;
+  }
 }
 
 @media (max-width:600px){
@@ -1089,39 +1174,20 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .sandbox-me-row{flex-direction:column;align-items:flex-start;gap:4px;}
   .sandbox-me-stats{font-size:11px;gap:10px;}
 
-  .war-header{grid-template-columns:1fr 1fr;gap:4px;}
-  .war-header > span:nth-child(3){grid-column:span 2;}
-  .war-header > span:nth-child(4){display:none;}
-  .war-line{grid-template-columns:1fr 1fr;gap:4px;}
-  .war-line .btn{grid-column:span 2;justify-self:end;}
-
-  .deploy-instr-header-row{
-    grid-template-columns:28px 1fr 60px 60px 42px 32px;
-    gap:4px;
-    font-size:9px;
-  }
-  .deploy-instr-line{
-    grid-template-columns:28px 1fr 60px 60px 42px 32px;
-    gap:4px;
-  }
-
   .summary-overview{grid-template-columns:repeat(2,1fr);}
   .summary-stat .value{font-size:16px;}
   .summary-city-table th,.summary-city-table td{padding:4px 6px;font-size:10px;}
 
-  /* v8.5.3：路線快速新增堆疊 */
   .route-quick-row{flex-direction:column;align-items:stretch;gap:6px;}
   .route-quick-row select{width:100%;}
   .route-quick-arrow{text-align:center;transform:rotate(90deg);display:none;}
   .route-quick-row .btn{width:100%;}
 
-  /* v8.5.3：路線行響應式 */
   .route-line{grid-template-columns:1fr 1fr auto auto;gap:4px;}
   .route-line .route-arrow{display:none;}
   .route-line select{padding:4px 18px 4px 4px;font-size:10px;}
   .route-line .route-modal-btn{padding:3px 6px;font-size:10px;}
 
-  /* v8.5.3：概覽統計兩欄 */
   .overview-stats{grid-template-columns:repeat(2,1fr);}
   .overview-stat .val{font-size:18px;}
   .overview-quick-actions .btn{min-width:0;flex:1 1 calc(50% - 4px);}
@@ -1129,39 +1195,6 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .alliance-dist-row{flex-wrap:wrap;gap:6px;}
   .alliance-dist-row .bar{flex-basis:100%;order:10;}
   .alliance-dist-row .name{min-width:0;flex:1 1 100%;}
-}
-/* ============================================================
-   v8.5.4：宣戰指示 - 目標城提示
-   ============================================================ */
-.war-tgt-wrap{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  min-width:0;
-}
-.war-tgt-wrap .war-tgt{
-  flex:1;
-  min-width:0;
-}
-.war-hint{
-  flex:0 0 auto;
-  font-size:10px;
-  padding:2px 8px;
-  border-radius:10px;
-  white-space:nowrap;
-  font-weight:600;
-  letter-spacing:.3px;
-}
-.war-hint.warn{
-  color:var(--neon-yellow);
-  background:rgba(255,204,0,.1);
-  border:1px solid rgba(255,204,0,.35);
-  animation:pulse 2s infinite;
-}
-.war-hint.ok{
-  color:var(--neon-green);
-  background:rgba(34,255,136,.08);
-  border:1px solid rgba(34,255,136,.3);
 }
 
 @media (max-width:480px){
@@ -1196,10 +1229,8 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .deploy-instr-line .label{min-width:24px;font-size:12px;}
   .deploy-instr-line .btn{padding:2px 4px;font-size:9px;}
 
-  /* v8.5.3：子 Tab 小螢幕 */
   .city-subtab{padding:8px 10px;font-size:10.5px;}
 
-  /* v8.5.3：路線行最小化 */
   .route-line{grid-template-columns:1fr 1fr auto;gap:3px;padding:4px 6px;}
-  .route-line .route-modal-btn{display:none;} /* 小螢幕隱藏 Modal 按鈕，改用就地編輯 */
+  .route-line .route-modal-btn{display:none;}
 }
