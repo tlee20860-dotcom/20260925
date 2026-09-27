@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.5
+ * v8.5.3
  * ========================================================================== */
 (function(){
 'use strict';
@@ -82,7 +82,7 @@ function effectiveCanImportExcel(){
 function applyPermissions(){
   const signedIn = state.auth.signedIn;
 
-  /* ── 1. Tab 可見性（v8.5：tab-viz 移除，改為 tab-map） ── */
+  /* ── 1. Tab 可見性 ── */
   const guestAllowed  = ['tab-rules'];
   const memberAllowed = [
     'tab-room', 'tab-alliances', 'tab-cities', 'tab-deploy',
@@ -100,7 +100,6 @@ function applyPermissions(){
     'tab-sandbox', 'tab-account', 'tab-accounts', 'tab-rules'
   ];
 
-  /* v8.5：側邊欄 nav 使用 .top-nav class */
   document.querySelectorAll('.top-nav button[data-tab]').forEach(btn => {
     const tabId = btn.dataset.tab;
     let allowed = false;
@@ -155,8 +154,11 @@ function applyPermissions(){
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
 
-  /* v8.5：路線管理按鈕 */
+  /* v8.5.3：路線管理按鈕 */
   togglePerm(document.getElementById('btnAddRouteLine'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnQuickAddRoute'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnExpandAllRouteGroups'), true, '');
+  togglePerm(document.getElementById('btnCollapseAllRouteGroups'), true, '');
   togglePerm(document.getElementById('btnMapEditRoute'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnMapRelayout'), true, '');
   togglePerm(document.getElementById('btnMapFit'), true, '');
@@ -635,9 +637,9 @@ function backupCurrentSandbox(){
 }
 
 /* ============================================================
-   v8.5：地圖子檢視切換
+   地圖子檢視切換
    ============================================================ */
-let currentMapView = 'route';   // 'route' | 'dynamic'
+let currentMapView = 'route';   /* 'route' | 'dynamic' */
 
 function switchMapView(view){
   currentMapView = view;
@@ -661,7 +663,7 @@ function switchMapView(view){
    事件綁定
    ============================================================ */
 function bindUI(){
-  /* ── 側邊欄 Tab 切換（v8.5：加入手機自動關閉） ── */
+  /* ── 側邊欄 Tab 切換 ── */
   document.querySelectorAll('.top-nav button').forEach(btn => {
     btn.addEventListener('click', function(){
       document.querySelectorAll('.top-nav button').forEach(b => b.classList.remove('active'));
@@ -678,15 +680,16 @@ function bindUI(){
       }
 
       if(tabId === 'tab-cities'){
+        /* v8.5.3：進入城池數據，依當前子檢視重繪 */
         R().renderCities();
         if(window.SLG.CityManager) window.SLG.CityManager.render();
         if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+        if(window.SLG.renderOverview) window.SLG.renderOverview();
       }
       if(tabId === 'tab-alliances') R().renderAlliances();
       if(tabId === 'tab-dyn'){ DYN().setRows(state.dynRows); DYN().populateCityFilters(); }
       if(tabId === 'tab-narrative'){ R().renderNarrative(state.narrativeLines); }
       if(tabId === 'tab-map'){
-        /* 地圖 Tab：依當前子檢視啟動 */
         switchMapView(currentMapView);
       }
       if(tabId === 'tab-params') syncAIParamsToUI();
@@ -711,7 +714,7 @@ function bindUI(){
     });
   });
 
-  /* ── v8.5：手機漢堡選單 ── */
+  /* ── 手機漢堡選單 ── */
   const hamburger = document.getElementById('hamburger');
   if(hamburger){
     hamburger.addEventListener('click', () => {
@@ -744,12 +747,15 @@ function bindUI(){
     }
   });
 
-  /* ── v8.5：地圖子檢視切換 ── */
+  /* ── 地圖子檢視切換 ── */
   document.querySelectorAll('.map-view-tab').forEach(tab => {
     tab.addEventListener('click', function(){
       switchMapView(this.dataset.mapView);
     });
   });
+
+  /* ── v8.5.3：城池數據子 Tab 初始化 ── */
+  if(window.SLG.initCitySubtabs) window.SLG.initCitySubtabs();
 
   /* ── 模式切換 ── */
   const btnSwitchMode = document.getElementById('btnSwitchMode');
@@ -1066,6 +1072,7 @@ function bindUI(){
     window.SLG.upsertEntity('zone', { id: uid(), name });
     document.getElementById('newZoneName').value = '';
     R().renderZones(); R().renderCities();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
     saveState();
   });
 
@@ -1077,6 +1084,7 @@ function bindUI(){
     showConfirm('刪除戰區', '確定刪除？', () => {
       window.SLG.deleteEntity('zone', btn.dataset.id);
       R().renderZones(); R().renderCities();
+      if(window.SLG.renderOverview) window.SLG.renderOverview();
       saveState();
     });
   });
@@ -1103,6 +1111,8 @@ function bindUI(){
       showConfirm('刪除城池', '確定刪除？', () => {
         window.SLG.deleteEntity('city', delBtn.dataset.id);
         R().renderCities();
+        if(window.SLG.CityManager) window.SLG.CityManager.render();
+        if(window.SLG.renderOverview) window.SLG.renderOverview();
         saveState();
       });
     }
@@ -1125,13 +1135,13 @@ function bindUI(){
     });
   });
 
-  /* ── v8.5：路線管理 ── */
+  /* ── 路線管理 ── */
   if(window.SLG.RouteManager) window.SLG.RouteManager.init();
 
-  /* ── v8.5：地圖 ── */
+  /* ── 地圖 ── */
   if(window.SLG.GameMap) window.SLG.GameMap.init();
 
-  /* ── v8.5：地圖按鈕 ── */
+  /* ── 地圖按鈕 ── */
   const btnExportMapRoutes = document.getElementById('btnExportMapRoutesCSV');
   if(btnExportMapRoutes) btnExportMapRoutes.addEventListener('click', window.SLG.exportMapRoutesCSV);
 
@@ -1190,7 +1200,7 @@ function bindUI(){
   const excelCancel = document.getElementById('excelImportCancel');
   if(excelCancel) excelCancel.addEventListener('click', window.SLG.closeExcelImportModal);
 
-  /* v8.5：4 個獨立匯入按鈕 */
+  /* 4 個獨立匯入按鈕 */
   const btnImpAll = document.getElementById('excelImportAlliancesBtn');
   if(btnImpAll) btnImpAll.addEventListener('click', window.SLG.doImportAlliances);
 
@@ -1372,6 +1382,7 @@ function bindEvents(){
 
   on(EVT.LOCKS, () => {
     R().renderCities();
+    if(window.SLG.CityManager) window.SLG.CityManager.render();
     if (document.getElementById('tab-deploy').classList.contains('active')) DEPLOY().render();
   });
 
@@ -1383,6 +1394,7 @@ function bindEvents(){
     if(window.SLG.WarManager) window.SLG.WarManager.render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
     if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.GameMap){
       window.SLG.GameMap.reset();
       const mapTab = document.getElementById('tab-map');
@@ -1425,6 +1437,7 @@ function bindEvents(){
         window.SLG.GameMap.activate();
       }
     }
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
   });
 
   on(EVT.SIM_TRIGGER, payload => {
@@ -1444,6 +1457,8 @@ function bindEvents(){
     R().renderCities();
     R().renderAlliances();
     R().renderZones();
+    if(window.SLG.CityManager) window.SLG.CityManager.render();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
   });
 
   on(EVT.ROOM_PENDING, () => {
@@ -1558,6 +1573,7 @@ function boot(){
   updateModeBar();
   if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
   if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+  if(window.SLG.renderOverview) window.SLG.renderOverview();
   applyPermissions();
 
   /* 10. 非同步初始化認證 */
@@ -1576,6 +1592,7 @@ function boot(){
       if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
       applyPermissions();
       R().renderAll();
+      if(window.SLG.renderOverview) window.SLG.renderOverview();
       logSystem('🚪 已自動登入，跳過入口');
       if(document.getElementById('tab-sandbox')?.classList.contains('active')){
         refreshSandboxList();
@@ -1588,7 +1605,7 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.5] 側邊欄 + 地圖 + 路線管理（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.5.3] 城池數據 UI 重構（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 if(document.readyState === 'loading'){

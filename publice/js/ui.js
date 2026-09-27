@@ -1,6 +1,10 @@
 /* ============================================================================
  * ui.js — 所有渲染（viz / R / DYN / DEPLOY / CityManager / WarManager / DeployInstr / RouteManager / GameMap）
- * v8.5.1
+ * v8.5.3：城池數據 UI 重構（子 Tab + 概覽 + 路線管理新介面）
+ *
+ * ⚠️ 此檔案分為 2 部分交付；實際部署時合併為單一 js/ui.js。
+ *    第 1/2 部分：viz / R / DYN / DEPLOY
+ *    第 2/2 部分：CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 暴露
  * ========================================================================== */
 (function(){
 'use strict';
@@ -665,6 +669,8 @@ const R = (() => {
     renderHealth(); renderHost(); renderMembers();
     renderAlliances(); renderZones(); renderCities();
     renderChat(); renderChatBadge();
+    /* v8.5.3：概覽面板（若存在） */
+    if(typeof window.SLG.renderOverview === 'function') window.SLG.renderOverview();
   }
 
   return {
@@ -1032,7 +1038,6 @@ const DEPLOY = (() => {
   }
 
   function renderGraphView(cities, conflictMap){
-    /* 保留 v8.4 的 SVG 連線圖邏輯 */
     const wrap = document.getElementById('deployTableWrap');
     const activeCities = cities.filter(c => {
       const hasOut = (c.attackTargets||[]).some(t => (t.preWarPercent||0)>0) ||
@@ -1278,6 +1283,7 @@ const DEPLOY = (() => {
   return { init, render, populateZoneFilter };
 })();
 
+/* ⚠️ 第 1/2 部分結束——下方接續第 2/2 部分（CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 暴露） */
 /* ============================================================
    CityManager — 城池清單表格 + 批次操作
    ============================================================ */
@@ -1290,8 +1296,10 @@ const CityManager = (() => {
       btn.addEventListener('click', function(){
         currentView = currentView === 'table' ? 'card' : 'table';
         this.textContent = currentView === 'table' ? '🃏 卡片檢視' : '📋 表格檢視';
-        document.getElementById('cityTableView').style.display = currentView === 'table' ? '' : 'none';
-        document.getElementById('cityCardView').style.display = currentView === 'card' ? '' : 'none';
+        const tv = document.getElementById('cityTableView');
+        const cv = document.getElementById('cityCardView');
+        if(tv) tv.style.display = currentView === 'table' ? '' : 'none';
+        if(cv) cv.style.display = currentView === 'card' ? '' : 'none';
         render();
       });
     }
@@ -1523,9 +1531,7 @@ const CityManager = (() => {
   return { init, render };
 })();
 
-/* ⚠️ 不要在此行下方加 })(); —— 第 2/2 部分會接續 */
 /* ============================================================
-   /* ============================================================
    WarManager — 宣戰指示（v8.5.2：加標題、防守/協防區分、去重）
    ============================================================ */
 const WarManager = (() => {
@@ -1534,17 +1540,9 @@ const WarManager = (() => {
     if(btn) btn.addEventListener('click', () => addLine());
   }
 
-  /* ============================================================
-     取得所有宣戰指示
-     類型依目標城陣營自動判定：
-       - 敵方 → attack（進攻）
-       - 本方 → defend（防守）
-       - 同盟 → assist（協防）
-     ============================================================ */
   function getAllWarLines(){
     const lines = [];
     for(const src of state.cities){
-      /* 進攻 */
       for(const t of (src.attackTargets || [])){
         lines.push({
           srcId: src.id,
@@ -1555,7 +1553,6 @@ const WarManager = (() => {
           priority: t.priority,
         });
       }
-      /* 防守 or 協防 */
       for(const t of (src.defendTargets || [])){
         const tgt = state.cities.find(c => c.id === t.cityId);
         let type = 'defend';
@@ -1576,40 +1573,34 @@ const WarManager = (() => {
     return lines;
   }
 
-  /* ============================================================
-     依類型取得可選目標城
-     ============================================================ */
   function getTargetsForType(srcCityId, type){
-  if(type === 'attack'){
-    /* 進攻：敵方 / 共同敵方 / NPC */
-    return state.cities.filter(c =>
-      c.id !== srcCityId &&
-      (c.side === 'enemy' || c.side === 'common_enemy' || c.side === 'npc')
-    );
+    if(type === 'attack'){
+      return state.cities.filter(c =>
+        c.id !== srcCityId &&
+        (c.side === 'enemy' || c.side === 'common_enemy' || c.side === 'npc')
+      );
+    }
+    if(type === 'defend'){
+      return state.cities.filter(c => {
+        if(c.id === srcCityId) return false;
+        if(c.side === 'self') return true;
+        const a = state.alliances.find(al => al.id === c.allianceId);
+        if(a && a.side === 'self') return true;
+        return false;
+      });
+    }
+    if(type === 'assist'){
+      return state.cities.filter(c => {
+        if(c.id === srcCityId) return false;
+        if(c.side === 'ally') return true;
+        const a = state.alliances.find(al => al.id === c.allianceId);
+        if(a && a.side === 'ally') return true;
+        return false;
+      });
+    }
+    return [];
   }
-  if(type === 'defend'){
-    /* 防守：本方（城 side = self，或盟 side = self） */
-    return state.cities.filter(c => {
-      if(c.id === srcCityId) return false;
-      if(c.side === 'self') return true;
-      const a = state.alliances.find(al => al.id === c.allianceId);
-      if(a && a.side === 'self') return true;
-      return false;
-    });
-  }
-  if(type === 'assist'){
-    /* 協防：同盟（城 side = ally，或盟 side = ally） */
-    return state.cities.filter(c => {
-      if(c.id === srcCityId) return false;
-      if(c.side === 'ally') return true;
-      const a = state.alliances.find(al => al.id === c.allianceId);
-      if(a && a.side === 'ally') return true;
-      return false;
-    });
-  }
-  return [];
-}
-  /* 檢查某方向是否已有宣戰 */
+
   function findWarLine(srcId, tgtId){
     const src = state.cities.find(c => c.id === srcId);
     if(!src) return null;
@@ -1622,7 +1613,6 @@ const WarManager = (() => {
     return null;
   }
 
-  /* 移除指定方向的所有宣戰 */
   function removeWarLine(srcId, tgtId){
     const src = state.cities.find(c => c.id === srcId);
     if(!src) return;
@@ -1634,14 +1624,10 @@ const WarManager = (() => {
     }
   }
 
-  /* ============================================================
-     新增一行宣戰指示（預設進攻）
-     ============================================================ */
   function addLine(){
     if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
     const src = state.cities[0];
 
-    /* 找第一個可進攻的目標 */
     const targets = getTargetsForType(src.id, 'attack');
     if(targets.length === 0){
       alert('目前沒有可進攻的敵方城池');
@@ -1667,9 +1653,6 @@ const WarManager = (() => {
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
 
-  /* ============================================================
-     渲染
-     ============================================================ */
   function render(){
     const el = document.getElementById('warList');
     if(!el) return;
@@ -1680,7 +1663,6 @@ const WarManager = (() => {
       return;
     }
 
-    /* 標題列 */
     const headerHtml = `<div class="war-header">
       <span>出兵城</span>
       <span>類型</span>
@@ -1693,26 +1675,22 @@ const WarManager = (() => {
       const tgt = state.cities.find(c => c.id === l.tgtId);
       const valid = src && tgt;
       const invalidCls = valid ? '' : 'invalid';
-      const typeCls = l.type;   /* attack / defend / assist */
+      const typeCls = l.type;
 
-      /* 出兵城下拉（所有城池） */
       const srcOpts = state.cities.map(c =>
         `<option value="${c.id}" ${c.id === l.srcId ? 'selected' : ''}>${esc(c.name)}</option>`
       ).join('');
 
-      /* 類型下拉 */
       const typeOpts = `
         <option value="attack" ${l.type === 'attack' ? 'selected' : ''}>⚔️ 進攻</option>
         <option value="defend" ${l.type === 'defend' ? 'selected' : ''}>🛡️ 防守</option>
         <option value="assist" ${l.type === 'assist' ? 'selected' : ''}>🤝 協防</option>
       `;
 
-      /* 目標城下拉（依類型過濾） */
       const validTargets = getTargetsForType(l.srcId, l.type);
       let tgtOpts = validTargets.map(c =>
         `<option value="${c.id}" ${c.id === l.tgtId ? 'selected' : ''}>${esc(c.name)}</option>`
       ).join('');
-      /* 若當前目標城不在可選清單中（異常狀態），仍顯示 */
       if(!validTargets.find(c => c.id === l.tgtId) && tgt){
         tgtOpts = `<option value="${tgt.id}" selected>${esc(tgt.name)}（不符）</option>` + tgtOpts;
       }
@@ -1727,7 +1705,6 @@ const WarManager = (() => {
 
     el.innerHTML = headerHtml + linesHtml;
 
-    /* 綁定事件 */
     el.querySelectorAll('.war-line').forEach((lineEl, i) => {
       const line = lines[i];
 
@@ -1736,7 +1713,6 @@ const WarManager = (() => {
       });
 
       lineEl.querySelector('.war-type')?.addEventListener('change', function(){
-        /* 切換類型時，目標城要依類型重新選擇 */
         const newType = this.value;
         const validTargets = getTargetsForType(line.srcId, newType);
         if(validTargets.length === 0){
@@ -1744,7 +1720,6 @@ const WarManager = (() => {
           render();
           return;
         }
-        /* 若原目標城符合新類型，保留；否則選第一個 */
         let newTgtId = line.tgtId;
         if(!validTargets.find(c => c.id === newTgtId)){
           newTgtId = validTargets[0].id;
@@ -1762,11 +1737,7 @@ const WarManager = (() => {
     });
   }
 
-  /* ============================================================
-     修改宣戰（出兵城 / 目標城 / 類型 任一變動）
-     ============================================================ */
   function changeLine(oldLine, newSrcId, newTgtId, newType){
-    /* 1. 驗證目標城是否符合類型 */
     const validTargets = getTargetsForType(newSrcId, newType);
     if(!validTargets.find(c => c.id === newTgtId)){
       alert('此類型不能選擇該目標城');
@@ -1774,7 +1745,6 @@ const WarManager = (() => {
       return;
     }
 
-    /* 2. 去重：檢查新方向是否已有宣戰（且不是自己） */
     const isSelf = (oldLine.srcId === newSrcId && oldLine.tgtId === newTgtId);
     if(!isSelf){
       const existing = findWarLine(newSrcId, newTgtId);
@@ -1785,10 +1755,8 @@ const WarManager = (() => {
       }
     }
 
-    /* 3. 刪除舊的 */
     deleteLineSilent(oldLine);
 
-    /* 4. 新增新的 */
     const src = state.cities.find(c => c.id === newSrcId);
     if(!src) return;
 
@@ -1821,9 +1789,6 @@ const WarManager = (() => {
     if(window.SLG.saveState) window.SLG.saveState();
   }
 
-  /* ============================================================
-     刪除
-     ============================================================ */
   function deleteLine(line){
     deleteLineSilent(line);
     if(window.SLG.saveState) window.SLG.saveState();
@@ -1834,7 +1799,6 @@ const WarManager = (() => {
   function deleteLineSilent(line){
     const src = state.cities.find(c => c.id === line.srcId);
     if(!src) return;
-    /* 依原類型刪除 */
     if(line.type === 'attack'){
       if(src.attackTargets){
         src.attackTargets = src.attackTargets.filter(t => t.cityId !== line.tgtId);
@@ -1850,6 +1814,7 @@ const WarManager = (() => {
 
   return { init, render, findWarLine };
 })();
+
 /* ============================================================
    DeployInstr — 出兵指示（v8.5.1：加標題、去重）
    ============================================================ */
@@ -1918,14 +1883,13 @@ const DeployInstr = (() => {
     );
 
     if(sources.length === 0){
-      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無出兵指示（請先在「宣戰指示」新增路線）</div>';
+      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無出兵指示（請先在「⚔️ 宣戰與出兵」上方新增宣戰路線）</div>';
       return;
     }
 
     el.innerHTML = sources.map(src => renderCard(src)).join('');
   }
 
-  /* v8.5.1：標題列 */
   function headerRow(){
     return `<div class="deploy-instr-header-row">
       <span>類型</span>
@@ -1988,30 +1952,75 @@ const DeployInstr = (() => {
 })();
 
 /* ============================================================
-   RouteManager — 地圖路線管理
+   RouteManager — 地圖路線管理（v8.5.3 重寫）
+   功能：快速新增 + 就地編輯 + Modal 編輯 + 依戰區可摺疊分組
    ============================================================ */
 const RouteManager = (() => {
-  function init(){
-    const btn = document.getElementById('btnAddRouteLine');
-    if(btn){
-      btn.addEventListener('click', () => addEmptyLine());
-    }
+  let editingRouteId = null;
 
-    const list = document.getElementById('routeManagerList');
-    if(list){
-      list.addEventListener('click', e => {
+  function init(){
+    /* 快速新增 */
+    const btnQuick = document.getElementById('btnQuickAddRoute');
+    if(btnQuick) btnQuick.addEventListener('click', doQuickAdd);
+
+    const selA = document.getElementById('quickRouteCityA');
+    const selB = document.getElementById('quickRouteCityB');
+    [selA, selB].forEach(sel => {
+      if(sel) sel.addEventListener('keydown', e => {
+        if(e.key === 'Enter'){ e.preventDefault(); doQuickAdd(); }
+      });
+    });
+
+    /* 新增空白路線（沿用舊 btnAddRouteLine） */
+    const btnAdd = document.getElementById('btnAddRouteLine');
+    if(btnAdd) btnAdd.addEventListener('click', addEmptyLine);
+
+    /* 展開 / 收起全部 */
+    const btnExpand = document.getElementById('btnExpandAllRouteGroups');
+    if(btnExpand) btnExpand.addEventListener('click', () => {
+      document.querySelectorAll('.route-group').forEach(g => g.classList.add('open'));
+    });
+    const btnCollapse = document.getElementById('btnCollapseAllRouteGroups');
+    if(btnCollapse) btnCollapse.addEventListener('click', () => {
+      document.querySelectorAll('.route-group').forEach(g => g.classList.remove('open'));
+    });
+
+    /* 路線列表事件（事件委派） */
+    const groups = document.getElementById('routeGroups');
+    if(groups){
+      /* 點摺疊 header */
+      groups.addEventListener('click', e => {
+        const header = e.target.closest('.route-group-header');
+        if(header){
+          const group = header.closest('.route-group');
+          if(group) group.classList.toggle('open');
+          return;
+        }
+
+        /* 刪除按鈕 */
         const delBtn = e.target.closest('[data-route-del]');
         if(delBtn){
+          e.stopPropagation();
           const id = delBtn.dataset.routeId;
           if(window.SLG.removeRoute(id)){
             if(window.SLG.saveState) window.SLG.saveState();
             render();
             if(window.SLG.GameMap) window.SLG.GameMap.render();
           }
+          return;
+        }
+
+        /* Modal 編輯按鈕 */
+        const modalBtn = e.target.closest('[data-route-modal]');
+        if(modalBtn){
+          e.stopPropagation();
+          openRouteEditModal(modalBtn.dataset.routeId);
+          return;
         }
       });
 
-      list.addEventListener('change', e => {
+      /* 就地編輯（下拉變更） */
+      groups.addEventListener('change', e => {
         const sel = e.target.closest('[data-route-src],[data-route-tgt]');
         if(!sel) return;
         const line = sel.closest('.route-line');
@@ -2039,40 +2048,105 @@ const RouteManager = (() => {
         if(window.SLG.GameMap) window.SLG.GameMap.render();
       });
     }
+
+    /* Modal 按鈕 */
+    const mCancel = document.getElementById('routeEditCancel');
+    if(mCancel) mCancel.addEventListener('click', closeRouteEditModal);
+
+    const mSave = document.getElementById('routeEditSave');
+    if(mSave) mSave.addEventListener('click', saveRouteEditModal);
+
+    const mDelete = document.getElementById('routeEditDelete');
+    if(mDelete) mDelete.addEventListener('click', deleteRouteFromModal);
   }
 
-  function addEmptyLine(){
-  if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
+  /* ── 快速新增 ── */
+  function doQuickAdd(){
+    const selA = document.getElementById('quickRouteCityA');
+    const selB = document.getElementById('quickRouteCityB');
+    if(!selA || !selB) return;
+    const aId = selA.value;
+    const bId = selB.value;
 
-  const cities = state.cities;
-  /* 找一對還沒建立過路線的城池組合 */
-  for(let i = 0; i < cities.length; i++){
-    for(let j = i + 1; j < cities.length; j++){
-      const a = cities[i];
-      const b = cities[j];
-      if(!window.SLG.findRoute(a.id, b.id)){
-        const r = window.SLG.addRoute(a.id, b.id);
-        if(r){
-          if(window.SLG.saveState) window.SLG.saveState();
-          render();
-          if(window.SLG.GameMap) window.SLG.GameMap.render();
-          return;
-        }
-      }
+    if(!aId || !bId){ alert('請選擇城池 A 與城池 B'); return; }
+    if(aId === bId){ alert('兩城池不可相同'); return; }
+    if(window.SLG.findRoute(aId, bId)){ alert('此路線已存在'); return; }
+
+    const r = window.SLG.addRoute(aId, bId);
+    if(r){
+      if(window.SLG.saveState) window.SLG.saveState();
+      render();
+      if(window.SLG.GameMap) window.SLG.GameMap.render();
+      logSystem('🛣️ 已新增路線');
     }
   }
 
-  alert('所有城池組合都已有路線');
-}
+  /* ── 新增空白路線（找一組未建立的組合） ── */
+  function addEmptyLine(){
+    if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
 
+    const cities = state.cities;
+    for(let i = 0; i < cities.length; i++){
+      for(let j = i + 1; j < cities.length; j++){
+        const a = cities[i];
+        const b = cities[j];
+        if(!window.SLG.findRoute(a.id, b.id)){
+          const r = window.SLG.addRoute(a.id, b.id);
+          if(r){
+            if(window.SLG.saveState) window.SLG.saveState();
+            render();
+            if(window.SLG.GameMap) window.SLG.GameMap.render();
+            return;
+          }
+        }
+      }
+    }
+
+    alert('所有城池組合都已有路線');
+  }
+
+  /* ── 取得城池所屬戰區名稱（用於分組） ── */
+  function getCityZoneName(cityId){
+    const city = state.cities.find(c => c.id === cityId);
+    if(!city) return '（無效城池）';
+    if(!city.zoneId) return '未分配戰區';
+    const zone = state.zones.find(z => z.id === city.zoneId);
+    return zone ? zone.name : '未分配戰區';
+  }
+
+  /* ── 路線分組（以「城池 A 的戰區」為分組鍵） ── */
+  function groupRoutes(){
+    const groups = new Map();
+    const routes = state.routes || [];
+
+    for(const r of routes){
+      const zoneName = getCityZoneName(r.cityAId);
+      if(!groups.has(zoneName)) groups.set(zoneName, []);
+      groups.get(zoneName).push(r);
+    }
+
+    /* 依名稱排序（未分配放最後） */
+    const arr = [...groups.entries()];
+    arr.sort((a, b) => {
+      if(a[0] === '未分配戰區') return 1;
+      if(b[0] === '未分配戰區') return -1;
+      return a[0].localeCompare(b[0], 'zh-Hant');
+    });
+    return arr;
+  }
+
+  /* ── 渲染 ── */
   function render(){
-    const el = document.getElementById('routeManagerList');
+    /* 1. 更新快速新增的城池下拉 */
+    populateQuickSelects();
+
+    /* 2. 渲染路線分組 */
+    const el = document.getElementById('routeGroups');
     if(!el) return;
 
     const routes = state.routes || [];
-
     if(routes.length === 0){
-      el.innerHTML = '<div class="text-dim" style="padding:10px;">尚無地圖路線。點下方按鈕新增。</div>';
+      el.innerHTML = '<div class="route-groups-empty">尚無地圖路線。使用上方快速新增建立第一條路線。</div>';
       return;
     }
 
@@ -2080,22 +2154,138 @@ const RouteManager = (() => {
       `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${esc(c.name)}</option>`
     ).join('');
 
-    el.innerHTML = routes.map(r => {
-      return `<div class="route-line" data-route-id="${r.id}">
-        <select data-route-src>${cityOpts(r.cityAId)}</select>
-        <span class="route-arrow">—</span>
-        <select data-route-tgt>${cityOpts(r.cityBId)}</select>
-        <button class="btn btn-danger btn-sm" data-route-del data-route-id="${r.id}">🗑️</button>
+    const groups = groupRoutes();
+
+    el.innerHTML = groups.map(([zoneName, list], gi) => {
+      const groupId = 'route-group-' + gi;
+      const bodyHtml = list.map(r => {
+        return `<div class="route-line" data-route-id="${r.id}">
+          <select data-route-src>${cityOpts(r.cityAId)}</select>
+          <span class="route-arrow">—</span>
+          <select data-route-tgt>${cityOpts(r.cityBId)}</select>
+          <button class="btn btn-sm route-modal-btn" data-route-modal="1" data-route-id="${r.id}" title="開啟 Modal 編輯">✏️</button>
+          <button class="btn btn-danger btn-sm" data-route-del="1" data-route-id="${r.id}" title="刪除">🗑️</button>
+        </div>`;
+      }).join('');
+
+      /* 預設展開第一組 */
+      const openCls = gi === 0 ? 'open' : '';
+
+      return `<div class="route-group ${openCls}" id="${groupId}">
+        <div class="route-group-header">
+          <span class="toggle-icon">▶</span>
+          <span class="group-name">🗺️ ${esc(zoneName)}</span>
+          <span class="group-count">${list.length} 條</span>
+        </div>
+        <div class="route-group-body">
+          ${bodyHtml}
+        </div>
       </div>`;
     }).join('');
   }
 
-  return { init, render };
+  function populateQuickSelects(){
+    const selA = document.getElementById('quickRouteCityA');
+    const selB = document.getElementById('quickRouteCityB');
+    if(!selA || !selB) return;
+
+    const curA = selA.value;
+    const curB = selB.value;
+
+    const opts = '<option value="">選擇城池...</option>' +
+      state.cities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+
+    selA.innerHTML = opts;
+    selB.innerHTML = opts;
+
+    if(curA && state.cities.find(c => c.id === curA)) selA.value = curA;
+    if(curB && state.cities.find(c => c.id === curB)) selB.value = curB;
+  }
+
+  /* ── Modal 編輯 ── */
+  function openRouteEditModal(routeId){
+    const r = (state.routes || []).find(x => x.id === routeId);
+    if(!r){ alert('找不到此路線'); return; }
+
+    editingRouteId = routeId;
+
+    const selA = document.getElementById('re_cityA');
+    const selB = document.getElementById('re_cityB');
+    const hint = document.getElementById('routeEditHint');
+
+    if(selA){
+      selA.innerHTML = state.cities.map(c =>
+        `<option value="${c.id}" ${c.id === r.cityAId ? 'selected' : ''}>${esc(c.name)}</option>`
+      ).join('');
+    }
+    if(selB){
+      selB.innerHTML = state.cities.map(c =>
+        `<option value="${c.id}" ${c.id === r.cityBId ? 'selected' : ''}>${esc(c.name)}</option>`
+      ).join('');
+    }
+    if(hint) hint.textContent = '＊兩城池不可相同，且路線不可重複（A-B 等同 B-A）。';
+
+    const modal = document.getElementById('routeEditModal');
+    if(modal) modal.classList.add('show');
+  }
+
+  function closeRouteEditModal(){
+    editingRouteId = null;
+    const modal = document.getElementById('routeEditModal');
+    if(modal) modal.classList.remove('show');
+  }
+
+  function saveRouteEditModal(){
+    if(!editingRouteId) return;
+    const selA = document.getElementById('re_cityA');
+    const selB = document.getElementById('re_cityB');
+    if(!selA || !selB) return;
+
+    const aId = selA.value;
+    const bId = selB.value;
+
+    if(!aId || !bId){ alert('請選擇兩座城池'); return; }
+    if(aId === bId){ alert('兩城池不可相同'); return; }
+
+    const existing = window.SLG.findRoute(aId, bId);
+    if(existing && existing.id !== editingRouteId){
+      alert('此路線已存在');
+      return;
+    }
+
+    const r = (state.routes || []).find(x => x.id === editingRouteId);
+    if(!r){ closeRouteEditModal(); return; }
+
+    r.cityAId = aId;
+    r.cityBId = bId;
+
+    if(window.SLG.saveState) window.SLG.saveState();
+    closeRouteEditModal();
+    render();
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+    logSystem('🛣️ 已更新路線');
+  }
+
+  function deleteRouteFromModal(){
+    if(!editingRouteId) return;
+    const r = (state.routes || []).find(x => x.id === editingRouteId);
+    if(!r){ closeRouteEditModal(); return; }
+
+    if(!confirm('確定要刪除此路線嗎？')) return;
+
+    window.SLG.removeRoute(editingRouteId);
+    if(window.SLG.saveState) window.SLG.saveState();
+    closeRouteEditModal();
+    render();
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+    logSystem('🛣️ 已刪除路線');
+  }
+
+  return { init, render, openRouteEditModal, closeRouteEditModal };
 })();
 
 /* ============================================================
    GameMap — 地圖（力導向 + 盟徽 + 路線 + 拖曳 + touch 縮放）
-   v8.5.1：加入 touch pinch 縮放
    ============================================================ */
 const GameMap = (() => {
   let canvas, ctx, containerEl;
@@ -2110,7 +2300,6 @@ const GameMap = (() => {
   let routeDragEnd = null;
   let hoveredCityId = null;
 
-  /* v8.5.1：touch */
   let pinchStartDist = 0;
   let pinchStartScale = 1;
   let pinchStartCenter = null;
@@ -2138,7 +2327,6 @@ const GameMap = (() => {
     canvas.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('pointerleave', () => { hoveredCityId = null; });
 
-    /* v8.5.1：touch 事件 */
     containerEl.addEventListener('touchstart', onTouchStart, { passive: false });
     containerEl.addEventListener('touchmove', onTouchMove, { passive: false });
     containerEl.addEventListener('touchend', onTouchEnd, { passive: false });
@@ -2196,9 +2384,6 @@ const GameMap = (() => {
     applyView();
   }
 
-  /* ============================================================
-     v8.5.1：touch 事件處理
-     ============================================================ */
   function touchDist(t1, t2){
     const dx = t1.clientX - t2.clientX;
     const dy = t1.clientY - t2.clientY;
@@ -2211,17 +2396,14 @@ const GameMap = (() => {
 
   function onTouchStart(e){
     if(e.touches.length === 2){
-      /* 雙指：縮放 */
       e.preventDefault();
       pinchStartDist = touchDist(e.touches[0], e.touches[1]);
       pinchStartScale = view.scale;
       pinchStartCenter = touchCenter(e.touches[0], e.touches[1]);
-      /* 停止拖曳 */
       dragging = false;
       nodeDragging = null;
       routeDragFrom = null;
     } else if(e.touches.length === 1){
-      /* 單指：判斷是否拖曳節點 */
       const t = e.touches[0];
       const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
       const city = pickCity(worldPos);
@@ -2239,14 +2421,12 @@ const GameMap = (() => {
           routeDragEnd = worldPos;
           e.preventDefault();
         } else {
-          /* 空白處：記錄拖曳起點 */
           touchPanStart = {
             x: t.clientX, y: t.clientY,
             sx: containerEl.scrollLeft, sy: containerEl.scrollTop,
           };
         }
       } else {
-        /* 空白處：記錄拖曳起點（原生 scroll） */
         touchPanStart = {
           x: t.clientX, y: t.clientY,
           sx: containerEl.scrollLeft, sy: containerEl.scrollTop,
@@ -2263,7 +2443,6 @@ const GameMap = (() => {
       const factor = dist / pinchStartDist;
       const newScale = Math.max(0.2, Math.min(3, pinchStartScale * factor));
 
-      /* 以 pinch 中心為縮放中心 */
       const rect = containerEl.getBoundingClientRect();
       const cx = (center.x - rect.left + containerEl.scrollLeft) / view.scale;
       const cy = (center.y - rect.top + containerEl.scrollTop) / view.scale;
@@ -2313,9 +2492,7 @@ const GameMap = (() => {
     }
 
     if(e.touches.length === 0){
-      /* 所有手指離開：結束操作 */
       if(routeDragFrom){
-        /* 找最終觸點位置 */
         const t = e.changedTouches[0];
         const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
         const targetCity = pickCity(worldPos);
@@ -2339,9 +2516,6 @@ const GameMap = (() => {
     }
   }
 
-  /* ============================================================
-     滑鼠事件
-     ============================================================ */
   function getWorldPos(e){
     return getWorldPosFromClient(e.clientX, e.clientY);
   }
@@ -2365,7 +2539,7 @@ const GameMap = (() => {
   }
 
   function onPointerDown(e){
-    if(e.pointerType === 'touch') return;   /* 由 touch 事件處理 */
+    if(e.pointerType === 'touch') return;
     const worldPos = getWorldPos(e);
 
     if(editRouteMode){
@@ -2570,7 +2744,6 @@ const GameMap = (() => {
     canvas.style.transformOrigin = '0 0';
     canvas.style.width = CANVAS_W + 'px';
     canvas.style.height = CANVAS_H + 'px';
-    /* 更新容器 scroll 位置，模擬以 view.x/view.y 為左上角 */
     if(containerEl){
       containerEl.scrollLeft = view.x * view.scale;
       containerEl.scrollTop = view.y * view.scale;
@@ -2739,6 +2912,146 @@ const GameMap = (() => {
 
   return { init, render, activate, reset, fitView };
 })();
+
+/* ============================================================
+   v8.5.3：📊 概覽面板渲染
+   ============================================================ */
+function renderOverview(){
+  /* 統計數字 */
+  const cityCount = state.cities.length;
+  const allianceCount = state.alliances.length;
+  const zoneCount = state.zones.length;
+  const routeCount = (state.routes || []).length;
+
+  let warCount = 0;
+  for(const c of state.cities){
+    warCount += (c.attackTargets || []).length;
+    warCount += (c.defendTargets || []).length;
+  }
+
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = val;
+  };
+  setText('ovCityCount', cityCount);
+  setText('ovAllianceCount', allianceCount);
+  setText('ovZoneCount', zoneCount);
+  setText('ovRouteCount', routeCount);
+  setText('ovWarCount', warCount);
+
+  /* 盟兵力分佈 */
+  const distEl = document.getElementById('overviewAllianceDist');
+  if(distEl){
+    if(state.alliances.length === 0){
+      distEl.innerHTML = '<div class="text-dim">尚未建立同盟</div>';
+    } else {
+      distEl.innerHTML = state.alliances.map(a => {
+        const myCities = state.cities.filter(c => c.allianceId === a.id);
+        const allocatedPower = myCities.reduce((s, c) => s + (Number(c.totalPower) || 0), 0);
+        const totalPower = Number(a.totalPower) || 0;
+        const remain = totalPower - allocatedPower;
+        const pct = totalPower > 0 ? Math.round(allocatedPower / totalPower * 100) : 0;
+        const cls = pct > 100 ? 'warn' : '';
+        const icon = a.icon ? a.icon + ' ' : '';
+        const chipCls = a.side === 'self' ? 'self' : (a.side === 'ally' ? 'ally' : 'enemy');
+        const remainStyle = remain < 0 ? 'style="color:var(--neon-red);"' : 'style="color:var(--neon-green);"';
+
+        return `<div class="alliance-dist-row">
+          <span class="name">${icon}${esc(a.name)}</span>
+          <span class="chip ${chipCls}" style="font-size:9px;">${allianceSideLabel(a.side)}</span>
+          <span class="num">${allocatedPower.toLocaleString()} / ${totalPower.toLocaleString()}</span>
+          <div class="bar"><div class="bar-fill ${cls}" style="width:${Math.min(100, pct)}%"></div></div>
+          <span class="pct">${pct}%</span>
+          <span class="num" ${remainStyle}>餘 ${remain.toLocaleString()}</span>
+          <span class="num" style="color:var(--text-dim);">${myCities.length} 城</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  /* 各陣營城池數 */
+  const sideEl = document.getElementById('overviewSideDist');
+  if(sideEl){
+    const sides = [
+      { key:'self', label:'本方' },
+      { key:'ally', label:'同盟' },
+      { key:'enemy', label:'敵方' },
+      { key:'common_enemy', label:'共同敵方' },
+      { key:'npc', label:'NPC' },
+    ];
+    const counts = {};
+    for(const s of sides) counts[s.key] = 0;
+    for(const c of state.cities) counts[c.side] = (counts[c.side] || 0) + 1;
+
+    const total = state.cities.length || 1;
+
+    sideEl.innerHTML = sides.map(s => {
+      const n = counts[s.key] || 0;
+      const pct = Math.round(n / total * 100);
+      return `<div class="overview-side-row">
+        <span class="name">${s.label}</span>
+        <div class="bar"><div class="bar-fill ${s.key}" style="width:${pct}%"></div></div>
+        <span class="num">${n} 城</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+/* ============================================================
+   v8.5.3：城池數據子 Tab 切換
+   ============================================================ */
+let currentCityView = 'overview';   /* overview | zones | cities | war | routes */
+
+function switchCityView(view){
+  currentCityView = view;
+  document.querySelectorAll('.city-subtab').forEach(t => {
+    t.classList.toggle('active', t.dataset.cityView === view);
+  });
+  document.querySelectorAll('.city-subpanel').forEach(p => {
+    p.classList.toggle('active', p.id === 'cityPanel-' + view);
+  });
+
+  /* 依子面板做必要的資料重繪 */
+  if(view === 'overview'){
+    renderOverview();
+  } else if(view === 'zones'){
+    R.renderZones();
+  } else if(view === 'cities'){
+    CityManager.render();
+  } else if(view === 'war'){
+    WarManager.render();
+    DeployInstr.render();
+  } else if(view === 'routes'){
+    RouteManager.render();
+  }
+
+  /* 記住上次檢視 */
+  try{ localStorage.setItem('slg_city_view_v853', view); }catch(e){}
+}
+
+function initCitySubtabs(){
+  document.querySelectorAll('.city-subtab').forEach(tab => {
+    tab.addEventListener('click', function(){
+      switchCityView(this.dataset.cityView);
+    });
+  });
+
+  /* 快速入口按鈕 */
+  document.querySelectorAll('[data-goto-city-view]').forEach(btn => {
+    btn.addEventListener('click', function(){
+      const view = this.dataset.gotoCityView;
+      if(view) switchCityView(view);
+    });
+  });
+
+  /* 恢復上次檢視 */
+  let saved = 'overview';
+  try{
+    const s = localStorage.getItem('slg_city_view_v853');
+    if(s && ['overview','zones','cities','war','routes'].includes(s)) saved = s;
+  }catch(e){}
+  switchCityView(saved);
+}
 
 /* ============================================================
    更新房間編輯按鈕 / 房間沙盤操作
@@ -3082,6 +3395,11 @@ Object.assign(window.SLG, {
   updateRoomSandboxActions,
   renderSandboxData,
 
+  /* v8.5.3：概覽 + 子 Tab */
+  renderOverview,
+  switchCityView,
+  initCitySubtabs,
+
   DYN,
   DEPLOY,
   deployRender,
@@ -3101,3 +3419,6 @@ Object.assign(window.SLG, {
 });
 
 })();
+/* ============================================================================
+ * ui.js 結束（v8.5.3）
+ * ========================================================================== */
