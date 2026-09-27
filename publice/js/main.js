@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.6.0：盟拖曳重置、盟徽禁止重複、城矩陣過濾、距離工具初始化
+ * v8.6.1：宣戰手動新增區權限 + 初始化
  * ========================================================================== */
 (function(){
 'use strict';
@@ -22,7 +22,6 @@ const {
   getWorker, releaseWorker, bumpSimRunId,
   buildSandboxFileName,
   timeAgo,
-  /* v8.6.0 */
   isAllianceIconUsed,
   resetAllianceOrder,
 } = window.SLG;
@@ -157,7 +156,15 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnMapFit'), true, '');
   togglePerm(document.getElementById('btnMapClearHighlight'), true, '');
 
+  /* 宣戰按鈕（自動 + 手動）*/
   togglePerm(document.getElementById('btnAddWarLine'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnWarAddManual'), canEditData, '需要編輯資料權限');
+  const warAddSrcEl = document.getElementById('warAddSrc');
+  if(warAddSrcEl) warAddSrcEl.disabled = !canEditData;
+  const warAddTypeEl = document.getElementById('warAddType');
+  if(warAddTypeEl) warAddTypeEl.disabled = !canEditData;
+  const warAddTgtEl = document.getElementById('warAddTgt');
+  if(warAddTgtEl) warAddTgtEl.disabled = !canEditData;
 
   const canImportExcel = effectiveCanImportExcel();
   togglePerm(document.getElementById('btnOpenExcelImport'), canImportExcel, '需要 Excel 匯入權限');
@@ -194,7 +201,7 @@ function applyPermissions(){
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
 
-  /* 盟拖曳：無權限時停用 */
+  /* 盟拖曳 */
   document.querySelectorAll('#allianceTableBody tr[draggable]').forEach(tr => {
     tr.draggable = canEditData;
   });
@@ -203,7 +210,7 @@ function applyPermissions(){
     el.style.opacity = canEditData ? '' : '.35';
   });
 
-  /* 盟徽快速選擇：無權限時停用 */
+  /* 盟徽快速選擇 */
   document.querySelectorAll('#iconQuickRow .icon-quick').forEach(b => {
     if(!canEditData){
       b.disabled = true;
@@ -755,10 +762,10 @@ function bindUI(){
   /* ── 清單偏好 ── */
   initListPrefs();
 
-  /* ── v8.6.0：距離工具初始化 ── */
+  /* ── 距離工具初始化 ── */
   if(window.SLG.DistanceTool) window.SLG.DistanceTool.init();
 
-  /* ── v8.6.0：城矩陣過濾器 ── */
+  /* ── 城矩陣過濾器 ── */
   const cityMatrixZoneSel = document.getElementById('cityMatrixZone');
   if(cityMatrixZoneSel){
     cityMatrixZoneSel.addEventListener('change', () => {
@@ -772,7 +779,7 @@ function bindUI(){
     });
   }
 
-  /* ── v8.6.0：重置盟排序 ── */
+  /* ── 重置盟排序 ── */
   const btnResetOrder = document.getElementById('btnResetAllianceOrder');
   if(btnResetOrder){
     btnResetOrder.addEventListener('click', () => {
@@ -956,7 +963,6 @@ function bindUI(){
       minLossRatio: (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100,
       attackRequireRoute: attackRequireRouteEl ? !!attackRequireRouteEl.checked : false,
     });
-    /* v8.6.0：重繪矩陣（消耗值變更）*/
     if(R().renderMatrix) R().renderMatrix();
     if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
@@ -1030,7 +1036,6 @@ function bindUI(){
     const totalPower = Math.round(pInput * 1e8);
     if(memberCount <= 0){ alert('總人數必須大於 0'); return; }
 
-    /* v8.6.0：盟徽禁止重複 */
     const isEditingId = state.editingAllianceId || null;
     if(icon && isAllianceIconUsed && isAllianceIconUsed(icon, isEditingId)){
       alert('❌ 此盟徽已被其他盟使用，請更換');
@@ -1049,7 +1054,6 @@ function bindUI(){
     }
     const id = state.editingAllianceId || uid();
     const existing = state.alliances.find(a => a.id === id);
-    /* v8.6.0：新盟給 order = 最大值 + 1（加到最後）*/
     let order = existing ? existing.order : null;
     if(typeof order !== 'number'){
       const maxOrder = state.alliances.reduce((m, a) =>
@@ -1073,8 +1077,7 @@ function bindUI(){
   const btnCancelAllianceEdit = document.getElementById('btnCancelAllianceEdit');
   if(btnCancelAllianceEdit) btnCancelAllianceEdit.addEventListener('click', window.SLG.resetAllianceForm);
 
-  /* 盟徽快速選擇：由 ui.js 的 renderIconQuickRow 動態生成並綁定（事件委派）*/
-  /* 這裡不需額外綁定 */
+  /* 盟徽快速選擇：由 ui.js 動態生成並綁定（事件委派） */
 
   const allianceTbody = document.getElementById('allianceTableBody');
   if(allianceTbody) allianceTbody.addEventListener('click', e => {
@@ -1181,7 +1184,7 @@ function bindUI(){
   /* ── 路線管理 ── */
   if(window.SLG.RouteManager) window.SLG.RouteManager.init();
 
-  /* ── 宣戰清單 ── */
+  /* ── 宣戰清單（含手動新增） ── */
   if(window.SLG.WarManager) window.SLG.WarManager.init();
 
   /* ── 出兵清單 ── */
@@ -1434,7 +1437,11 @@ function bindEvents(){
     R().renderZones();
     R().renderCities();
     if(window.SLG.CityManager) window.SLG.CityManager.render();
-    if(window.SLG.WarManager) window.SLG.WarManager.render();
+    if(window.SLG.WarManager){
+      window.SLG.WarManager.render();
+      /* v8.6.1：重繪手動新增區 */
+      if(window.SLG.WarManager.renderAddForm) window.SLG.WarManager.renderAddForm();
+    }
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
     if(window.SLG.RouteManager) window.SLG.RouteManager.render();
     if(R().renderMatrix) R().renderMatrix();
@@ -1488,8 +1495,10 @@ function bindEvents(){
       }
     }
     if(window.SLG.renderOverview) window.SLG.renderOverview();
-    if(window.SLG.WarManager) window.SLG.WarManager.render();
-    /* 距離計算可能受路線影響 */
+    if(window.SLG.WarManager){
+      window.SLG.WarManager.render();
+      if(window.SLG.WarManager.renderAddForm) window.SLG.WarManager.renderAddForm();
+    }
     if(window.SLG.DistanceTool && state.distanceResult){
       window.SLG.DistanceTool.renderResult();
     }
@@ -1545,10 +1554,8 @@ function hideAllTabContent(){
    啟動
    ============================================================ */
 function boot(){
-  /* 1. 讀取本機狀態 */
   loadState();
 
-  /* 2. 填入 UI 初始值 */
   const cn = document.getElementById('commanderName');
   if(cn) cn.value = state.commanderName || '';
   const rc = document.getElementById('roomCode');
@@ -1571,16 +1578,13 @@ function boot(){
   if(garr) garr.checked = !!state.settings.attackRequireRoute;
   syncAIParamsToUI();
 
-  /* 3. 初始化 Firebase */
   window.SLG.initFirebase();
 
-  /* 4. 初始化入口門禁 */
   if(window.SLG.EntryGate){
     window.SLG.EntryGate.init();
     window.SLG.EntryGate.show();
   }
 
-  /* 5. 註冊雲端同步 */
   window.SLG.registerCloudSync(() => {
     if(state.auth.signedIn){
       window.SLG.saveMySandbox().catch(e => console.warn('雲端同步失敗', e));
@@ -1592,7 +1596,6 @@ function boot(){
     }
   });
 
-  /* 6. 註冊 sender */
   window.SLG.registerSender(patches => {
     if(!state.connected) return;
     window.SLG.publish({
@@ -1603,18 +1606,15 @@ function boot(){
     });
   });
 
-  /* 7. 綁定 UI 與事件 */
   bindUI();
   bindEvents();
 
-  /* 8. 初始化子模組 */
   viz().init();
   DYN().init();
   window.SLG.resetAllianceForm();
   if(window.SLG.Summary) window.SLG.Summary.init();
   if(window.SLG.CityManager) window.SLG.CityManager.init();
 
-  /* 9. 首繪 */
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
   R().renderAll();
   DYN().setRows(state.dynRows);
@@ -1627,7 +1627,11 @@ function boot(){
   updateModeBar();
   if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
   if(window.SLG.RouteManager) window.SLG.RouteManager.render();
-  if(window.SLG.WarManager) window.SLG.WarManager.render();
+  if(window.SLG.WarManager){
+    window.SLG.WarManager.render();
+    /* v8.6.1：初始呼叫手動新增區渲染 */
+    if(window.SLG.WarManager.renderAddForm) window.SLG.WarManager.renderAddForm();
+  }
   if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   if(R().renderMatrix) R().renderMatrix();
   if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
@@ -1636,7 +1640,6 @@ function boot(){
   if(window.SLG.renderOverview) window.SLG.renderOverview();
   applyPermissions();
 
-  /* 10. 非同步初始化認證 */
   (async () => {
     let ok = false;
     if(window.SLG.Auth){ ok = await window.SLG.Auth.initFirebaseAuth(); }
@@ -1648,7 +1651,10 @@ function boot(){
       if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
       applyPermissions();
       R().renderAll();
-      if(window.SLG.WarManager) window.SLG.WarManager.render();
+      if(window.SLG.WarManager){
+        window.SLG.WarManager.render();
+        if(window.SLG.WarManager.renderAddForm) window.SLG.WarManager.renderAddForm();
+      }
       if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
       if(R().renderMatrix) R().renderMatrix();
       if(R().renderCityMatrix) R().renderCityMatrix();
@@ -1666,8 +1672,9 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.6.0] 盟排序 + 盟/城矩陣 + 距離計算（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.6.1] 宣戰手動新增（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
+
 /* ============================================================
    v8.6.1：暴露 main.js 內部函式到 window.SLG
    供 ui.js / auth.js 呼叫
@@ -1692,9 +1699,6 @@ Object.assign(window.SLG, {
   renderEditRequestReview,
 });
 
-/* ============================================================
-   啟動
-   ============================================================ */
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', boot);
 } else {
@@ -1702,4 +1706,3 @@ if(document.readyState === 'loading'){
 }
 
 })();
-

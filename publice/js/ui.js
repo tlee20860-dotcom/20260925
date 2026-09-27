@@ -1,10 +1,10 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.6.0：盟清單拖曳、盟/城消耗矩陣、距離計算、盟徽禁止重複
+ * v8.6.1：宣戰手動新增（WarManager 在第 2/2 部分）
  *
  * ⚠️ 此檔案分為 2 部分交付；實際部署時合併為單一 js/ui.js。
- *    第 1/2 部分：viz / R（含盟清單、盟矩陣、城矩陣、盟徽快速選擇） / DYN / DEPLOY
- *    第 2/2 部分：CityManager / WarManager / DeployInstr / RouteManager / GameMap（含高亮）/ 概覽 / 距離工具 / 暴露
+ *    第 1/2 部分：viz / R / DYN / DEPLOY
+ *    第 2/2 部分：CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 距離工具 / 暴露
  * ========================================================================== */
 (function(){
 'use strict';
@@ -27,10 +27,8 @@ const {
   addRoute,
   removeRoute,
   getReachableCityIds,
-  /* 戰力單位工具 */
   formatPower,
   formatAvgPower,
-  /* v8.6.0：盟排序、盟徽、距離 */
   getAlliancesSorted,
   reorderAlliances,
   resetAllianceOrder,
@@ -453,7 +451,7 @@ const R = (() => {
   }
 
   /* ============================================================
-     v8.6.0：參戰盟清單（拖曳排序 + 移除 3 欄 + 加均戰）
+     參戰盟清單（拖曳排序 + 移除 3 欄 + 加均戰）
      ============================================================ */
   function renderAlliances(){
     const tbody = document.getElementById('allianceTableBody');
@@ -487,10 +485,8 @@ const R = (() => {
       </tr>`;
     }).join('');
 
-    /* 綁定拖曳事件 */
     bindAllianceDragDrop(tbody);
 
-    /* 權限控制 */
     if(hasTogglePerm() && Auth()){
       const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
       document.querySelectorAll('[data-action="edit-alliance"],[data-action="del-alliance"]').forEach(b => {
@@ -498,12 +494,11 @@ const R = (() => {
       });
     }
 
-    /* 更新盟徽快速選擇（隱藏已使用）*/
     renderIconQuickRow();
   }
 
   /* ============================================================
-     v8.6.0：盟拖曳排序事件
+     盟拖曳排序事件
      ============================================================ */
   let dragSrcId = null;
 
@@ -511,7 +506,6 @@ const R = (() => {
     const rows = tbody.querySelectorAll('tr[data-alliance-id]');
     rows.forEach(tr => {
       tr.addEventListener('dragstart', (e) => {
-        /* 只有點在拖曳把手時才觸發（若無此判斷則整行可拖）*/
         dragSrcId = tr.dataset.allianceId;
         tr.classList.add('dragging');
         try{
@@ -534,7 +528,6 @@ const R = (() => {
         if(!dragSrcId) return;
         if(tr.dataset.allianceId === dragSrcId) return;
 
-        /* 判斷要插在該行的上方還是下方 */
         const rect = tr.getBoundingClientRect();
         const midY = rect.top + rect.height / 2;
         const isTop = e.clientY < midY;
@@ -552,13 +545,11 @@ const R = (() => {
         const tgtId = tr.dataset.allianceId;
         if(tgtId === dragSrcId) return;
 
-        /* 計算新順序 */
         const currentOrder = getAlliancesSorted ? getAlliancesSorted().map(a => a.id) : [];
         const srcIdx = currentOrder.indexOf(dragSrcId);
         let tgtIdx = currentOrder.indexOf(tgtId);
         if(srcIdx < 0 || tgtIdx < 0) return;
 
-        /* 判斷插在前或後 */
         const rect = tr.getBoundingClientRect();
         const midY = rect.top + rect.height / 2;
         const insertBefore = e.clientY < midY;
@@ -570,7 +561,6 @@ const R = (() => {
         const insertPos = insertBefore ? tgtIdx : tgtIdx + 1;
         currentOrder.splice(insertPos, 0, dragSrcId);
 
-        /* 套用新順序 */
         if(reorderAlliances){
           reorderAlliances(currentOrder);
         }
@@ -579,14 +569,10 @@ const R = (() => {
         if(typeof renderOverview === 'function') renderOverview();
       });
     });
-
-    /* 觸控裝置：用「長按拖曳」無法完美支援，改用上下按鈕備援 */
-    /* 為簡化，觸控裝置仍可使用 drag handle，但若瀏覽器不支援，會退化為不可拖 */
-    /* （HTML5 DnD 在 iOS Safari 部分版本支援不佳，此為已知限制） */
   }
 
   /* ============================================================
-     v8.6.0：盟徽快速選擇（隱藏已使用）
+     盟徽快速選擇（隱藏已使用）
      ============================================================ */
   function renderIconQuickRow(){
     const row = document.getElementById('iconQuickRow');
@@ -605,7 +591,6 @@ const R = (() => {
     }
     row.innerHTML = html;
 
-    /* 綁定事件（使用事件委派，避免重複綁定）*/
     if(!row.dataset.bound){
       row.dataset.bound = '1';
       row.addEventListener('click', (e) => {
@@ -617,7 +602,6 @@ const R = (() => {
         const input = document.getElementById('allyIcon');
         if(input){
           input.value = icon;
-          /* 觸發 input 事件（若有監聽）*/
           input.dispatchEvent(new Event('input', { bubbles: true }));
         }
       });
@@ -625,7 +609,7 @@ const R = (() => {
   }
 
   /* ============================================================
-     v8.6.0：盟對盟消耗比例矩陣
+     盟對盟消耗比例矩陣
      ============================================================ */
   function renderMatrix(){
     const wrap = document.getElementById('allianceMatrixWrap');
@@ -671,7 +655,7 @@ const R = (() => {
   }
 
   /* ============================================================
-     v8.6.0：城對城消耗比例矩陣
+     城對城消耗比例矩陣
      ============================================================ */
   function renderCityMatrix(){
     const wrap = document.getElementById('cityMatrixWrap');
@@ -682,14 +666,12 @@ const R = (() => {
     const zoneId = zoneSel ? zoneSel.value : 'all';
     const filter = filterSel ? filterSel.value : 'warOnly';
 
-    /* 收集要顯示的城 */
     let cities = state.cities.slice();
     if(zoneId !== 'all'){
       cities = cities.filter(c => c.zoneId === zoneId);
     }
 
     if(filter === 'warOnly'){
-      /* 只顯示有宣戰關係的城（進攻 / 協防 / 被攻擊 / 被協防）*/
       const citySet = new Set();
       for(const c of state.cities){
         const hasOutAtk = (c.attackTargets || []).some(t => t.cityId);
@@ -716,7 +698,6 @@ const R = (() => {
       return;
     }
 
-    /* 依戰區 + 名稱排序 */
     cities.sort((a, b) => {
       if(a.zoneId !== b.zoneId) return (a.zoneId || '').localeCompare(b.zoneId || '');
       return a.name.localeCompare(b.name, 'zh-Hant');
@@ -756,7 +737,6 @@ const R = (() => {
     wrap.innerHTML = html;
   }
 
-  /* 城矩陣：初始化下拉 */
   function populateCityMatrixFilters(){
     const zoneSel = document.getElementById('cityMatrixZone');
     if(zoneSel){
@@ -912,7 +892,6 @@ const R = (() => {
     renderHealth(); renderHost(); renderMembers();
     renderAlliances(); renderZones(); renderCities();
     renderChat(); renderChatBadge();
-    /* v8.6.0：矩陣 */
     renderMatrix();
     populateCityMatrixFilters();
     renderCityMatrix();
@@ -1791,7 +1770,7 @@ const CityManager = (() => {
 })();
 
 /* ============================================================
-   WarManager — 宣戰清單（沿用 v8.5.6 清單形式）
+   WarManager — 宣戰清單 + 手動新增（v8.6.1）
    ============================================================ */
 const WarManager = (() => {
   const LS_SORT_KEY = 'slg_war_sort_v856';
@@ -1800,8 +1779,27 @@ const WarManager = (() => {
   const DEFAULT_GROUP = 'none';
 
   function init(){
+    /* 自動新增（原有邏輯） */
     const btn = document.getElementById('btnAddWarLine');
     if(btn) btn.addEventListener('click', () => addLine());
+
+    /* v8.6.1：手動新增 */
+    const btnManual = document.getElementById('btnWarAddManual');
+    if(btnManual) btnManual.addEventListener('click', doAddManual);
+
+    /* 出兵城 / 類型變更 → 更新目標城下拉 */
+    const srcSel = document.getElementById('warAddSrc');
+    if(srcSel) srcSel.addEventListener('change', () => updateAddTargetOptions());
+    const typeSel = document.getElementById('warAddType');
+    if(typeSel) typeSel.addEventListener('change', () => updateAddTargetOptions());
+
+    /* 支援 Enter 快速新增 */
+    const tgtSel = document.getElementById('warAddTgt');
+    [srcSel, typeSel, tgtSel].forEach(sel => {
+      if(sel) sel.addEventListener('keydown', e => {
+        if(e.key === 'Enter'){ e.preventDefault(); doAddManual(); }
+      });
+    });
 
     const sortSel = document.getElementById('warSortSelect');
     if(sortSel){
@@ -1904,38 +1902,158 @@ const WarManager = (() => {
     return null;
   }
 
+  /* 自動新增：找下一個未建立的組合 */
   function addLine(){
-  if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
+    if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
 
-  /* 遍歷所有可能的「出兵城 → 目標城」組合，找第一個還沒建立宣戰的 */
-  for(const src of state.cities){
-    const targets = getTargetsForType(src.id, 'attack');
-    for(const tgt of targets){
-      if(findWarLine(src.id, tgt.id)) continue;  // 已存在，跳過
+    for(const src of state.cities){
+      const targets = getTargetsForType(src.id, 'attack');
+      for(const tgt of targets){
+        if(findWarLine(src.id, tgt.id)) continue;
 
-      /* 找到未建立的組合 → 新增 */
-      if(!src.attackTargets) src.attackTargets = [];
-      src.attackTargets.push({
-        cityId: tgt.id,
-        preWarPercent: 50,
-        postRevivePercent: 50,
-        priority: 1,
-        attackStartTime: '19:00',
-      });
+        if(!src.attackTargets) src.attackTargets = [];
+        src.attackTargets.push({
+          cityId: tgt.id,
+          preWarPercent: 50,
+          postRevivePercent: 50,
+          priority: 1,
+          attackStartTime: '19:00',
+        });
 
-      if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-
-      markDirty(src.id);
-      render();
-      if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
-      return;  // 成功新增，結束
+        if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+        markDirty(src.id);
+        render();
+        if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+        return;
+      }
     }
+
+    alert('已無新的宣戰組合可新增（所有可能的進攻方向都已建立）');
   }
 
-  /* 所有組合都已建立 */
-  alert('已無新的宣戰組合可新增（所有可能的進攻方向都已建立）');
-}
+  /* ============================================================
+     v8.6.1：手動新增區
+     ============================================================ */
 
+  /* 渲染手動新增區的下拉 */
+  function renderAddForm(){
+    const srcSel = document.getElementById('warAddSrc');
+    if(!srcSel) return;
+
+    const curSrc = srcSel.value;
+
+    srcSel.innerHTML = '<option value="">選擇出兵城...</option>' +
+      state.cities.map(c => {
+        const a = state.alliances.find(al => al.id === c.allianceId);
+        const icon = (a && a.icon) ? a.icon + ' ' : '';
+        return `<option value="${c.id}" ${c.id === curSrc ? 'selected' : ''}>${icon}${esc(c.name)}</option>`;
+      }).join('');
+
+    updateAddTargetOptions();
+  }
+
+  /* 更新目標城下拉（依出兵城 + 類型過濾） */
+  function updateAddTargetOptions(){
+    const srcSel = document.getElementById('warAddSrc');
+    const typeSel = document.getElementById('warAddType');
+    const tgtSel = document.getElementById('warAddTgt');
+    const hintEl = document.getElementById('warAddHint');
+    if(!srcSel || !typeSel || !tgtSel) return;
+
+    const srcId = srcSel.value;
+    const type = typeSel.value;
+
+    if(!srcId){
+      tgtSel.innerHTML = '<option value="">請先選擇出兵城...</option>';
+      if(hintEl) hintEl.textContent = '＊「自動新增」會依序找下一個未建立的組合（含所有方向）。';
+      return;
+    }
+
+    const targets = getTargetsForType(srcId, type);
+
+    if(targets.length === 0){
+      tgtSel.innerHTML = '<option value="">（無可用目標城）</option>';
+      if(hintEl) hintEl.textContent =
+        type === 'attack'
+          ? '⚠️ 此出兵城沒有可進攻的目標城（依陣營規則）'
+          : '⚠️ 此出兵城沒有可協防的目標城（需同一盟 + 有路線接觸）';
+      return;
+    }
+
+    const curTgt = tgtSel.value;
+    const availableTargets = targets.filter(c => !findWarLine(srcId, c.id));
+
+    if(availableTargets.length === 0){
+      tgtSel.innerHTML = '<option value="">（所有目標都已建立宣戰）</option>';
+      if(hintEl) hintEl.textContent = '⚠️ 此出兵城的所有可能方向都已建立宣戰';
+      return;
+    }
+
+    tgtSel.innerHTML = '<option value="">選擇目標城...</option>' +
+      availableTargets.map(c => {
+        const a = state.alliances.find(al => al.id === c.allianceId);
+        const icon = (a && a.icon) ? a.icon + ' ' : '';
+        return `<option value="${c.id}" ${c.id === curTgt ? 'selected' : ''}>${icon}${esc(c.name)}</option>`;
+      }).join('');
+
+    if(hintEl) hintEl.textContent = `＊可選 ${availableTargets.length} 個目標城`;
+  }
+
+  /* 手動新增宣戰 */
+  function doAddManual(){
+    const srcSel = document.getElementById('warAddSrc');
+    const typeSel = document.getElementById('warAddType');
+    const tgtSel = document.getElementById('warAddTgt');
+    if(!srcSel || !typeSel || !tgtSel) return;
+
+    const srcId = srcSel.value;
+    const type = typeSel.value;
+    const tgtId = tgtSel.value;
+
+    if(!srcId){ alert('請選擇出兵城'); return; }
+    if(!tgtId){ alert('請選擇目標城'); return; }
+
+    const src = state.cities.find(c => c.id === srcId);
+    const tgt = state.cities.find(c => c.id === tgtId);
+    if(!src || !tgt){ alert('找不到城池'); return; }
+
+    const validTargets = getTargetsForType(srcId, type);
+    if(!validTargets.find(c => c.id === tgtId)){
+      alert(type === 'attack'
+        ? '此出兵城無法進攻該目標城（依陣營規則）'
+        : '此出兵城無法協防該目標城（需同一盟 + 有路線接觸）');
+      return;
+    }
+
+    if(findWarLine(srcId, tgtId)){
+      alert(`「${src.name}」→「${tgt.name}」已有宣戰指示`);
+      return;
+    }
+
+    const isAttack = (type === 'attack');
+    const arr = isAttack ? 'attackTargets' : 'defendTargets';
+    if(!src[arr]) src[arr] = [];
+    src[arr].push({
+      cityId: tgtId,
+      preWarPercent: 50,
+      postRevivePercent: 50,
+      priority: 1,
+      attackStartTime: isAttack ? '19:00' : '',
+    });
+
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+    markDirty(src.id);
+
+    render();
+    renderAddForm();
+
+    if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+    logSystem(`✅ 已新增宣戰：${src.name} → ${tgt.name}（${isAttack ? '進攻' : '協防'}）`);
+  }
+
+  /* ============================================================
+     渲染清單
+     ============================================================ */
   function computeEndTime(startTime, limitMin){
     if(!startTime) return '待設定';
     const m = hhmmToMinutes(startTime);
@@ -2012,122 +2130,124 @@ const WarManager = (() => {
 
     const lines = getAllWarLines();
     if(lines.length === 0){
-      container.innerHTML = '<div class="list-container-empty">尚無宣戰指示。點下方「➕ 新增宣戰指示」開始。</div>';
-      return;
-    }
-
-    const sorted = sortLines(lines, getSortPref());
-    const grouped = groupLines(sorted, getGroupPref());
-    const limitMin = state.settings.timeLimitMin || 120;
-
-    const theadHtml = `<thead><tr>
-      <th style="width:80px;">開始時間</th>
-      <th style="width:80px;">結束時間</th>
-      <th>出兵城</th>
-      <th style="width:100px;">類型</th>
-      <th>目標城</th>
-      <th style="width:50px;">操作</th>
-    </tr></thead>`;
-
-    const renderRow = (l, idx) => {
-      const src = state.cities.find(c => c.id === l.srcId);
-      const tgt = state.cities.find(c => c.id === l.tgtId);
-      const isAttack = l.type === 'attack';
-      const timeVal = isAttack ? (l.attackStartTime || '19:00') : '';
-      const endTime = isAttack
-        ? computeEndTime(timeVal, limitMin)
-        : computeEndTime(
-            (() => {
-              if(!tgt) return '';
-              const incomingTimes = [];
-              for(const o of state.cities){
-                for(const t of (o.attackTargets || [])){
-                  if(t.cityId === tgt.id && t.attackStartTime) incomingTimes.push(t.attackStartTime);
-                }
-              }
-              if(incomingTimes.length === 0) return '';
-              incomingTimes.sort();
-              return incomingTimes[0];
-            })(),
-            limitMin
-          );
-
-      const rowPending = !l.tgtId;
-      const srcOpts = state.cities.map(c =>
-        `<option value="${c.id}" ${c.id === l.srcId ? 'selected' : ''}>${esc(c.name)}</option>`
-      ).join('');
-      const srcIcon = src ? (() => {
-        const a = state.alliances.find(al => al.id === src.allianceId);
-        return (a && a.icon) ? a.icon + ' ' : '';
-      })() : '';
-      const typeOpts = `
-        <option value="attack" ${isAttack ? 'selected' : ''}>⚔️ 進攻</option>
-        <option value="assist" ${!isAttack ? 'selected' : ''}>🤝 協防</option>
-      `;
-      const validTargets = getTargetsForType(l.srcId, l.type);
-      let tgtOpts = '';
-      if(!l.tgtId){
-        tgtOpts = `<option value="">（待設定）</option>`;
-      } else if(validTargets.length === 0){
-        tgtOpts = `<option value="">（無可用目標）</option>`;
-      } else {
-        if(!validTargets.find(c => c.id === l.tgtId) && tgt){
-          tgtOpts += `<option value="${tgt.id}" selected>${esc(tgt.name)}（不符）</option>`;
-        }
-        tgtOpts += validTargets.map(c =>
-          `<option value="${c.id}" ${c.id === l.tgtId ? 'selected' : ''}>${esc(c.name)}</option>`
-        ).join('');
-      }
-      const timeCell = isAttack
-        ? `<input type="time" class="inline-time" value="${timeVal}" data-war-time="1" data-idx="${idx}">`
-        : `<span class="col-time end">—</span>`;
-      const endCell = `<span class="col-time end">${esc(endTime)}</span>`;
-      const srcCell = `<div style="display:flex;align-items:center;gap:4px;">
-        ${srcIcon ? `<span class="alliance-icon">${srcIcon}</span>` : ''}
-        <select class="inline-select" data-war-src="1" data-idx="${idx}" style="flex:1;">${srcOpts}</select>
-      </div>`;
-      const tgtCell = `<select class="inline-select" data-war-tgt="1" data-idx="${idx}">${tgtOpts}</select>`;
-
-      return `<tr class="${rowPending ? 'row-pending' : ''}" data-war-row="${idx}">
-        <td>${timeCell}</td>
-        <td>${endCell}</td>
-        <td>${srcCell}</td>
-        <td><select class="inline-select col-type ${isAttack ? 'attack' : 'assist'}" data-war-type="1" data-idx="${idx}">${typeOpts}</select></td>
-        <td>${tgtCell}</td>
-        <td class="col-del"><button class="btn btn-danger btn-sm" data-war-del="1" data-idx="${idx}">🗑️</button></td>
-      </tr>`;
-    };
-
-    let html = '';
-    if(getGroupPref() === 'none'){
-      html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
+      container.innerHTML = '<div class="list-container-empty">尚無宣戰指示。點下方「➕ 新增」或「⚡ 自動新增」開始。</div>';
     } else {
-      let idxCounter = 0;
-      html = grouped.map(g => {
-        const rows = g.items.map(l => renderRow(l, idxCounter++)).join('');
-        return `<div class="list-group open">
-          <div class="list-group-header">
-            <span class="toggle-icon">▶</span>
-            <span class="group-title">${esc(g.title)}</span>
-            <span class="group-count">${g.items.length} 條</span>
-          </div>
-          <div class="list-group-body">
-            <table class="list-table">${theadHtml}<tbody>${rows}</tbody></table>
-          </div>
+      const sorted = sortLines(lines, getSortPref());
+      const grouped = groupLines(sorted, getGroupPref());
+      const limitMin = state.settings.timeLimitMin || 120;
+
+      const theadHtml = `<thead><tr>
+        <th style="width:80px;">開始時間</th>
+        <th style="width:80px;">結束時間</th>
+        <th>出兵城</th>
+        <th style="width:100px;">類型</th>
+        <th>目標城</th>
+        <th style="width:50px;">操作</th>
+      </tr></thead>`;
+
+      const renderRow = (l, idx) => {
+        const src = state.cities.find(c => c.id === l.srcId);
+        const tgt = state.cities.find(c => c.id === l.tgtId);
+        const isAttack = l.type === 'attack';
+        const timeVal = isAttack ? (l.attackStartTime || '19:00') : '';
+        const endTime = isAttack
+          ? computeEndTime(timeVal, limitMin)
+          : computeEndTime(
+              (() => {
+                if(!tgt) return '';
+                const incomingTimes = [];
+                for(const o of state.cities){
+                  for(const t of (o.attackTargets || [])){
+                    if(t.cityId === tgt.id && t.attackStartTime) incomingTimes.push(t.attackStartTime);
+                  }
+                }
+                if(incomingTimes.length === 0) return '';
+                incomingTimes.sort();
+                return incomingTimes[0];
+              })(),
+              limitMin
+            );
+
+        const rowPending = !l.tgtId;
+        const srcOpts = state.cities.map(c =>
+          `<option value="${c.id}" ${c.id === l.srcId ? 'selected' : ''}>${esc(c.name)}</option>`
+        ).join('');
+        const srcIcon = src ? (() => {
+          const a = state.alliances.find(al => al.id === src.allianceId);
+          return (a && a.icon) ? a.icon + ' ' : '';
+        })() : '';
+        const typeOpts = `
+          <option value="attack" ${isAttack ? 'selected' : ''}>⚔️ 進攻</option>
+          <option value="assist" ${!isAttack ? 'selected' : ''}>🤝 協防</option>
+        `;
+        const validTargets = getTargetsForType(l.srcId, l.type);
+        let tgtOpts = '';
+        if(!l.tgtId){
+          tgtOpts = `<option value="">（待設定）</option>`;
+        } else if(validTargets.length === 0){
+          tgtOpts = `<option value="">（無可用目標）</option>`;
+        } else {
+          if(!validTargets.find(c => c.id === l.tgtId) && tgt){
+            tgtOpts += `<option value="${tgt.id}" selected>${esc(tgt.name)}（不符）</option>`;
+          }
+          tgtOpts += validTargets.map(c =>
+            `<option value="${c.id}" ${c.id === l.tgtId ? 'selected' : ''}>${esc(c.name)}</option>`
+          ).join('');
+        }
+        const timeCell = isAttack
+          ? `<input type="time" class="inline-time" value="${timeVal}" data-war-time="1" data-idx="${idx}">`
+          : `<span class="col-time end">—</span>`;
+        const endCell = `<span class="col-time end">${esc(endTime)}</span>`;
+        const srcCell = `<div style="display:flex;align-items:center;gap:4px;">
+          ${srcIcon ? `<span class="alliance-icon">${srcIcon}</span>` : ''}
+          <select class="inline-select" data-war-src="1" data-idx="${idx}" style="flex:1;">${srcOpts}</select>
         </div>`;
-      }).join('');
+        const tgtCell = `<select class="inline-select" data-war-tgt="1" data-idx="${idx}">${tgtOpts}</select>`;
+
+        return `<tr class="${rowPending ? 'row-pending' : ''}" data-war-row="${idx}">
+          <td>${timeCell}</td>
+          <td>${endCell}</td>
+          <td>${srcCell}</td>
+          <td><select class="inline-select col-type ${isAttack ? 'attack' : 'assist'}" data-war-type="1" data-idx="${idx}">${typeOpts}</select></td>
+          <td>${tgtCell}</td>
+          <td class="col-del"><button class="btn btn-danger btn-sm" data-war-del="1" data-idx="${idx}">🗑️</button></td>
+        </tr>`;
+      };
+
+      let html = '';
+      if(getGroupPref() === 'none'){
+        html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
+      } else {
+        let idxCounter = 0;
+        html = grouped.map(g => {
+          const rows = g.items.map(l => renderRow(l, idxCounter++)).join('');
+          return `<div class="list-group open">
+            <div class="list-group-header">
+              <span class="toggle-icon">▶</span>
+              <span class="group-title">${esc(g.title)}</span>
+              <span class="group-count">${g.items.length} 條</span>
+            </div>
+            <div class="list-group-body">
+              <table class="list-table">${theadHtml}<tbody>${rows}</tbody></table>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      container.innerHTML = html;
+
+      container.querySelectorAll('.list-group-header').forEach(h => {
+        h.addEventListener('click', () => {
+          const group = h.closest('.list-group');
+          if(group) group.classList.toggle('open');
+        });
+      });
+
+      bindWarRowEvents(container, sorted);
     }
 
-    container.innerHTML = html;
-
-    container.querySelectorAll('.list-group-header').forEach(h => {
-      h.addEventListener('click', () => {
-        const group = h.closest('.list-group');
-        if(group) group.classList.toggle('open');
-      });
-    });
-
-    bindWarRowEvents(container, sorted);
+    /* v8.6.1：重繪手動新增區的下拉 */
+    renderAddForm();
   }
 
   function bindWarRowEvents(container, sortedLines){
@@ -2136,8 +2256,7 @@ const WarManager = (() => {
         const idx = parseInt(this.dataset.idx, 10);
         const line = sortedLines[idx];
         if(!line) return;
-        const newTime = this.value || '19:00';
-        updateWarLineTime(line, newTime);
+        updateWarLineTime(line, this.value || '19:00');
       });
     });
     container.querySelectorAll('[data-war-src]').forEach(sel => {
@@ -2287,11 +2406,15 @@ const WarManager = (() => {
     if(window.SLG.saveState) window.SLG.saveState();
   }
 
-  return { init, render, findWarLine, isBeingAttacked };
+  return {
+    init, render, findWarLine, isBeingAttacked,
+    /* v8.6.1：暴露手動新增相關函式 */
+    renderAddForm, updateAddTargetOptions,
+  };
 })();
 
 /* ============================================================
-   DeployInstr — 出兵清單（沿用 v8.5.6 清單形式）
+   DeployInstr — 出兵清單（沿用 v8.5.6）
    ============================================================ */
 const DeployInstr = (() => {
   const LS_SORT_KEY = 'slg_deploy_sort_v856';
@@ -2829,8 +2952,7 @@ const GameMap = (() => {
   let routeDragEnd = null;
   let hoveredCityId = null;
 
-  /* v8.6.0：高亮 */
-  let highlight = null;  /* { cityIds:[], routeKeys:[] } */
+  let highlight = null;
 
   let pinchStartDist = 0;
   let pinchStartScale = 1;
@@ -2896,7 +3018,7 @@ const GameMap = (() => {
       });
     }
 
-    /* v8.6.0：訂閱距離高亮事件 */
+    /* 訂閱距離高亮事件 */
     if(window.SLG.EVT && window.SLG.on){
       window.SLG.on(window.SLG.EVT.DISTANCE_HIGHLIGHT, (h) => {
         highlight = h;
@@ -3271,7 +3393,6 @@ const GameMap = (() => {
       }
     }
 
-    /* 高亮：邊 */
     const highlightedRoutes = new Set(highlight ? highlight.routeKeys : []);
 
     for(const r of (state.routes || [])){
@@ -3309,7 +3430,6 @@ const GameMap = (() => {
       }
     }
 
-    /* 高亮：節點集合 */
     const highlightedCities = new Set(highlight ? highlight.cityIds : []);
 
     for(const c of state.cities){
@@ -3393,7 +3513,6 @@ const GameMap = (() => {
     applyView();
   }
 
-  /* v8.6.0：設定高亮 */
   function setHighlight(h){
     highlight = h;
     render();
@@ -3482,7 +3601,7 @@ function renderOverview(){
 }
 
 /* ============================================================
-   距離計算工具（v8.6.0 新增）
+   距離計算工具
    ============================================================ */
 const DistanceTool = (() => {
   let currentResult = null;
@@ -3491,7 +3610,6 @@ const DistanceTool = (() => {
     const btn = document.getElementById('btnCalcDistance');
     if(btn) btn.addEventListener('click', doCalculate);
 
-    /* 支援 Enter */
     const srcSel = document.getElementById('distSrcCity');
     const tgtSel = document.getElementById('distTgtCity');
     [srcSel, tgtSel].forEach(sel => {
@@ -3500,7 +3618,6 @@ const DistanceTool = (() => {
       });
     });
 
-    /* 顯示模式切換 */
     document.querySelectorAll('.distance-view-tab').forEach(tab => {
       tab.addEventListener('click', function(){
         const view = this.dataset.distView || 'number';
@@ -3509,7 +3626,6 @@ const DistanceTool = (() => {
         this.classList.add('active');
         renderResult();
 
-        /* 地圖模式：切到地圖 Tab 並高亮 */
         if(view === 'map'){
           if(currentResult) setDistanceHighlight(currentResult);
           const mapBtn = document.querySelector('.top-nav button[data-tab="tab-map"]');
@@ -3548,16 +3664,11 @@ const DistanceTool = (() => {
 
     const result = computeCityDistance(srcId, tgtId);
     currentResult = result;
-    if(!result){
-      alert('計算失敗');
-      return;
-    }
+    if(!result){ alert('計算失敗'); return; }
 
-    /* 若目前是地圖模式，立即高亮 */
     if(state.distanceView === 'map'){
       setDistanceHighlight(result);
     }
-
     renderResult();
   }
 
@@ -3881,7 +3992,7 @@ function renderSandboxData(){
 }
 
 /* ============================================================
-   盟表單輔助（v8.6.0：盟徽禁止重複）
+   盟表單輔助
    ============================================================ */
 function updateAllianceAvgPowerPreview(){
   const mc = parseFloat(document.getElementById('allyMemberCount').value) || 0;
@@ -3907,7 +4018,6 @@ function resetAllianceForm(){
   document.getElementById('btnCancelAllianceEdit').style.display = 'none';
   document.getElementById('btnSaveAlliance').textContent = '💾 儲存';
   updateAllianceAvgPowerPreview();
-  /* 更新盟徽快速選擇 */
   if(R.renderIconQuickRow) R.renderIconQuickRow();
   R.renderAlliances();
 }
@@ -3926,7 +4036,6 @@ function startEditAlliance(id){
   document.getElementById('btnCancelAllianceEdit').style.display = 'inline-flex';
   document.getElementById('btnSaveAlliance').textContent = '💾 更新';
   updateAllianceAvgPowerPreview();
-  /* 更新盟徽快速選擇（排除自己）*/
   if(R.renderIconQuickRow) R.renderIconQuickRow();
   R.renderAlliances();
 }
@@ -4118,5 +4227,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.6.0）
+ * ui.js 結束（v8.6.1）
  * ========================================================================== */
