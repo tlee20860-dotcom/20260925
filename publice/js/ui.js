@@ -1597,35 +1597,44 @@ const WarManager = (() => {
     return false;
   }
 
-  /* 依類型取得可選目標城 */
-  function getTargetsForType(srcCityId, type){
-    if(type === 'attack'){
-      let targets = state.cities.filter(c =>
-        c.id !== srcCityId &&
-        (c.side === 'enemy' || c.side === 'common_enemy' || c.side === 'npc')
-      );
-      /* v8.5.5：若設定需要路線接觸，進一步過濾 */
-      if(state.settings.attackRequireRoute){
-        targets = targets.filter(c => window.SLG.findRoute(srcCityId, c.id));
-      }
-      return targets;
-    }
+/* 依類型取得可選目標城 */
+function getTargetsForType(srcCityId, type){
+  if(type === 'attack'){
+    const src = state.cities.find(c => c.id === srcCityId);
+    if(!src) return [];
+    const srcSide = src.side || 'npc';
+    /* v8.5.5 修正：使用 ATTACK_RULES 動態判斷，考慮出兵城自己的陣營 */
+    const allowedSides = ATTACK_RULES[srcSide] || ['self','ally','enemy','common_enemy','npc'];
 
-    if(type === 'assist'){
-      const src = state.cities.find(c => c.id === srcCityId);
-      if(!src) return [];
-      const srcAllianceId = src.allianceId || '';
-      if(!srcAllianceId) return [];
-
-      return state.cities.filter(c => {
-        if(c.id === srcCityId) return false;
-        if((c.allianceId || '') !== srcAllianceId) return false;
-        const alliance = state.alliances.find(a => a.id === srcAllianceId);
-        if(alliance && alliance.name === 'NPC') return false;
-        if(!window.SLG.findRoute(srcCityId, c.id)) return false;
-        return true;
-      });
+    let targets = state.cities.filter(c =>
+      c.id !== srcCityId &&
+      allowedSides.includes(c.side)
+    );
+    /* v8.5.5：若設定需要路線接觸，進一步過濾 */
+    if(state.settings.attackRequireRoute){
+      targets = targets.filter(c => window.SLG.findRoute(srcCityId, c.id));
     }
+    return targets;
+  }
+
+  if(type === 'assist'){
+    const src = state.cities.find(c => c.id === srcCityId);
+    if(!src) return [];
+    const srcAllianceId = src.allianceId || '';
+    if(!srcAllianceId) return [];
+
+    return state.cities.filter(c => {
+      if(c.id === srcCityId) return false;
+      if((c.allianceId || '') !== srcAllianceId) return false;
+      const alliance = state.alliances.find(a => a.id === srcAllianceId);
+      if(alliance && alliance.name === 'NPC') return false;
+      if(!window.SLG.findRoute(srcCityId, c.id)) return false;
+      return true;
+    });
+  }
+
+  return [];
+}
 
     return [];
   }
