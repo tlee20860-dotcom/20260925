@@ -1635,10 +1635,6 @@ function getTargetsForType(srcCityId, type){
 
   return [];
 }
-
-    return [];
-  }
-
   /* 檢查某方向是否已有宣戰 */
   function findWarLine(srcId, tgtId){
     if(!tgtId) return null;
