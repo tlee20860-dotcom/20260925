@@ -1,6 +1,6 @@
 # ============================================================================
 # Cloudflare Pages _headers
-# v8.5
+# v8.5.6 — 方案 A：移除 ?v= 戳記，改用 HTTP 快取控制
 # ============================================================================
 
 /*
@@ -8,43 +8,40 @@
   Referrer-Policy: strict-origin-when-cross-origin
 
 # ----------------------------------------------------------------------------
-# HTML：短快取，改版立即生效
+# HTML：每次請求驗證 ETag（改版即時生效）
 # ----------------------------------------------------------------------------
 /index.html
-  Cache-Control: public, max-age=60
+  Cache-Control: public, max-age=0, must-revalidate
 
 /
-  Cache-Control: public, max-age=60
+  Cache-Control: public, max-age=0, must-revalidate
 
 # ----------------------------------------------------------------------------
-# CSS：中等快取（5 分鐘）
+# CSS / JS：最長快取 60 秒
 # ----------------------------------------------------------------------------
 /style.css
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
-# ----------------------------------------------------------------------------
-# JS：全部改為 5 分鐘快取（避免舊版永久快取）
-# ----------------------------------------------------------------------------
 /js/simulation.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
 /js/core.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
 /js/firebase.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
 /js/auth.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
 /js/data.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
 /js/ui.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
 /js/summary.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
 
 /js/main.js
-  Cache-Control: public, max-age=300
+  Cache-Control: public, max-age=60
