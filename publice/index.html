@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.5.6</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.0</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -15,13 +15,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.6</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.0</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.5.6</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.0</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -74,7 +74,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.5.6</span>
+      <span class="sidebar-version">v8.6.0</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -279,32 +279,37 @@
       </div>
     </section>
 
-    <!-- ============ 參戰盟 ============ -->
+    <!-- ============ 參戰盟（v8.6.0） ============ -->
     <section id="tab-alliances" class="tab-content">
       <div class="card">
-        <div class="card-title">🤝 同盟清單</div>
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span>🤝 參戰盟清單</span>
+          <button class="btn btn-ghost btn-sm" id="btnResetAllianceOrder">🔄 重置排序</button>
+        </div>
+        <div class="text-dim" style="margin-bottom:8px;font-size:10px;">
+          ＊拖曳左側把手 ⠿ 可調整順序（滑鼠 / 觸控皆支援）
+        </div>
         <div class="ally-table-wrap">
-          <table class="ally-table">
+          <table class="ally-table" id="allianceTable">
             <thead>
               <tr>
+                <th style="width:32px;"></th>
                 <th>盟名稱</th>
                 <th>陣營</th>
                 <th class="col-num">總人數</th>
                 <th class="col-num">總戰力</th>
-                <th class="col-num">已分配</th>
-                <th class="col-num">餘下</th>
-                <th class="col-num">佔比</th>
+                <th class="col-num">平均戰力</th>
                 <th class="col-actions">操作</th>
               </tr>
             </thead>
             <tbody id="allianceTableBody">
-              <tr><td colspan="8" class="ally-table-empty">尚無同盟資料</td></tr>
+              <tr><td colspan="7" class="ally-table-empty">尚無同盟資料</td></tr>
             </tbody>
           </table>
         </div>
-        <div class="card-title mt-12" id="allyFormTitle">➕ 新增同盟</div>
+        <div class="card-title mt-12" id="allyFormTitle">➕ 新增參戰盟</div>
         <div class="form-row">
-          <div style="flex:0 0 80px;"><label>盟徽</label><input type="text" id="allyIcon" placeholder="🌌" maxlength="8" style="text-align:center;font-size:18px;"></div>
+          <div style="flex:0 0 80px;"><label>盟徽</label><input type="text" id="allyIcon" placeholder="⚔️" maxlength="8" style="text-align:center;font-size:18px;"></div>
           <div style="flex:2;"><label>盟名稱</label><input type="text" id="allyName" placeholder="同盟名稱" maxlength="20"></div>
           <div style="flex:1.2;"><label>陣營</label>
             <select id="allySide">
@@ -328,42 +333,29 @@
         <div class="form-row" style="margin-top:6px;">
           <div style="flex:1;"><label>平均戰力（自動）</label><input type="text" id="allyAvgPower" readonly value="0 萬"></div>
         </div>
-        <div class="icon-quick-row">
+
+        <!-- 盟徽快速選擇（v8.6.0：擴充兵種 emoji、禁止重複） -->
+        <div class="icon-quick-row" id="iconQuickRow">
           <span class="icon-quick-label">快速選擇盟徽：</span>
-          <button type="button" class="icon-quick" data-icon="🌌">🌌</button>
-          <button type="button" class="icon-quick" data-icon="⚔️">⚔️</button>
-          <button type="button" class="icon-quick" data-icon="🛡️">🛡️</button>
-          <button type="button" class="icon-quick" data-icon="🏹">🏹</button>
-          <button type="button" class="icon-quick" data-icon="🗡️">🗡️</button>
-          <button type="button" class="icon-quick" data-icon="🔥">🔥</button>
-          <button type="button" class="icon-quick" data-icon="⚡">⚡</button>
-          <button type="button" class="icon-quick" data-icon="❄️">❄️</button>
-          <button type="button" class="icon-quick" data-icon="🌊">🌊</button>
-          <button type="button" class="icon-quick" data-icon="🏰">🏰</button>
-          <button type="button" class="icon-quick" data-icon="🚩">🚩</button>
-          <button type="button" class="icon-quick" data-icon="👑">👑</button>
-          <button type="button" class="icon-quick" data-icon="🐉">🐉</button>
-          <button type="button" class="icon-quick" data-icon="🦅">🦅</button>
-          <button type="button" class="icon-quick" data-icon="🐺">🐺</button>
-          <button type="button" class="icon-quick" data-icon="🦁">🦁</button>
-          <button type="button" class="icon-quick" data-icon="💀">💀</button>
-          <button type="button" class="icon-quick" data-icon="🌟">🌟</button>
-          <button type="button" class="icon-quick" data-icon="💎">💎</button>
-          <button type="button" class="icon-quick" data-icon="帝">帝</button>
-          <button type="button" class="icon-quick" data-icon="秦">秦</button>
-          <button type="button" class="icon-quick" data-icon="鼎">鼎</button>
-          <button type="button" class="icon-quick" data-icon="魏">魏</button>
-          <button type="button" class="icon-quick" data-icon="蜀">蜀</button>
-          <button type="button" class="icon-quick" data-icon="吳">吳</button>
-          <button type="button" class="icon-quick icon-clear" data-icon="">✕</button>
+          <!-- 由 JS 動態生成，已使用的會隱藏 -->
+        </div>
+      </div>
+
+      <!-- 盟對盟消耗比例矩陣（v8.6.0 補回） -->
+      <div class="card">
+        <div class="card-title">📊 盟對盟獨立消耗比例矩陣</div>
+        <div class="text-dim" style="margin-bottom:8px;font-size:10px;">
+          ＊單元格 = (X軍平均戰力 / (X軍 + Y軍平均戰力)) × 每分鐘總消耗隊數
+        </div>
+        <div class="matrix-wrap" id="allianceMatrixWrap">
+          <div class="text-dim" style="padding:20px;text-align:center;">尚無同盟資料</div>
         </div>
       </div>
     </section>
 
-    <!-- ============ 城池數據（v8.5.6） ============ -->
+    <!-- ============ 城池數據 ============ -->
     <section id="tab-cities" class="tab-content">
 
-      <!-- 🎯 推演啟動（置頂） -->
       <div class="card sim-launch-card">
         <div class="sim-launch-row">
           <div class="sim-launch-zone">
@@ -375,7 +367,6 @@
         <div class="sim-progress"><div class="sim-progress-bar" id="simProgress"></div></div>
       </div>
 
-      <!-- 子 Tab 導航 -->
       <div class="city-subtabs" id="citySubtabs">
         <button class="city-subtab active" data-city-view="overview">📊 概覽</button>
         <button class="city-subtab" data-city-view="zones">🗺️ 戰區</button>
@@ -385,7 +376,7 @@
         <button class="city-subtab" data-city-view="routes">🛣️ 路線</button>
       </div>
 
-      <!-- ── 子面板：📊 概覽 ── -->
+      <!-- ── 📊 概覽 ── -->
       <div class="city-subpanel active" id="cityPanel-overview">
         <div class="card">
           <div class="card-title">📊 沙盤統計</div>
@@ -420,7 +411,7 @@
         </div>
       </div>
 
-      <!-- ── 子面板：🗺️ 戰區 ── -->
+      <!-- ── 🗺️ 戰區 ── -->
       <div class="city-subpanel" id="cityPanel-zones">
         <div class="card">
           <div class="card-title">🗺️ 戰區管理</div>
@@ -435,7 +426,7 @@
         </div>
       </div>
 
-      <!-- ── 子面板：🏰 城池 ── -->
+      <!-- ── 🏰 城池 ── -->
       <div class="city-subpanel" id="cityPanel-cities">
         <div class="card">
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -447,16 +438,9 @@
           </div>
 
           <div class="city-list-filter">
-            <div>
-              <label>戰區</label>
-              <select id="cityFilterZone"><option value="all">全部</option></select>
-            </div>
-            <div>
-              <label>所屬盟</label>
-              <select id="cityFilterAlliance"><option value="all">全部</option></select>
-            </div>
-            <div>
-              <label>陣營</label>
+            <div><label>戰區</label><select id="cityFilterZone"><option value="all">全部</option></select></div>
+            <div><label>所屬盟</label><select id="cityFilterAlliance"><option value="all">全部</option></select></div>
+            <div><label>陣營</label>
               <select id="cityFilterSide">
                 <option value="all">全部</option>
                 <option value="self">本方</option>
@@ -466,10 +450,7 @@
                 <option value="npc">NPC</option>
               </select>
             </div>
-            <div style="flex:2;">
-              <label>搜尋</label>
-              <input type="text" id="citySearchInput" placeholder="城池名稱...">
-            </div>
+            <div style="flex:2;"><label>搜尋</label><input type="text" id="citySearchInput" placeholder="城池名稱..."></div>
           </div>
 
           <div class="city-batch-bar" id="cityBatchBar" style="display:none;">
@@ -515,9 +496,33 @@
             <div id="cityList"></div>
           </div>
         </div>
+
+        <!-- 城對城消耗比例矩陣（v8.6.0 新增） -->
+        <div class="card">
+          <div class="card-title">📊 城對城獨立消耗比例矩陣</div>
+          <div class="text-dim" style="margin-bottom:8px;font-size:10px;">
+            ＊單元格 = (X城平均戰力 / (X城 + Y城平均戰力)) × 每分鐘總消耗隊數
+          </div>
+          <div class="list-toolbar">
+            <div class="toolbar-item">
+              <label>戰區</label>
+              <select id="cityMatrixZone"><option value="all">全部</option></select>
+            </div>
+            <div class="toolbar-item">
+              <label>顯示範圍</label>
+              <select id="cityMatrixFilter">
+                <option value="warOnly" selected>僅有宣戰關係</option>
+                <option value="all">全部城池</option>
+              </select>
+            </div>
+          </div>
+          <div class="matrix-wrap" id="cityMatrixWrap">
+            <div class="text-dim" style="padding:20px;text-align:center;">尚無資料</div>
+          </div>
+        </div>
       </div>
 
-      <!-- ── 子面板：⚔️ 宣戰（v8.5.6：清單形式） ── -->
+      <!-- ── ⚔️ 宣戰 ── -->
       <div class="city-subpanel" id="cityPanel-war">
         <div class="card">
           <div class="card-title">⚔️ 宣戰清單</div>
@@ -527,7 +532,6 @@
             ＊協防：目標城需與出兵城同一盟、且路線上必須有接觸。
           </div>
 
-          <!-- 清單工具列 -->
           <div class="list-toolbar">
             <div class="toolbar-item">
               <label>排序</label>
@@ -549,16 +553,13 @@
             </div>
           </div>
 
-          <!-- 清單內容 -->
-          <div class="war-list-container" id="warListContainer">
-            <!-- 動態生成：表格或分組 -->
-          </div>
+          <div class="war-list-container" id="warListContainer"></div>
 
           <button class="btn btn-primary btn-sm mt-8" id="btnAddWarLine">➕ 新增宣戰指示</button>
         </div>
       </div>
 
-      <!-- ── 子面板：🎯 出兵（v8.5.6：清單形式） ── -->
+      <!-- ── 🎯 出兵 ── -->
       <div class="city-subpanel" id="cityPanel-deploy">
         <div class="card">
           <div class="card-title">🎯 出兵清單</div>
@@ -567,7 +568,6 @@
             ＊時間、出兵城、行動、目標城為唯讀（由宣戰控制）。
           </div>
 
-          <!-- 清單工具列 -->
           <div class="list-toolbar">
             <div class="toolbar-item">
               <label>排序</label>
@@ -587,15 +587,46 @@
             </div>
           </div>
 
-          <!-- 清單內容 -->
-          <div class="deploy-list-container" id="deployListContainer">
-            <!-- 動態生成：表格或分組 -->
-          </div>
+          <div class="deploy-list-container" id="deployListContainer"></div>
         </div>
       </div>
 
-      <!-- ── 子面板：🛣️ 路線 ── -->
+      <!-- ── 🛣️ 路線（v8.6.0：加距離計算） ── -->
       <div class="city-subpanel" id="cityPanel-routes">
+
+        <!-- 距離計算（v8.6.0 新增） -->
+        <div class="card distance-tool-card">
+          <div class="card-title">📏 距離計算</div>
+          <div class="text-dim" style="margin-bottom:8px;font-size:10px;">
+            ＊計算兩城之間的距離。路徑只能經過「同盟城」或「NPC 城」。<br>
+            ＊NPC 城需先佔領才能通過。
+          </div>
+
+          <div class="distance-input-row">
+            <div class="distance-input-item">
+              <label>起點城</label>
+              <select id="distSrcCity"></select>
+            </div>
+            <span class="distance-arrow">→</span>
+            <div class="distance-input-item">
+              <label>終點城</label>
+              <select id="distTgtCity"></select>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btnCalcDistance">🔍 計算</button>
+          </div>
+
+          <div class="distance-view-tabs">
+            <button class="distance-view-tab active" data-dist-view="number">📍 距離</button>
+            <button class="distance-view-tab" data-dist-view="path">🛣️ 路徑</button>
+            <button class="distance-view-tab" data-dist-view="map">🗺️ 地圖</button>
+          </div>
+
+          <div class="distance-result" id="distanceResult">
+            <div class="text-dim">請選擇起點與終點後點「計算」</div>
+          </div>
+        </div>
+
+        <!-- 路線管理 -->
         <div class="card">
           <div class="card-title">🛣️ 地圖路線管理</div>
           <div class="text-dim" style="margin-bottom:10px;">
@@ -719,6 +750,7 @@
             <button class="btn btn-ghost btn-sm" id="btnMapEditRoute">✏️ 編輯路線：關</button>
             <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
             <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
+            <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
             <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點、編輯模式下拖曳城池連線</span>
           </div>
           <div class="game-map-container" id="gameMapContainer">
@@ -826,13 +858,8 @@
           <table class="sandbox-table">
             <thead>
               <tr>
-                <th>檔案名稱</th>
-                <th>擁有者</th>
-                <th class="col-num">城池</th>
-                <th class="col-num">同盟</th>
-                <th class="col-num">戰區</th>
-                <th>更新時間</th>
-                <th class="col-actions">操作</th>
+                <th>檔案名稱</th><th>擁有者</th><th class="col-num">城池</th><th class="col-num">同盟</th>
+                <th class="col-num">戰區</th><th>更新時間</th><th class="col-actions">操作</th>
               </tr>
             </thead>
             <tbody id="sandboxTableBody">
@@ -847,9 +874,7 @@
         <div class="sandbox-table-wrap">
           <table class="sandbox-table">
             <thead>
-              <tr>
-                <th>房間</th><th>城池</th><th class="col-num">同盟</th><th class="col-num">戰區</th><th>更新時間</th><th class="col-actions">操作</th>
-              </tr>
+              <tr><th>房間</th><th>城池</th><th class="col-num">同盟</th><th class="col-num">戰區</th><th>更新時間</th><th class="col-actions">操作</th></tr>
             </thead>
             <tbody id="roomSandboxTableBody">
               <tr><td colspan="6" class="sandbox-empty">載入中...</td></tr>
@@ -970,7 +995,7 @@
     <!-- ============ 戰鬥規則 ============ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.5.6）</div>
+        <div class="card-title">📖 城戰計算規則（v8.6.0）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1027,41 +1052,39 @@
             <li><b>協防</b>：需與出兵城同一盟、且路線上必須有接觸。</li>
             <li><b>去重</b>：每個方向（A→B）只能一種宣戰類型。</li>
             <li><b>防守開始時間推算</b>：以所有進攻該城的宣戰中，最早的「開始時間」為準。</li>
-            <li><b>清單可排序</b>：時間 / 盟 / 類型。</li>
-            <li><b>清單可分組</b>：無 / 城 / 類型 / 盟 / 時間。</li>
           </ul>
           <h2>九、出兵清單</h2>
           <ul>
             <li>由宣戰衍生，設定各路線的戰前% / 復活% / 順序。</li>
-            <li><b>時間 / 出兵城 / 行動 / 目標城</b>為唯讀。</li>
-            <li><b>清單可排序</b>：盟 / 類型。</li>
-            <li><b>清單可分組</b>：無 / 城 / 類型 / 盟。</li>
           </ul>
-          <h2>十、協作模式</h2>
+          <h2>十、距離計算（v8.6.0）</h2>
+          <ul>
+            <li><b>可通行規則</b>：起點盟的城 + NPC 城（NPC 需佔領才能通過）。</li>
+            <li><b>演算法</b>：BFS 最短路徑。</li>
+            <li><b>顯示模式</b>：距離 / 路徑 / 地圖高亮。</li>
+          </ul>
+          <h2>十一、消耗比例矩陣（v8.6.0）</h2>
+          <ul>
+            <li><b>盟對盟</b>：單元格 = (對手盟均戰 / (我方盟 + 對手盟均戰)) × 每分鐘總消耗隊數。</li>
+            <li><b>城對城</b>：單元格 = (對手城均戰 / (我方城 + 對手城均戰)) × 每分鐘總消耗隊數。</li>
+          </ul>
+          <h2>十二、協作模式</h2>
           <ul>
             <li><b>個人雲端沙盤</b>：每個帳號一份，即時自動同步。</li>
             <li><b>房間雲端沙盤</b>：房主/幹部+手動上載。</li>
-            <li><b>沙盤數據 Tab</b>：查看所有沙盤，載入到自己的。</li>
-            <li><b>Excel 協作</b>：CSV 或複製貼上批次匯入。</li>
           </ul>
-          <h2>十一、帳號與權限</h2>
+          <h2>十三、帳號與權限</h2>
           <ul>
             <li><b>超級管理員</b>：最高權限。</li>
             <li><b>管理員</b>：可停用帳號、修改 extraPerms。</li>
             <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
             <li><b>成員</b>：本機推演、加入房間、管理自己帳號。</li>
           </ul>
-          <h2>十二、推演總結</h2>
+          <h2>十四、快取策略</h2>
           <ul>
-            <li>推演結束後，可至「📊 推演總結」Tab 查看結果。</li>
-            <li>顯示：盟兵力分佈、城池最終狀態、推演重點、時間軸。</li>
-          </ul>
-          <h2>十三、快取策略（v8.5.6）</h2>
-          <ul>
-            <li>移除 URL 查詢字串（<code>?v=...</code>）。</li>
+            <li>由 <code>_headers</code> 控制，改版不用手動換戳記。</li>
             <li><b>HTML</b>：<code>max-age=0, must-revalidate</code>（每次驗證 ETag）。</li>
             <li><b>CSS / JS</b>：<code>max-age=60</code>（最長快取 60 秒）。</li>
-            <li>由 <code>_headers</code> 控制，改版不用手動換戳記。</li>
           </ul>
         </div>
       </div>
@@ -1164,9 +1187,7 @@
     <div class="sandbox-table-wrap" style="max-height:50vh;">
       <table class="sandbox-table">
         <thead>
-          <tr>
-            <th>檔案名稱</th><th>擁有者</th><th class="col-num">城池</th><th>更新時間</th><th class="col-actions">操作</th>
-          </tr>
+          <tr><th>檔案名稱</th><th>擁有者</th><th class="col-num">城池</th><th>更新時間</th><th class="col-actions">操作</th></tr>
         </thead>
         <tbody id="sandboxPickerTableBody">
           <tr><td colspan="5" class="sandbox-empty">載入中...</td></tr>
@@ -1184,14 +1205,8 @@
   <div class="modal-box" style="max-width:420px;">
     <h3 id="routeEditTitle">🛣️ 編輯路線</h3>
     <div class="modal-scroll">
-      <div class="param-item">
-        <label>城池 A</label>
-        <select id="re_cityA"></select>
-      </div>
-      <div class="param-item">
-        <label>城池 B</label>
-        <select id="re_cityB"></select>
-      </div>
+      <div class="param-item"><label>城池 A</label><select id="re_cityA"></select></div>
+      <div class="param-item"><label>城池 B</label><select id="re_cityB"></select></div>
       <div class="text-dim" id="routeEditHint" style="margin-top:6px;"></div>
     </div>
     <div class="modal-actions">

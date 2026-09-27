@@ -1,6 +1,6 @@
 /* ============================================================================
- * style.css — v8.5.6
- * 新增：單位標籤、宣戰清單、出兵清單、排序/分組工具列、分組摺疊
+ * style.css — v8.6.0
+ * 新增：拖曳排序、距離計算、消耗矩陣
  * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
@@ -239,9 +239,7 @@ select{
 .city-card.overdraft{border-color:var(--neon-red);box-shadow:0 0 12px rgba(239,68,68,.35)}
 .city-card.capital{border-color:var(--neon-yellow);box-shadow:0 0 12px rgba(255,204,0,.25)}
 
-/* ============================================================
-   v8.5.6：輸入框單位標籤
-   ============================================================ */
+/* ============ v8.5.6：輸入框單位標籤 ============ */
 .input-with-unit{
   display:flex;align-items:stretch;
   background:var(--bg-input);
@@ -277,10 +275,201 @@ select{
   letter-spacing:.3px;
   user-select:none;
 }
-.input-with-unit input[readonly]{
-  background:#0a101a;
-  border-style:none;
+.input-with-unit input[readonly]{background:#0a101a;border-style:none;color:var(--text-dim);}
+
+/* ============ v8.6.0：拖曳排序 ============ */
+.ally-table .drag-handle{
+  width:32px;
+  text-align:center;
+  cursor:grab;
   color:var(--text-dim);
+  font-size:16px;
+  user-select:none;
+  padding:0;
+  letter-spacing:-2px;
+}
+.ally-table .drag-handle:hover{color:var(--neon-blue);}
+.ally-table .drag-handle:active{cursor:grabbing;}
+.ally-table tr.dragging{
+  opacity:.4;
+  background:rgba(68,170,255,.08);
+}
+.ally-table tr.drag-over-top td{
+  border-top:2px solid var(--neon-blue);
+}
+.ally-table tr.drag-over-bottom td{
+  border-bottom:2px solid var(--neon-blue);
+}
+.ally-table tr.no-drag{
+  /* 拖曳時鎖定，不顯示其他干擾 */
+}
+
+/* ============ v8.6.0：距離計算 ============ */
+.distance-tool-card{
+  background:linear-gradient(135deg,rgba(30,58,95,.35),rgba(42,74,111,.15));
+  border:1px solid rgba(68,170,255,.35);
+}
+.distance-input-row{
+  display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.distance-input-item{
+  flex:1;min-width:120px;
+}
+.distance-input-item label{
+  font-size:10px;
+  color:var(--text-dim);
+  font-weight:600;
+  margin-bottom:3px;
+}
+.distance-input-item select{font-size:12px;}
+.distance-arrow{
+  flex:0 0 auto;
+  color:var(--neon-blue);
+  font-size:18px;
+  font-weight:700;
+  padding-bottom:10px;
+}
+.distance-input-row .btn{flex:0 0 auto;}
+
+.distance-view-tabs{
+  display:flex;gap:4px;
+  border-bottom:1px solid var(--border);
+  padding-bottom:6px;
+  margin-bottom:10px;
+}
+.distance-view-tab{
+  flex:1;
+  background:var(--bg-input);
+  color:var(--text-secondary);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:6px 10px;
+  font-size:11px;
+  font-weight:700;
+  cursor:pointer;
+  font-family:inherit;
+  transition:all .15s;
+  letter-spacing:.3px;
+}
+.distance-view-tab:hover{color:var(--text-primary);}
+.distance-view-tab.active{
+  background:linear-gradient(135deg,#1e3a5f,#2a4a6f);
+  color:var(--neon-blue);
+  border-color:var(--neon-blue);
+}
+
+.distance-result{
+  background:#0a101a;
+  border:1px dashed var(--border);
+  border-radius:var(--radius-sm);
+  padding:12px;
+  font-size:12px;
+  line-height:1.7;
+  min-height:80px;
+}
+.distance-result .dist-block{
+  margin-bottom:10px;
+  padding:8px 10px;
+  border-radius:var(--radius-sm);
+  border-left:3px solid var(--neon-blue);
+  background:rgba(68,170,255,.06);
+}
+.distance-result .dist-block:last-child{margin-bottom:0;}
+.distance-result .dist-block.passable{
+  border-left-color:var(--neon-green);
+  background:rgba(34,255,136,.06);
+}
+.distance-result .dist-block.conquer{
+  border-left-color:var(--neon-yellow);
+  background:rgba(255,204,0,.06);
+}
+.distance-result .dist-block.no-route{
+  border-left-color:var(--neon-red);
+  background:rgba(255,68,102,.06);
+}
+.distance-result .dist-title{
+  font-weight:700;
+  font-size:12px;
+  margin-bottom:6px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.distance-result .dist-block.passable .dist-title{color:var(--neon-green);}
+.distance-result .dist-block.conquer .dist-title{color:var(--neon-yellow);}
+.distance-result .dist-block.no-route .dist-title{color:var(--neon-red);}
+.distance-result .dist-steps{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:13px;
+  font-weight:700;
+  color:var(--neon-blue);
+  margin-bottom:6px;
+}
+.distance-result .dist-path{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px;
+  font-size:12px;
+  margin-bottom:4px;
+}
+.distance-result .dist-node{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:2px 8px;
+  background:rgba(68,170,255,.12);
+  border:1px solid rgba(68,170,255,.35);
+  border-radius:10px;
+  font-size:11px;
+  white-space:nowrap;
+}
+.distance-result .dist-node.src{
+  background:rgba(34,255,136,.15);
+  border-color:rgba(34,255,136,.5);
+  color:var(--neon-green);
+}
+.distance-result .dist-node.tgt{
+  background:rgba(255,68,102,.15);
+  border-color:rgba(255,68,102,.5);
+  color:var(--neon-red);
+}
+.distance-result .dist-node.npc{
+  background:rgba(170,102,255,.15);
+  border-color:rgba(170,102,255,.5);
+  color:var(--neon-purple);
+}
+.distance-result .dist-node.conquer{
+  background:rgba(255,204,0,.15);
+  border-color:rgba(255,204,0,.5);
+  color:var(--neon-yellow);
+  text-decoration:line-through;
+  text-decoration-color:var(--neon-red);
+}
+.distance-result .dist-arrow{
+  color:var(--text-dim);
+  font-size:12px;
+}
+.distance-result .dist-note{
+  font-size:11px;
+  color:var(--neon-yellow);
+  margin-top:4px;
+  line-height:1.5;
+}
+.distance-result .dist-note.warn{color:var(--neon-red);}
+.distance-result .dist-note.info{color:var(--neon-blue);}
+
+/* ============ v8.6.0：城對城矩陣容器 ============ */
+#cityMatrixWrap{
+  max-height:60vh;
+  overflow:auto;
+}
+#cityMatrixWrap .matrix-table th:first-child,
+#cityMatrixWrap .matrix-table td:first-child{
+  position:sticky;left:0;z-index:2;
+  background:#0f1a2a;
 }
 
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center;padding:16px;}
@@ -456,6 +645,28 @@ select{
 .icon-quick{width:32px;height:32px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:16px;cursor:pointer;transition:all .15s;padding:0;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;}
 .icon-quick:hover{border-color:var(--neon-blue);background:rgba(68,170,255,.12);transform:scale(1.08);}
 .icon-quick.icon-clear{color:var(--text-dim);font-size:12px;}
+.icon-quick.icon-used{
+  opacity:.3;
+  cursor:not-allowed;
+  filter:grayscale(1);
+  position:relative;
+}
+.icon-quick.icon-used::after{
+  content:'✓';
+  position:absolute;
+  top:-2px;
+  right:-2px;
+  background:var(--neon-red);
+  color:#fff;
+  font-size:9px;
+  width:14px;
+  height:14px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:700;
+}
 .alliance-icon{font-size:14px;margin-right:4px;display:inline-block;vertical-align:middle;}
 .chip .alliance-icon{font-size:11px;margin-right:2px;}
 
@@ -631,9 +842,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   border:1px solid rgba(34,255,136,.35);
   box-shadow:0 0 20px rgba(34,255,136,.08);
 }
-.sim-launch-row{
-  display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
-}
+.sim-launch-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
 .sim-launch-zone{flex:1;min-width:160px;}
 .sim-launch-zone label{font-size:11px;font-weight:700;color:var(--neon-green);margin-bottom:4px;}
 .sim-launch-zone select{font-size:12px;}
@@ -708,15 +917,9 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   font-family:"SF Mono","Consolas",monospace;
   line-height:1;
 }
-
-.overview-quick-actions{
-  display:flex;gap:8px;flex-wrap:wrap;
-}
+.overview-quick-actions{display:flex;gap:8px;flex-wrap:wrap;}
 .overview-quick-actions .btn{flex:1;min-width:130px;}
-
-.overview-side-dist{
-  display:flex;flex-direction:column;gap:6px;
-}
+.overview-side-dist{display:flex;flex-direction:column;gap:6px;}
 .overview-side-row{
   display:flex;align-items:center;gap:10px;
   background:#0a101a;
@@ -730,10 +933,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   flex:1;height:8px;background:#0f1a2a;
   border-radius:4px;overflow:hidden;position:relative;
 }
-.overview-side-row .bar-fill{
-  height:100%;border-radius:4px;
-  transition:width .3s;
-}
+.overview-side-row .bar-fill{height:100%;border-radius:4px;transition:width .3s;}
 .overview-side-row .bar-fill.self{background:linear-gradient(90deg,#2563eb,#3b82f6);}
 .overview-side-row .bar-fill.ally{background:linear-gradient(90deg,#059669,#10b981);}
 .overview-side-row .bar-fill.enemy{background:linear-gradient(90deg,#dc2626,#ef4444);}
@@ -762,16 +962,12 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   margin-bottom:8px;
   letter-spacing:.3px;
 }
-.route-quick-row{
-  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
-}
+.route-quick-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
 .route-quick-row select{flex:1;min-width:120px;font-size:12px;padding:6px 24px 6px 8px;}
 .route-quick-arrow{color:var(--text-dim);font-size:14px;flex:0 0 auto;}
 .route-quick-row .btn{flex:0 0 auto;}
 
-.route-groups{
-  display:flex;flex-direction:column;gap:8px;
-}
+.route-groups{display:flex;flex-direction:column;gap:8px;}
 .route-group{
   background:#0a101a;
   border:1px solid var(--border);
@@ -828,9 +1024,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   background:transparent;border:1px solid var(--border);
   color:var(--text-secondary);
 }
-.route-line .route-modal-btn:hover{
-  border-color:var(--neon-blue);color:var(--neon-blue);
-}
+.route-line .route-modal-btn:hover{border-color:var(--neon-blue);color:var(--neon-blue);}
 
 .route-groups-empty{
   padding:24px 14px;text-align:center;
@@ -923,10 +1117,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   font-weight:600;
   font-size:11px;
 }
-.list-table .col-time.start{
-  text-align:center;
-  min-width:70px;
-}
+.list-table .col-time.start{text-align:center;min-width:70px;}
 .list-table .col-time.end{
   text-align:center;
   min-width:70px;
@@ -937,10 +1128,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   color:var(--text-primary);
   font-size:12px;
 }
-.list-table .col-type{
-  font-weight:600;
-  font-size:11px;
-}
+.list-table .col-type{font-weight:600;font-size:11px;}
 .list-table .col-type.attack{color:var(--neon-red);}
 .list-table .col-type.assist{color:var(--neon-yellow);}
 .list-table .col-action{text-align:center;}
@@ -949,14 +1137,8 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   font-family:"SF Mono","Consolas",monospace;
   font-size:11px;
 }
-.list-table .col-del{
-  text-align:right;
-  width:50px;
-}
-.list-table .col-del .btn{
-  padding:3px 8px;
-  font-size:10px;
-}
+.list-table .col-del{text-align:right;width:50px;}
+.list-table .col-del .btn{padding:3px 8px;font-size:10px;}
 .list-table .pending-badge{
   display:inline-block;
   font-size:10px;
@@ -968,8 +1150,6 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   font-weight:600;
   letter-spacing:.3px;
 }
-
-/* 清單中的行內輸入 */
 .list-table select.inline-select{
   font-size:11px;
   padding:4px 22px 4px 6px;
@@ -1011,11 +1191,9 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.5.6：分組摺疊（宣戰 / 出兵清單）
+   v8.5.6：分組摺疊
    ============================================================ */
-.list-group{
-  border-bottom:1px solid var(--border);
-}
+.list-group{border-bottom:1px solid var(--border);}
 .list-group:last-child{border-bottom:none;}
 .list-group-header{
   display:flex;align-items:center;gap:8px;
@@ -1045,12 +1223,8 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   color:var(--text-dim);
   font-family:"SF Mono","Consolas",monospace;
 }
-.list-group-body{
-  display:none;
-  overflow-x:auto;
-}
+.list-group-body{display:none;overflow-x:auto;}
 .list-group.open .list-group-body{display:block;}
-
 .list-container-empty{
   padding:24px 14px;
   text-align:center;
@@ -1064,9 +1238,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 /* ============================================================
    盟分配摘要
    ============================================================ */
-.alliance-dist-summary{
-  display:flex;flex-direction:column;gap:6px;
-}
+.alliance-dist-summary{display:flex;flex-direction:column;gap:6px;}
 .alliance-dist-row{
   display:flex;align-items:center;gap:10px;
   font-size:11px;color:var(--text-secondary);
@@ -1152,7 +1324,6 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .game-map-container::-webkit-scrollbar-track{background:#060a10;}
 .game-map-container::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:4px;}
 .game-map-container::-webkit-scrollbar-thumb:hover{background:#3b82f6;}
-
 .game-map-canvas{
   display:block;
   transform-origin:0 0;
@@ -1170,27 +1341,26 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .main-content{margin-left:0;}
   .mobile-header{display:flex;}
   .mode-bar{position:relative;top:auto;}
-
   .game-map-container{height:60vh;min-height:350px;}
-
   .sim-launch-row{flex-direction:column;align-items:stretch;gap:8px;}
   .sim-launch-btn{width:100%;}
-
   .city-subtab{padding:9px 12px;font-size:11px;}
-
-  /* 清單工具列：手機版上下堆疊 */
-  .list-toolbar{
-    flex-direction:column;
-    align-items:stretch;
-  }
+  .list-toolbar{flex-direction:column;align-items:stretch;}
   .list-toolbar .toolbar-item{min-width:0;width:100%;}
-
-  /* 清單表格：手機版橫向滾動 */
   .list-table{font-size:10px;}
   .list-table th,.list-table td{padding:5px 6px;}
-
-  /* 出兵清單在手機版隱藏時間欄（太擠）*/
   .deploy-list-container .list-table .col-time{display:none;}
+
+  /* v8.6.0：距離計算手機版 */
+  .distance-input-row{flex-direction:column;gap:6px;}
+  .distance-input-item{min-width:0;width:100%;}
+  .distance-arrow{
+    transform:rotate(90deg);
+    padding:0;
+    margin:0 auto;
+    display:block;
+  }
+  .distance-input-row .btn{width:100%;}
 }
 
 @media (max-width:600px){
@@ -1205,28 +1375,31 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .btn-mode{padding:3px 10px;font-size:10px;}
   .sandbox-me-row{flex-direction:column;align-items:flex-start;gap:4px;}
   .sandbox-me-stats{font-size:11px;gap:10px;}
-
   .summary-overview{grid-template-columns:repeat(2,1fr);}
   .summary-stat .value{font-size:16px;}
   .summary-city-table th,.summary-city-table td{padding:4px 6px;font-size:10px;}
-
   .route-quick-row{flex-direction:column;align-items:stretch;gap:6px;}
   .route-quick-row select{width:100%;}
   .route-quick-arrow{text-align:center;transform:rotate(90deg);display:none;}
   .route-quick-row .btn{width:100%;}
-
   .route-line{grid-template-columns:1fr 1fr auto auto;gap:4px;}
   .route-line .route-arrow{display:none;}
   .route-line select{padding:4px 18px 4px 4px;font-size:10px;}
   .route-line .route-modal-btn{padding:3px 6px;font-size:10px;}
-
   .overview-stats{grid-template-columns:repeat(2,1fr);}
   .overview-stat .val{font-size:18px;}
   .overview-quick-actions .btn{min-width:0;flex:1 1 calc(50% - 4px);}
-
   .alliance-dist-row{flex-wrap:wrap;gap:6px;}
   .alliance-dist-row .bar{flex-basis:100%;order:10;}
   .alliance-dist-row .name{min-width:0;flex:1 1 100%;}
+
+  /* v8.6.0：拖曳把手縮小 */
+  .ally-table .drag-handle{width:24px;font-size:14px;}
+
+  /* v8.6.0：距離結果手機版 */
+  .distance-result{padding:10px;font-size:11px;}
+  .distance-result .dist-path{gap:3px;}
+  .distance-result .dist-node{font-size:10px;padding:1px 6px;}
 }
 
 @media (max-width:480px){
@@ -1236,26 +1409,19 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .dyn-filter > div{min-width:90px;}
   .ally-table th,.ally-table td{padding:6px 6px;font-size:11px;}
   .deploy-filter > div{min-width:90px;}
-
   .accounts-table th,.accounts-table td{padding:6px 6px;font-size:10px;}
   .sandbox-table th,.sandbox-table td{padding:6px 8px;font-size:10px;}
   .city-table th,.city-table td{padding:4px 6px;font-size:10px;}
-
   .sidebar{width:240px;}
   .map-toolbar .text-dim{display:none;}
-
   .city-subtab{padding:8px 10px;font-size:10.5px;}
-
   .route-line{grid-template-columns:1fr 1fr auto;gap:3px;padding:4px 6px;}
   .route-line .route-modal-btn{display:none;}
-
-  /* 清單表格：小螢幕最小寬度 */
   .list-table{min-width:760px;}
-
-  /* 出兵清單：小螢幕進一步隱藏 */
   .deploy-list-container .list-table .col-time{display:none;}
   .deploy-list-container .list-table .col-type{display:none;}
-
-  /* 盟表單 / 城池表單單位輸入 */
   .input-with-unit .unit{padding:0 8px;font-size:10px;}
+
+  /* v8.6.0：盟徽快速選擇小螢幕 */
+  .icon-quick{width:28px;height:28px;font-size:14px;}
 }
