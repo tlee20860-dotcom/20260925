@@ -1905,27 +1905,36 @@ const WarManager = (() => {
   }
 
   function addLine(){
-    if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
-    let src = null, tgt = null;
-    for(const c of state.cities){
-      const targets = getTargetsForType(c.id, 'attack');
-      if(targets.length > 0){ src = c; tgt = targets[0]; break; }
+  if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
+
+  /* 遍歷所有可能的「出兵城 → 目標城」組合，找第一個還沒建立宣戰的 */
+  for(const src of state.cities){
+    const targets = getTargetsForType(src.id, 'attack');
+    for(const tgt of targets){
+      if(findWarLine(src.id, tgt.id)) continue;  // 已存在，跳過
+
+      /* 找到未建立的組合 → 新增 */
+      if(!src.attackTargets) src.attackTargets = [];
+      src.attackTargets.push({
+        cityId: tgt.id,
+        preWarPercent: 50,
+        postRevivePercent: 50,
+        priority: 1,
+        attackStartTime: '19:00',
+      });
+
+      if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+
+      markDirty(src.id);
+      render();
+      if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
+      return;  // 成功新增，結束
     }
-    if(!src || !tgt){ alert('目前沒有任何可進攻的敵方城池'); return; }
-    if(findWarLine(src.id, tgt.id)){ alert('此方向已有宣戰指示'); return; }
-
-    if(!src.attackTargets) src.attackTargets = [];
-    src.attackTargets.push({
-      cityId: tgt.id,
-      preWarPercent: 50, postRevivePercent: 50, priority: 1,
-      attackStartTime: '19:00',
-    });
-
-    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-    markDirty(src.id);
-    render();
-    if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
+
+  /* 所有組合都已建立 */
+  alert('已無新的宣戰組合可新增（所有可能的進攻方向都已建立）');
+}
 
   function computeEndTime(startTime, limitMin){
     if(!startTime) return '待設定';
