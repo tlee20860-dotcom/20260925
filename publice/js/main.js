@@ -1668,7 +1668,33 @@ function boot(){
 
   console.log('%c[沙盤 v8.6.0] 盟排序 + 盟/城矩陣 + 距離計算（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
+/* ============================================================
+   v8.6.1：暴露 main.js 內部函式到 window.SLG
+   供 ui.js / auth.js 呼叫
+   ============================================================ */
+Object.assign(window.SLG, {
+  showConfirm,
+  applyPermissions,
+  requirePerm,
+  togglePerm,
+  effectiveCanEditData,
+  effectiveCanImportExcel,
+  loadSandboxFromList,
+  uploadMySandboxToRoom,
+  openSandboxPicker,
+  downloadRoomSandbox,
+  refreshSandboxList,
+  backupCurrentSandbox,
+  showRoomEmptyPrompt,
+  hideRoomEmptyPrompt,
+  switchMapView,
+  executeSimulation,
+  renderEditRequestReview,
+});
 
+/* ============================================================
+   啟動
+   ============================================================ */
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', boot);
 } else {
@@ -1676,3 +1702,4 @@ if(document.readyState === 'loading'){
 }
 
 })();
+
