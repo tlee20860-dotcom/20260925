@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.1</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.2</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -15,13 +15,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.1</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.2</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.1</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.2</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -74,7 +74,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.6.1</span>
+      <span class="sidebar-version">v8.6.2</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -239,6 +239,13 @@
               <span>進攻需要路線接觸</span>
             </label>
             <div class="param-hint">勾選後，只有與出兵城有地圖路線接觸的敵方城池才能被進攻。預設不勾選（任何敵方城池皆可進攻）。</div>
+          </div>
+          <div class="param-item">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+              <input type="checkbox" id="globalCrossZoneWar" style="width:auto;accent-color:#aa66ff;transform:scale(1.2);">
+              <span>允許跨戰區宣戰（v8.6.2）</span>
+            </label>
+            <div class="param-hint">勾選後，宣戰可跨越戰區邊界（出兵城與目標城可在不同戰區）。預設不勾選（只能同戰區宣戰）。既有跨戰區宣戰不受影響。</div>
           </div>
         </div>
         <div class="flex-row mt-8">
@@ -518,14 +525,15 @@
         </div>
       </div>
 
-      <!-- ── ⚔️ 宣戰（v8.6.1：加手動新增） ── -->
+      <!-- ── ⚔️ 宣戰 ── -->
       <div class="city-subpanel" id="cityPanel-war">
         <div class="card">
           <div class="card-title">⚔️ 宣戰清單</div>
           <div class="text-dim" style="margin-bottom:8px;">
             ＊定義「誰打誰」與「誰協防誰」。<br>
             ＊進攻：需要指定「開始時間」= 目標城的防守開始時間。<br>
-            ＊協防：目標城需與出兵城同一盟、且路線上必須有接觸。
+            ＊協防：目標城需與出兵城同一盟、且路線上必須有接觸。<br>
+            ＊<span style="color:var(--neon-purple);">v8.6.2：預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟跨戰區）。</span>
           </div>
 
           <div class="list-toolbar">
@@ -551,7 +559,6 @@
 
           <div class="war-list-container" id="warListContainer"></div>
 
-          <!-- v8.6.1：手動新增宣戰 -->
           <div class="war-add-row">
             <div class="war-add-title">➕ 新增宣戰指示</div>
             <div class="war-add-inputs">
@@ -768,6 +775,9 @@
 
         <div id="mapRouteWrap">
           <div class="map-toolbar">
+            <select id="mapZoneSelect" class="map-zone-select" title="選擇要顯示的戰區">
+              <option value="all">🌐 全部</option>
+            </select>
             <button class="btn btn-ghost btn-sm" id="btnMapEditRoute">✏️ 編輯路線：關</button>
             <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
             <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
@@ -1016,7 +1026,7 @@
     <!-- ============ 戰鬥規則 ============ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.6.1）</div>
+        <div class="card-title">📖 城戰計算規則（v8.6.2）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1074,6 +1084,7 @@
             <li><b>去重</b>：每個方向（A→B）只能一種宣戰類型。</li>
             <li><b>新增方式</b>：手動（選出兵城 / 類型 / 目標城）或自動（找下一個未建立組合）。</li>
             <li><b>防守開始時間推算</b>：以所有進攻該城的宣戰中，最早的「開始時間」為準。</li>
+            <li><b>v8.6.2 跨戰區限制</b>：預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟）。開啟後可跨戰區。</li>
           </ul>
           <h2>九、出兵清單</h2>
           <ul>
@@ -1084,25 +1095,33 @@
             <li><b>可通行規則</b>：起點盟的城 + NPC 城（NPC 需佔領才能通過）。</li>
             <li><b>演算法</b>：BFS 最短路徑。</li>
             <li><b>顯示模式</b>：距離 / 路徑 / 地圖高亮。</li>
+            <li><b>v8.6.2</b>：路徑若跨戰區，會顯示跨戰區警告。</li>
           </ul>
-          <h2>十一、消耗比例矩陣</h2>
+          <h2>十一、地圖戰區過濾（v8.6.2）</h2>
+          <ul>
+            <li>地圖工具列可選擇要顯示的戰區。</li>
+            <li>單戰區模式：只顯示該戰區城池，不畫戰區框。</li>
+            <li>跨戰區宣戰：以半截虛線箭頭指向可見邊緣，末端標註「→ 目標城名」。</li>
+            <li>選擇記憶於 localStorage。</li>
+          </ul>
+          <h2>十二、消耗比例矩陣</h2>
           <ul>
             <li><b>盟對盟</b>：單元格 = (對手盟均戰 / (我方盟 + 對手盟均戰)) × 每分鐘總消耗隊數。</li>
             <li><b>城對城</b>：單元格 = (對手城均戰 / (我方城 + 對手城均戰)) × 每分鐘總消耗隊數。</li>
           </ul>
-          <h2>十二、協作模式</h2>
+          <h2>十三、協作模式</h2>
           <ul>
             <li><b>個人雲端沙盤</b>：每個帳號一份，即時自動同步。</li>
             <li><b>房間雲端沙盤</b>：房主/幹部+手動上載。</li>
           </ul>
-          <h2>十三、帳號與權限</h2>
+          <h2>十四、帳號與權限</h2>
           <ul>
             <li><b>超級管理員</b>：最高權限。</li>
             <li><b>管理員</b>：可停用帳號、修改 extraPerms。</li>
             <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
             <li><b>成員</b>：本機推演、加入房間、管理自己帳號。</li>
           </ul>
-          <h2>十四、快取策略</h2>
+          <h2>十五、快取策略</h2>
           <ul>
             <li>由 <code>_headers</code> 控制，改版不用手動換戳記。</li>
             <li><b>HTML</b>：<code>max-age=0, must-revalidate</code>（每次驗證 ETag）。</li>
@@ -1282,7 +1301,7 @@
       <textarea id="excelMapRoutesText" class="excel-textarea" placeholder="洛陽-函谷關&#10;洛陽-洛陽北&#10;洛陽北-洛陽西"></textarea>
 
       <div class="section-label" style="color:var(--neon-red);">④ ⚔️ 宣戰表</div>
-      <div class="text-dim" style="margin:4px 0;font-size:10px;">＊「開始時間」= 目標城防守開始時間（HH:MM）。協防可留空。</div>
+      <div class="text-dim" style="margin:4px 0;font-size:10px;">＊「開始時間」= 目標城防守開始時間（HH:MM）。協防可留空。跨戰區預設略過（可於參數設定開啟）。</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="routes">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="routes">🗑️ 清空</button>

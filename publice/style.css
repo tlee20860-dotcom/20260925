@@ -1,6 +1,6 @@
 /* ============================================================================
- * style.css — v8.6.1
- * v8.6.1：新增宣戰手動輸入區樣式
+ * style.css — v8.6.2
+ * v8.6.2：新增地圖戰區選擇器 + 距離跨戰區警告樣式
  * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
@@ -457,6 +457,20 @@ select{
 }
 .distance-result .dist-note.warn{color:var(--neon-red);}
 .distance-result .dist-note.info{color:var(--neon-blue);}
+
+/* v8.6.2：跨戰區警告 */
+.distance-result .dist-crosszone-warn{
+  margin-top:6px;
+  margin-bottom:6px;
+  padding:8px 10px;
+  background:rgba(170,102,255,.10);
+  border-left:3px solid var(--neon-purple);
+  border-radius:var(--radius-sm);
+  color:var(--neon-purple);
+  font-size:11px;
+  font-weight:700;
+  line-height:1.5;
+}
 
 /* ============ 城對城矩陣容器 ============ */
 #cityMatrixWrap{
@@ -1366,6 +1380,31 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .map-toolbar .text-dim{font-size:10px;margin-left:auto;}
 .map-toolbar .btn.active{background:linear-gradient(135deg,#1e3a5f,#2a4a6f);color:var(--neon-blue);border-color:var(--neon-blue);}
 
+/* v8.6.2：地圖戰區選擇器 */
+.map-toolbar .map-zone-select{
+  flex:0 0 auto;
+  min-width:130px;
+  max-width:200px;
+  font-size:12px;
+  font-weight:700;
+  color:var(--neon-blue);
+  padding:6px 24px 6px 10px;
+  background-color:var(--bg-input);
+  border:1px solid rgba(68,170,255,.4);
+  border-radius:var(--radius-sm);
+  font-family:inherit;
+  cursor:pointer;
+  transition:border-color .15s;
+}
+.map-toolbar .map-zone-select:hover{
+  border-color:var(--neon-blue);
+}
+.map-toolbar .map-zone-select:focus{
+  outline:none;
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 2px rgba(68,170,255,.18);
+}
+
 /* ============================================================
    GameMap 容器
    ============================================================ */
@@ -1417,6 +1456,13 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
     display:block;
   }
   .distance-input-row .btn{width:100%;}
+
+  /* v8.6.2：手機地圖工具列戰區選擇器 */
+  .map-toolbar .map-zone-select{
+    width:100%;
+    max-width:none;
+    margin-bottom:6px;
+  }
 }
 
 @media (max-width:600px){
