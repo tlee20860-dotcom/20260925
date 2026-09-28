@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.6.1：宣戰手動新增區權限 + 初始化
+ * v8.6.2：跨戰區宣戰參數 + 地圖戰區選擇器
  * ========================================================================== */
 (function(){
 'use strict';
@@ -130,6 +130,7 @@ function applyPermissions(){
     'globalTimeLimit','globalMarchTimeSec','globalConsumeMinPerMin','globalConsumeMaxPerMin',
     'globalSiegeEfficiency','globalMaxLossRatio','globalMinLossRatio',
     'globalAttackRequireRoute',
+    'globalCrossZoneWar',
     'aiR25','aiR20','aiR15','aiR12','aiR10','aiR08','aiR06','aiR00',
     'aiTeamFactor','aiWallFactor1','aiWallFactor2','aiDefendFactor','aiMinPct'
   ], !canEditSettings);
@@ -253,11 +254,13 @@ function executeSimulation(zoneId){
   const minLossRatio = (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100;
   const attackRequireRouteEl = document.getElementById('globalAttackRequireRoute');
   const attackRequireRoute = attackRequireRouteEl ? !!attackRequireRouteEl.checked : false;
+  const crossZoneWarEl = document.getElementById('globalCrossZoneWar');
+  const crossZoneWarAllowed = crossZoneWarEl ? !!crossZoneWarEl.checked : false;
 
   Object.assign(state.settings, {
     timeLimitMin, consumeMinPerMin, consumeMaxPerMin,
     siegeEfficiency, marchTimeSec, maxLossRatio, minLossRatio,
-    attackRequireRoute,
+    attackRequireRoute, crossZoneWarAllowed,
   });
   state.settingsRev++;
   saveState();
@@ -765,6 +768,17 @@ function bindUI(){
   /* ── 距離工具初始化 ── */
   if(window.SLG.DistanceTool) window.SLG.DistanceTool.init();
 
+  /* ── v8.6.2：地圖戰區選擇器 ── */
+  const mapZoneSel = document.getElementById('mapZoneSelect');
+  if(mapZoneSel && !mapZoneSel.dataset.bound){
+    mapZoneSel.dataset.bound = '1';
+    mapZoneSel.addEventListener('change', function(){
+      if(window.SLG.GameMap && window.SLG.GameMap.setZoneFilter){
+        window.SLG.GameMap.setZoneFilter(this.value);
+      }
+    });
+  }
+
   /* ── 城矩陣過濾器 ── */
   const cityMatrixZoneSel = document.getElementById('cityMatrixZone');
   if(cityMatrixZoneSel){
@@ -953,6 +967,7 @@ function bindUI(){
   if(btnSaveSettings) btnSaveSettings.addEventListener('click', () => {
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改戰鬥參數')) return;
     const attackRequireRouteEl = document.getElementById('globalAttackRequireRoute');
+    const crossZoneWarEl = document.getElementById('globalCrossZoneWar');
     window.SLG.updateSettings({
       timeLimitMin: parseInt(document.getElementById('globalTimeLimit').value) || 120,
       consumeMinPerMin: parseFloat(document.getElementById('globalConsumeMinPerMin').value) || 10,
@@ -962,10 +977,15 @@ function bindUI(){
       maxLossRatio: (parseFloat(document.getElementById('globalMaxLossRatio').value) || 90) / 100,
       minLossRatio: (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100,
       attackRequireRoute: attackRequireRouteEl ? !!attackRequireRouteEl.checked : false,
+      crossZoneWarAllowed: crossZoneWarEl ? !!crossZoneWarEl.checked : false,
     });
     if(R().renderMatrix) R().renderMatrix();
     if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
+    /* v8.6.2：更新地圖戰區下拉（城池數不變，但邏輯保持一致） */
+    if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
+      window.SLG.GameMap.refreshZoneSelector();
+    }
     alert('戰鬥參數已儲存');
   });
 
@@ -983,6 +1003,7 @@ function bindUI(){
             timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
             siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
             attackRequireRoute: false,
+            crossZoneWarAllowed: false,
           };
           state.alliances = [];
           state.zones = [];
@@ -1115,6 +1136,10 @@ function bindUI(){
     if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
     if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
+    /* v8.6.2：戰區變更 → 更新地圖下拉 */
+    if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
+      window.SLG.GameMap.refreshZoneSelector();
+    }
     saveState();
   });
 
@@ -1129,6 +1154,10 @@ function bindUI(){
       if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
       if(R().renderCityMatrix) R().renderCityMatrix();
       if(window.SLG.renderOverview) window.SLG.renderOverview();
+      /* v8.6.2：戰區變更 → 更新地圖下拉 */
+      if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
+        window.SLG.GameMap.refreshZoneSelector();
+      }
       saveState();
     });
   });
@@ -1439,7 +1468,6 @@ function bindEvents(){
     if(window.SLG.CityManager) window.SLG.CityManager.render();
     if(window.SLG.WarManager){
       window.SLG.WarManager.render();
-      /* v8.6.1：重繪手動新增區 */
       if(window.SLG.WarManager.renderAddForm) window.SLG.WarManager.renderAddForm();
     }
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
@@ -1450,6 +1478,10 @@ function bindEvents(){
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.GameMap){
       window.SLG.GameMap.reset();
+      /* v8.6.2：更新戰區下拉 */
+      if(window.SLG.GameMap.refreshZoneSelector){
+        window.SLG.GameMap.refreshZoneSelector();
+      }
       const mapTab = document.getElementById('tab-map');
       if(mapTab && mapTab.classList.contains('active')){
         window.SLG.GameMap.activate();
@@ -1475,6 +1507,9 @@ function bindEvents(){
     if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
     const garr = document.getElementById('globalAttackRequireRoute');
     if(garr) garr.checked = !!state.settings.attackRequireRoute;
+    /* v8.6.2 */
+    const gczwEv = document.getElementById('globalCrossZoneWar');
+    if(gczwEv) gczwEv.checked = !!state.settings.crossZoneWarAllowed;
 
     if (document.getElementById('tab-deploy').classList.contains('active')) DEPLOY().render();
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
@@ -1489,6 +1524,9 @@ function bindEvents(){
     if(window.SLG.RouteManager) window.SLG.RouteManager.render();
     if(window.SLG.GameMap){
       window.SLG.GameMap.reset();
+      if(window.SLG.GameMap.refreshZoneSelector){
+        window.SLG.GameMap.refreshZoneSelector();
+      }
       const mapTab = document.getElementById('tab-map');
       if(mapTab && mapTab.classList.contains('active')){
         window.SLG.GameMap.activate();
@@ -1576,6 +1614,9 @@ function boot(){
   if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
   const garr = document.getElementById('globalAttackRequireRoute');
   if(garr) garr.checked = !!state.settings.attackRequireRoute;
+  /* v8.6.2 */
+  const gczw = document.getElementById('globalCrossZoneWar');
+  if(gczw) gczw.checked = !!state.settings.crossZoneWarAllowed;
   syncAIParamsToUI();
 
   window.SLG.initFirebase();
@@ -1629,7 +1670,6 @@ function boot(){
   if(window.SLG.RouteManager) window.SLG.RouteManager.render();
   if(window.SLG.WarManager){
     window.SLG.WarManager.render();
-    /* v8.6.1：初始呼叫手動新增區渲染 */
     if(window.SLG.WarManager.renderAddForm) window.SLG.WarManager.renderAddForm();
   }
   if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
@@ -1638,6 +1678,10 @@ function boot(){
   if(R().renderCityMatrix) R().renderCityMatrix();
   if(window.SLG.DistanceTool) window.SLG.DistanceTool.render();
   if(window.SLG.renderOverview) window.SLG.renderOverview();
+  /* v8.6.2：初始化地圖戰區下拉 */
+  if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
+    window.SLG.GameMap.refreshZoneSelector();
+  }
   applyPermissions();
 
   (async () => {
@@ -1660,6 +1704,9 @@ function boot(){
       if(R().renderCityMatrix) R().renderCityMatrix();
       if(window.SLG.DistanceTool) window.SLG.DistanceTool.render();
       if(window.SLG.renderOverview) window.SLG.renderOverview();
+      if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
+        window.SLG.GameMap.refreshZoneSelector();
+      }
       logSystem('🚪 已自動登入，跳過入口');
       if(document.getElementById('tab-sandbox')?.classList.contains('active')){
         refreshSandboxList();
@@ -1672,11 +1719,11 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.6.1] 宣戰手動新增（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.6.2] 跨戰區宣戰 + 地圖戰區過濾（就緒）', 'color:#aa66ff;font-weight:bold;font-size:14px');
 }
 
 /* ============================================================
-   v8.6.1：暴露 main.js 內部函式到 window.SLG
+   暴露 main.js 內部函式到 window.SLG
    供 ui.js / auth.js 呼叫
    ============================================================ */
 Object.assign(window.SLG, {

@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI
- * v8.6.0：盟徽擴充 + 拖曳排序 + 距離計算（BFS）
+ * v8.6.2：跨戰區宣戰參數（crossZoneWarAllowed）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -34,7 +34,7 @@ const POWER_YI = 1e8;
 const POWER_WAN = 1e4;
 const POWER_MIGRATE_THRESHOLD = 1e6;
 
-/* v8.6.0：盟徽清單（取消文字圖案，擴充兵種 emoji） */
+/* v8.6.0：盟徽清單 */
 const DEFAULT_ALLIANCE_ICONS = [
   /* ── 古代兵種 ── */
   '⚔️','🗡️','🏹','🔱','🪓','🛡️','⚒️','🔨','🪃','⚜️','🏰','🚩',
@@ -357,6 +357,7 @@ const state = {
     timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
     siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
     attackRequireRoute: false,
+    crossZoneWarAllowed: false,  /* v8.6.2 */
   },
   alliances:[], zones:[], cities:[],
   routes: [],
@@ -531,6 +532,10 @@ function loadState(){
     if(typeof state.settings.marchTimeSec !== 'number') state.settings.marchTimeSec = 0;
     if(typeof state.settings.attackRequireRoute !== 'boolean'){
       state.settings.attackRequireRoute = false;
+    }
+    /* v8.6.2：跨戰區宣戰參數相容 */
+    if(typeof state.settings.crossZoneWarAllowed !== 'boolean'){
+      state.settings.crossZoneWarAllowed = false;
     }
 
     if(d.entityRev) state.entityRev = d.entityRev;
@@ -788,6 +793,10 @@ function applyFullSnapshot(snap){
     }
   }
   tickLamport(snap.lamport || 0);
+  /* v8.6.2 */
+  if(typeof state.settings.crossZoneWarAllowed !== 'boolean'){
+    state.settings.crossZoneWarAllowed = false;
+  }
   migratePowerInState();
   migrateAllianceOrder();
   return true;
@@ -808,6 +817,10 @@ function applySandboxData(data){
   if(data.settings) Object.assign(state.settings, data.settings);
   if(typeof state.settings.attackRequireRoute !== 'boolean'){
     state.settings.attackRequireRoute = false;
+  }
+  /* v8.6.2 */
+  if(typeof state.settings.crossZoneWarAllowed !== 'boolean'){
+    state.settings.crossZoneWarAllowed = false;
   }
   state.alliances = JSON.parse(JSON.stringify(data.alliances || []));
   state.zones     = JSON.parse(JSON.stringify(data.zones     || []));

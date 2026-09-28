@@ -1,6 +1,6 @@
 /* ============================================================================
- * data.js — Excel/CSV 匯入匯出（v8.6.0）
- * v8.6.0：盟匯入時給 order；匯出依 order 排序
+ * data.js — Excel/CSV 匯入匯出（v8.6.2）
+ * v8.6.2：匯入宣戰表時檢查跨戰區（依 settings.crossZoneWarAllowed）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -706,7 +706,8 @@ function doImportCities(){
   if(window.SLG.GameMap) window.SLG.GameMap.render();
   if(window.SLG.renderCityMatrix) window.SLG.renderCityMatrix();
 
-  alert(`✅ 已匯入 ${result.cities.length} 座城池`);
+  alert(`✅ 已匯入 ${result.cities.length} 座城池` +
+    (state.settings.crossZoneWarAllowed ? '' : '\n\nℹ️ 目前「不允許跨戰區宣戰」，跨戰區宣戰將被過濾。'));
   logSystem(`📥 城池表匯入完成：${result.cities.length} 座`);
 }
 
@@ -753,7 +754,7 @@ function doImportMapRoutes(){
   logSystem(`📥 地圖路線匯入完成：${added} 條`);
 }
 
-/* ④ 匯入宣戰表 */
+/* ④ 匯入宣戰表（v8.6.2：跨戰區檢查）*/
 function doImportRoutes(){
   const text = document.getElementById('excelRoutesText')?.value.trim() || '';
   if(!text){ alert('請填入宣戰表'); return; }
@@ -782,11 +783,31 @@ function doImportRoutes(){
   const cityByName = new Map();
   for(const c of state.cities) cityByName.set(c.name, c.id);
 
-  let added = 0, skipped = 0;
+  const allowCrossZone = !!state.settings.crossZoneWarAllowed;
+
+  let added = 0, skipped = 0, crossZoneSkipped = 0;
+  const crossZoneList = [];
+
   for(const route of result.routes){
     const srcCity = state.cities.find(c => c.id === cityByName.get(route.srcName));
     const tgtCityId = cityByName.get(route.tgtName);
     if(!srcCity || !tgtCityId){ skipped++; continue; }
+
+    /* v8.6.2：跨戰區檢查 */
+    if(!allowCrossZone){
+      const tgtCity = state.cities.find(c => c.id === tgtCityId);
+      if(tgtCity){
+        const srcZone = srcCity.zoneId || '';
+        const tgtZone = tgtCity.zoneId || '';
+        if(srcZone !== tgtZone){
+          crossZoneSkipped++;
+          const srcZoneName = state.zones.find(z => z.id === srcZone)?.name || '未分配';
+          const tgtZoneName = state.zones.find(z => z.id === tgtZone)?.name || '未分配';
+          crossZoneList.push(`${srcCity.name}(${srcZoneName}) → ${tgtCity.name}(${tgtZoneName})`);
+          continue;
+        }
+      }
+    }
 
     const arr = route.isAttack ? srcCity.attackTargets : srcCity.defendTargets;
     const newRoute = {
@@ -818,8 +839,16 @@ function doImportRoutes(){
   if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   if(window.SLG.GameMap) window.SLG.GameMap.render();
 
-  alert(`✅ 已匯入 ${added} 條宣戰指示${skipped > 0 ? `（${skipped} 條略過）` : ''}`);
-  logSystem(`📥 宣戰表匯入完成：${added} 條`);
+  let msg = `✅ 已匯入 ${added} 條宣戰指示`;
+  if(skipped > 0) msg += `（${skipped} 條略過）`;
+  if(crossZoneSkipped > 0){
+    msg += `\n\n⚠️ 跨戰區限制：略過 ${crossZoneSkipped} 條`;
+    msg += `\n${crossZoneList.slice(0, 8).join('\n')}`;
+    if(crossZoneList.length > 8) msg += `\n…及其他 ${crossZoneList.length - 8} 條`;
+    msg += `\n\n（可至 ⚙️ 參數設定 → 🎯 宣戰規則 → 勾選「允許跨戰區宣戰」）`;
+  }
+  alert(msg);
+  logSystem(`📥 宣戰表匯入完成：${added} 條${crossZoneSkipped > 0 ? `（跨戰區略過 ${crossZoneSkipped} 條）` : ''}`);
 }
 
 /* ============================================================
@@ -934,7 +963,7 @@ function exportRoutesCSV(){
   logSystem(`📤 已匯出宣戰表 CSV（${rows.length} 條）`);
 }
 
-/* v8.6.0：更新範本說明 */
+/* v8.6.2：更新範本說明（加入跨戰區說明）*/
 function downloadExcelTemplate(){
   const template = `【盟名單欄位說明】（v8.6.0：戰力單位＝億、加入順序欄位）
 順序,盟名稱,盟徽,人數,總戰力（億）,陣營
@@ -975,7 +1004,7 @@ function downloadExcelTemplate(){
 
 ─────────────────────────────────────────────
 
-【宣戰表欄位說明】
+【宣戰表欄位說明】（v8.6.2：跨戰區檢查）
 出兵城,目標城,類型,戰前%,復活%,順序,開始時間
 洛陽,函谷關,進攻,50,50,1,19:00
 洛陽北,洛陽,協防,30,30,1,
@@ -987,6 +1016,9 @@ function downloadExcelTemplate(){
 ■ 開始時間（HH:MM）：即目標城的防守開始時間
   ・若該城被多條宣戰指向，以「最早的開始時間」為該城的防守開始時間
 ■ 協防的開始時間：留空（協防跟隨目標城的防守時間）
+■ v8.6.2：預設「不允許跨戰區宣戰」
+  ・若出兵城與目標城不同戰區 → 此行會被略過（匯入後會列出警告）
+  ・如需跨戰區，請至 ⚙️ 參數設定 開啟「允許跨戰區宣戰」
 `;
   const blob = new Blob(['\uFEFF' + template], {type:'text/plain;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
