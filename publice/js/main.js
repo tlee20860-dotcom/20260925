@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.6.3：戰區名稱編輯 + 城池批次修改戰區
+ * v8.6.4：行內編輯（盟 + 城池）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -190,10 +190,13 @@ function applyPermissions(){
   const chatInputEl = document.getElementById('chatInput');
   if(chatInputEl) chatInputEl.disabled = !signedIn;
 
+  /* v8.6.4：含行內編輯按鈕 */
   document.querySelectorAll(
     '[data-action="edit-city"],[data-action="del-city"],' +
     '[data-action="edit-alliance"],[data-action="del-alliance"],' +
-    '[data-action="edit-zone"],[data-action="del-zone"],[data-deploy-edit]'
+    '[data-action="edit-zone"],[data-action="del-zone"],[data-deploy-edit],' +
+    '[data-action="save-alliance-inline"],[data-action="cancel-alliance-inline"],' +
+    '[data-action="save-city-inline"],[data-action="cancel-city-inline"]'
   ).forEach(b => {
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
@@ -212,6 +215,14 @@ function applyPermissions(){
     '[data-war-del], [data-route-del]'
   ).forEach(b => {
     togglePerm(b, canEditData, '需要編輯資料權限');
+  });
+
+  /* v8.6.4：行內編輯輸入框權限 */
+  document.querySelectorAll(
+    'tr.inline-editing input,' +
+    'tr.inline-editing select'
+  ).forEach(el => {
+    el.disabled = !canEditData;
   });
 
   /* 盟拖曳 */
@@ -780,7 +791,7 @@ function bindUI(){
   /* ── 距離工具初始化 ── */
   if(window.SLG.DistanceTool) window.SLG.DistanceTool.init();
 
-  /* ── v8.6.2：地圖戰區選擇器 ── */
+  /* ── 地圖戰區選擇器 ── */
   const mapZoneSel = document.getElementById('mapZoneSelect');
   if(mapZoneSel && !mapZoneSel.dataset.bound){
     mapZoneSel.dataset.bound = '1';
@@ -1050,7 +1061,7 @@ function bindUI(){
     if (el) el.addEventListener('input', () => window.SLG.AI.setParams(readAIParamsFromUI()));
   });
 
-  /* ── 同盟表單 ── */
+  /* ── 同盟表單（頂部舊版表單，仍保留可用）── */
   const allyMC = document.getElementById('allyMemberCount');
   const allyTP = document.getElementById('allyTotalPower');
   if(allyMC) allyMC.addEventListener('input', window.SLG.updateAllianceAvgPowerPreview);
@@ -1109,17 +1120,33 @@ function bindUI(){
   const btnCancelAllianceEdit = document.getElementById('btnCancelAllianceEdit');
   if(btnCancelAllianceEdit) btnCancelAllianceEdit.addEventListener('click', window.SLG.resetAllianceForm);
 
-  /* 盟徽快速選擇：由 ui.js 動態生成並綁定（事件委派） */
-
+  /* ── 參戰盟清單點擊（含行內編輯）── */
   const allianceTbody = document.getElementById('allianceTableBody');
   if(allianceTbody) allianceTbody.addEventListener('click', e => {
-    const editBtn = e.target.closest('[data-action="edit-alliance"]');
-    const delBtn = e.target.closest('[data-action="del-alliance"]');
-    if(editBtn){
+    /* v8.6.4：行內編輯 — 儲存 */
+    const saveInline = e.target.closest('[data-action="save-alliance-inline"]');
+    if(saveInline){
       if(!requirePerm(() => effectiveCanEditData(), '編輯同盟')) return;
-      window.SLG.startEditAlliance(editBtn.dataset.id);
+      if(window.SLG.saveInlineEditAlliance) window.SLG.saveInlineEditAlliance(saveInline.dataset.id);
       return;
     }
+    /* v8.6.4：行內編輯 — 取消 */
+    const cancelInline = e.target.closest('[data-action="cancel-alliance-inline"]');
+    if(cancelInline){
+      if(window.SLG.cancelInlineEditAlliance) window.SLG.cancelInlineEditAlliance();
+      return;
+    }
+    /* v8.6.4：點 ✏️ → 進 inline 編輯（不再開頂部表單）*/
+    const editBtn = e.target.closest('[data-action="edit-alliance"]');
+    if(editBtn){
+      if(!requirePerm(() => effectiveCanEditData(), '編輯同盟')) return;
+      if(window.SLG.startInlineEditAlliance){
+        window.SLG.startInlineEditAlliance(editBtn.dataset.id);
+      }
+      return;
+    }
+    /* 刪除 */
+    const delBtn = e.target.closest('[data-action="del-alliance"]');
     if(delBtn){
       if(!requirePerm(() => effectiveCanEditData(), '刪除同盟')) return;
       const a = state.alliances.find(x => x.id === delBtn.dataset.id);
@@ -1183,7 +1210,6 @@ function bindUI(){
       if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
         window.SLG.GameMap.refreshZoneSelector();
       }
-      /* 城池卡片可能顯示戰區名稱，重繪卡片檢視 */
       if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
       saveState();
       logSystem(`✏️ 戰區已更名：${oldName} → ${trimmed}`);
@@ -1761,12 +1787,11 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.6.3] 戰區名稱編輯 + 城池批次修改戰區（就緒）', 'color:#ffaa44;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.6.4] 清單內行內編輯（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 /* ============================================================
    暴露 main.js 內部函式到 window.SLG
-   供 ui.js / auth.js 呼叫
    ============================================================ */
 Object.assign(window.SLG, {
   showConfirm,

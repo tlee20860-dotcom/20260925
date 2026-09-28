@@ -1,6 +1,6 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.6.3：戰區名稱編輯 + 城池批次修改戰區
+ * v8.6.4：清單內行內編輯（參戰盟 + 城池）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -39,6 +39,12 @@ const {
 
 const Auth = () => window.SLG.Auth;
 const hasTogglePerm = () => typeof window.SLG.togglePerm === 'function';
+
+/* ============================================================
+   v8.6.4：行內編輯狀態
+   ============================================================ */
+let editingAllianceRowId = null;  // 正在 inline 編輯的盟 ID
+let editingCityRowId = null;      // 正在 inline 編輯的城池 ID
 
 /* ============================================================
    viz — 態勢圖
@@ -447,7 +453,7 @@ const R = (() => {
   }
 
   /* ============================================================
-     參戰盟清單（拖曳排序 + 移除 3 欄 + 加均戰）
+     參戰盟清單（拖曳排序 + 行內編輯）
      ============================================================ */
   function renderAlliances(){
     const tbody = document.getElementById('allianceTableBody');
@@ -458,18 +464,48 @@ const R = (() => {
     }
 
     const sorted = getAlliancesSorted ? getAlliancesSorted() : [...state.alliances];
+    const editingId = editingAllianceRowId;
 
     tbody.innerHTML = sorted.map((a, idx) => {
+      const isEditing = (editingId === a.id);
       const cap = state.cities.find(c => c.allianceId === a.id && c.isCapital);
       const tagCls = a.side === 'self' ? 'tag-self' : (a.side === 'ally' ? 'tag-ally' : 'tag-enemy');
       const chipCls = a.side === 'self' ? 'self' : (a.side === 'ally' ? 'ally' : 'enemy');
       const icon = a.icon || '';
-      const isEditing = state.editingAllianceId === a.id;
       const avgPower = a.memberCount > 0 ? (Number(a.totalPower) || 0) / a.memberCount : 0;
+      const yi = (Number(a.totalPower) || 0) / 1e8;
 
-      return `<tr${isEditing ? ' style="background:rgba(255,204,0,.08);"' : ''} data-alliance-id="${a.id}" data-idx="${idx}" draggable="true">
+      if(isEditing){
+        const sideOpts = ['self','ally','enemy'].map(s =>
+          `<option value="${s}" ${s === a.side ? 'selected' : ''}>${allianceSideLabel(s)}</option>`
+        ).join('');
+        return `<tr data-alliance-id="${a.id}" data-idx="${idx}" class="inline-editing">
+          <td class="drag-handle" title="拖曳排序">⠿</td>
+          <td class="col-name">
+            <div class="inline-icon-name">
+              <input type="text" class="inline-icon-input" data-inline-field="icon" value="${esc(a.icon||'')}" maxlength="8" placeholder="⚔️">
+              <input type="text" class="inline-name-input" data-inline-field="name" value="${esc(a.name)}" maxlength="20" placeholder="盟名稱">
+            </div>
+          </td>
+          <td class="inline-select-td"><select data-inline-field="side">${sideOpts}</select></td>
+          <td class="col-num"><input type="number" class="inline-num-input" data-inline-field="memberCount" value="${a.memberCount || 0}" min="1" step="1"></td>
+          <td class="col-num">
+            <div class="inline-power-wrap">
+              <input type="number" class="inline-power-input" data-inline-field="totalPowerYi" value="${yi.toFixed(2)}" step="0.01" min="0">
+              <span class="inline-unit">億</span>
+            </div>
+          </td>
+          <td class="col-num inline-avg-preview" data-inline-preview="avgPower">—</td>
+          <td class="col-actions">
+            <button class="btn btn-success btn-sm" data-action="save-alliance-inline" data-id="${a.id}" title="儲存">💾</button>
+            <button class="btn btn-ghost btn-sm" data-action="cancel-alliance-inline" data-id="${a.id}" title="取消">✕</button>
+          </td>
+        </tr>`;
+      }
+
+      return `<tr data-alliance-id="${a.id}" data-idx="${idx}" draggable="true">
         <td class="drag-handle" title="拖曳排序">⠿</td>
-        <td class="col-name"><span class="alliance-tag ${tagCls}"></span>${icon ? `<span class="alliance-icon">${icon}</span>` : ''}${esc(a.name)}${isEditing ? '<span class="editing-badge">編輯中</span>' : ''}${cap ? ` <span style="color:var(--neon-yellow);font-size:10px;">👑 ${esc(cap.name)}</span>` : ''}</td>
+        <td class="col-name"><span class="alliance-tag ${tagCls}"></span>${icon ? `<span class="alliance-icon">${icon}</span>` : ''}${esc(a.name)}${cap ? ` <span style="color:var(--neon-yellow);font-size:10px;">👑 ${esc(cap.name)}</span>` : ''}</td>
         <td><span class="chip ${chipCls}">${allianceSideLabel(a.side)}</span></td>
         <td class="col-num">${(a.memberCount||0).toLocaleString()}</td>
         <td class="col-num">${formatPower(a.totalPower)}</td>
@@ -482,10 +518,11 @@ const R = (() => {
     }).join('');
 
     bindAllianceDragDrop(tbody);
+    bindAllianceInlineEdit(tbody);
 
     if(hasTogglePerm() && Auth()){
       const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
-      document.querySelectorAll('[data-action="edit-alliance"],[data-action="del-alliance"]').forEach(b => {
+      document.querySelectorAll('[data-action="edit-alliance"],[data-action="del-alliance"],[data-action="save-alliance-inline"],[data-action="cancel-alliance-inline"]').forEach(b => {
         window.SLG.togglePerm(b, canEdit, '需要編輯資料權限');
       });
     }
@@ -493,15 +530,14 @@ const R = (() => {
     renderIconQuickRow();
   }
 
-  /* ============================================================
-     盟拖曳排序事件
-     ============================================================ */
+  /* ── 盟拖曳排序 ── */
   let dragSrcId = null;
 
   function bindAllianceDragDrop(tbody){
-    const rows = tbody.querySelectorAll('tr[data-alliance-id]');
+    const rows = tbody.querySelectorAll('tr[data-alliance-id]:not(.inline-editing)');
     rows.forEach(tr => {
       tr.addEventListener('dragstart', (e) => {
+        if(editingAllianceRowId) return;
         dragSrcId = tr.dataset.allianceId;
         tr.classList.add('dragging');
         try{
@@ -551,15 +587,11 @@ const R = (() => {
         const insertBefore = e.clientY < midY;
 
         currentOrder.splice(srcIdx, 1);
-        if(srcIdx < tgtIdx){
-          tgtIdx -= 1;
-        }
+        if(srcIdx < tgtIdx) tgtIdx -= 1;
         const insertPos = insertBefore ? tgtIdx : tgtIdx + 1;
         currentOrder.splice(insertPos, 0, dragSrcId);
 
-        if(reorderAlliances){
-          reorderAlliances(currentOrder);
-        }
+        if(reorderAlliances) reorderAlliances(currentOrder);
         renderAlliances();
         if(typeof renderMatrix === 'function') renderMatrix();
         if(typeof renderOverview === 'function') renderOverview();
@@ -567,14 +599,49 @@ const R = (() => {
     });
   }
 
-  /* ============================================================
-     盟徽快速選擇（隱藏已使用）
-     ============================================================ */
+  /* ── v8.6.4：盟行內編輯事件 ── */
+  function bindAllianceInlineEdit(tbody){
+    /* 即時計算平均戰力 */
+    tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
+      const mcEl = tr.querySelector('[data-inline-field="memberCount"]');
+      const tpEl = tr.querySelector('[data-inline-field="totalPowerYi"]');
+      const preview = tr.querySelector('[data-inline-preview="avgPower"]');
+      const updatePreview = () => {
+        const mc = parseFloat(mcEl?.value) || 0;
+        const yi = parseFloat(tpEl?.value) || 0;
+        const total = Math.round(yi * 1e8);
+        const avg = mc > 0 ? total / mc : 0;
+        if(preview) preview.textContent = formatAvgPower(avg);
+      };
+      if(mcEl) mcEl.addEventListener('input', updatePreview);
+      if(tpEl) tpEl.addEventListener('input', updatePreview);
+      updatePreview();
+    });
+
+    /* Enter 儲存 / Esc 取消 */
+    tbody.querySelectorAll('tr.inline-editing input, tr.inline-editing select').forEach(el => {
+      el.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          const tr = el.closest('tr');
+          const saveBtn = tr?.querySelector('[data-action="save-alliance-inline"]');
+          if(saveBtn) saveBtn.click();
+        } else if(e.key === 'Escape'){
+          e.preventDefault();
+          const tr = el.closest('tr');
+          const cancelBtn = tr?.querySelector('[data-action="cancel-alliance-inline"]');
+          if(cancelBtn) cancelBtn.click();
+        }
+      });
+    });
+  }
+
+  /* ── 盟徽快速選擇 ── */
   function renderIconQuickRow(){
     const row = document.getElementById('iconQuickRow');
     if(!row) return;
 
-    const excludeId = state.editingAllianceId || null;
+    const excludeId = state.editingAllianceId || editingAllianceRowId || null;
     const icons = getAllianceIcons ? getAllianceIcons() : [];
 
     let html = '<span class="icon-quick-label">快速選擇盟徽：</span>';
@@ -595,6 +662,13 @@ const R = (() => {
         if(btn.classList.contains('icon-used')) return;
         if(btn.disabled) return;
         const icon = btn.dataset.icon || '';
+        /* v8.6.4：優先寫入 inline edit 的盟徽 input */
+        const inlineInput = document.querySelector('tr.inline-editing [data-inline-field="icon"]');
+        if(inlineInput){
+          inlineInput.value = icon;
+          inlineInput.dispatchEvent(new Event('input', { bubbles: true }));
+          return;
+        }
         const input = document.getElementById('allyIcon');
         if(input){
           input.value = icon;
@@ -604,9 +678,7 @@ const R = (() => {
     }
   }
 
-  /* ============================================================
-     盟對盟消耗比例矩陣
-     ============================================================ */
+  /* ── 盟對盟消耗比例矩陣 ── */
   function renderMatrix(){
     const wrap = document.getElementById('allianceMatrixWrap');
     if(!wrap) return;
@@ -650,9 +722,6 @@ const R = (() => {
     wrap.innerHTML = html;
   }
 
-  /* ============================================================
-     城對城消耗比例矩陣
-     ============================================================ */
   function renderCityMatrix(){
     const wrap = document.getElementById('cityMatrixWrap');
     if(!wrap) return;
@@ -672,9 +741,7 @@ const R = (() => {
       for(const c of state.cities){
         const hasOutAtk = (c.attackTargets || []).some(t => t.cityId);
         const hasOutDef = (c.defendTargets || []).some(t => t.cityId);
-        if(hasOutAtk || hasOutDef){
-          citySet.add(c.id);
-        }
+        if(hasOutAtk || hasOutDef) citySet.add(c.id);
         for(const o of state.cities){
           for(const t of (o.attackTargets || [])){
             if(t.cityId === c.id) citySet.add(c.id);
@@ -894,6 +961,83 @@ const R = (() => {
     if(typeof window.SLG.renderOverview === 'function') window.SLG.renderOverview();
   }
 
+  /* v8.6.4：暴露行內編輯控制 */
+  function startInlineEditAlliance(id){
+    if(editingAllianceRowId === id) return;
+    editingAllianceRowId = id;
+    renderAlliances();
+    /* 聚焦盟名稱 input */
+    setTimeout(() => {
+      const tr = document.querySelector(`tr[data-alliance-id="${id}"]`);
+      if(tr){
+        const nameInput = tr.querySelector('[data-inline-field="name"]');
+        if(nameInput){ nameInput.focus(); nameInput.select(); }
+      }
+    }, 0);
+  }
+
+  function cancelInlineEditAlliance(){
+    editingAllianceRowId = null;
+    renderAlliances();
+  }
+
+  function saveInlineEditAlliance(id){
+    const tr = document.querySelector(`tr[data-alliance-id="${id}"]`);
+    if(!tr) return false;
+    const alliance = state.alliances.find(a => a.id === id);
+    if(!alliance) return false;
+
+    const getVal = (field) => {
+      const el = tr.querySelector(`[data-inline-field="${field}"]`);
+      return el ? el.value : '';
+    };
+
+    const icon = String(getVal('icon') || '').trim();
+    const name = String(getVal('name') || '').trim();
+    const side = String(getVal('side') || 'ally');
+    const memberCount = parseFloat(getVal('memberCount')) || 0;
+    const totalPowerYi = parseFloat(getVal('totalPowerYi')) || 0;
+    const totalPower = Math.round(totalPowerYi * 1e8);
+
+    /* 驗證 */
+    if(!name){ alert('盟名稱不能為空'); return false; }
+    if(name.length > 20){ alert('盟名稱最多 20 字'); return false; }
+    if(memberCount <= 0){ alert('總人數必須大於 0'); return false; }
+    if(icon && isAllianceIconUsed && isAllianceIconUsed(icon, id)){
+      alert('❌ 此盟徽已被其他盟使用，請更換');
+      return false;
+    }
+
+    /* 若設為 self，其他 self 改成 enemy */
+    if(side === 'self'){
+      state.alliances.forEach(a => {
+        if(a.side === 'self' && a.id !== id){
+          a.side = 'enemy';
+          state.entityRev.alliance[a.id] = (state.entityRev.alliance[a.id] || 0) + 1;
+          window.SLG.markDirty('alliance', a.id);
+        }
+      });
+    }
+
+    const avgPower = totalPower / memberCount;
+
+    window.SLG.upsertEntity('alliance', {
+      id, name, icon, side, memberCount, totalPower, avgPower, power: totalPower,
+      order: typeof alliance.order === 'number' ? alliance.order : 9999,
+      createdAt: alliance.createdAt || Date.now(),
+    });
+
+    editingAllianceRowId = null;
+    renderAlliances();
+    if(typeof renderMatrix === 'function') renderMatrix();
+    if(window.SLG.CityManager) window.SLG.CityManager.render();
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(typeof renderOverview === 'function') renderOverview();
+    window.SLG.saveState();
+    logSystem(`✅ 已儲存同盟：${name}`);
+    return true;
+  }
+
   return {
     renderHealth, renderHost, renderDebug, renderMembers,
     renderAlliances, renderMatrix, renderCityMatrix, populateCityMatrixFilters,
@@ -901,6 +1045,12 @@ const R = (() => {
     renderZones, renderCities,
     renderNarrative, renderChat, renderChatBadge, renderProgress,
     renderAll,
+    /* v8.6.4 */
+    startInlineEditAlliance,
+    cancelInlineEditAlliance,
+    saveInlineEditAlliance,
+    getEditingAllianceRowId: () => editingAllianceRowId,
+    getEditingCityRowId: () => editingCityRowId,
   };
 })();
 
@@ -1516,7 +1666,7 @@ const DEPLOY = (() => {
 })();
 
 /* ============================================================
-   CityManager — 城池清單表格 + 批次操作（v8.6.3：加戰區）
+   CityManager — 城池清單表格 + 批次操作 + 行內編輯
    ============================================================ */
 const CityManager = (() => {
   let currentView = 'table';
@@ -1553,13 +1703,11 @@ const CityManager = (() => {
       });
     }
 
-    /* v8.6.3：批次套用戰區 */
     const btnApplyZone = document.getElementById('btnCityBatchApplyZone');
     if(btnApplyZone){
       btnApplyZone.addEventListener('click', () => {
         const raw = document.getElementById('cityBatchZone').value;
         if(!raw){ alert('請選擇戰區'); return; }
-        /* '__CLEAR__' 代表清除戰區（設為空字串）*/
         const zoneId = (raw === '__CLEAR__') ? '' : raw;
         applyBatch('zoneId', zoneId);
       });
@@ -1636,11 +1784,9 @@ const CityManager = (() => {
     if(window.SLG.flushPatches) window.SLG.flushPatches();
     if(window.SLG.saveState) window.SLG.saveState();
     render();
-    /* v8.6.3：批次修改戰區 → 更新地圖下拉 */
     if(field === 'zoneId' && window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
       window.SLG.GameMap.refreshZoneSelector();
     }
-    /* 同步重繪地圖、卡片檢視、概覽 */
     if(window.SLG.GameMap) window.SLG.GameMap.render();
     if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
@@ -1669,18 +1815,54 @@ const CityManager = (() => {
 
     const list = getFilteredCities();
     const tbody = document.getElementById('cityTableBody');
+    const editingId = editingCityRowId;
+
     if(tbody){
       if(list.length === 0){
         tbody.innerHTML = '<tr><td colspan="11" class="city-table-empty">無城池資料</td></tr>';
       } else {
         tbody.innerHTML = list.map(c => {
+          const isEditing = (editingId === c.id);
           const zone = state.zones.find(z => z.id === c.zoneId);
           const alliance = state.alliances.find(a => a.id === c.allianceId);
           const avg = c.totalTeams > 0 ? Math.floor((Number(c.totalPower)||0) / c.totalTeams) : null;
           const icon = (alliance && alliance.icon) ? alliance.icon + ' ' : '';
           const avgDisplay = avg === null || !isFinite(avg) ? '—' : formatAvgPower(avg);
+          const yi = (Number(c.totalPower) || 0) / 1e8;
 
-          return `<tr class="${c.isCapital ? 'row-self' : ''}">
+          if(isEditing){
+            const zoneOpts = '<option value="">（未分配）</option>' +
+              state.zones.map(z => `<option value="${z.id}" ${z.id === c.zoneId ? 'selected' : ''}>${esc(z.name)}</option>`).join('');
+            const allianceOpts = '<option value="">（不指定 / NPC）</option>' +
+              state.alliances.map(a => `<option value="${a.id}" ${a.id === c.allianceId ? 'selected' : ''}>${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</option>`).join('');
+            const sideOpts = ['self','ally','enemy','common_enemy','npc'].map(s =>
+              `<option value="${s}" ${s === c.side ? 'selected' : ''}>${sideLabel(s)}</option>`
+            ).join('');
+
+            return `<tr data-city-id="${c.id}" class="inline-editing">
+              <td><input type="checkbox" class="city-cb" data-id="${c.id}" disabled></td>
+              <td class="city-name"><input type="text" class="inline-name-input" data-inline-field="name" value="${esc(c.name)}" maxlength="20"></td>
+              <td><input type="number" class="inline-num-input" data-inline-field="level" value="${c.level||1}" min="1" max="10" step="1"></td>
+              <td class="inline-select-td"><select data-inline-field="zoneId">${zoneOpts}</select></td>
+              <td class="inline-select-td"><select data-inline-field="allianceId">${allianceOpts}</select></td>
+              <td class="inline-select-td"><select data-inline-field="side">${sideOpts}</select></td>
+              <td class="col-num"><input type="number" class="inline-num-input" data-inline-field="memberCount" value="${c.memberCount||0}" min="0" step="1"></td>
+              <td class="col-num">
+                <div class="inline-power-wrap">
+                  <input type="number" class="inline-power-input" data-inline-field="totalPowerYi" value="${yi.toFixed(2)}" step="0.01" min="0">
+                  <span class="inline-unit">億</span>
+                </div>
+              </td>
+              <td class="col-num"><input type="number" class="inline-num-input" data-inline-field="totalTeams" value="${c.totalTeams||0}" min="0" step="1"></td>
+              <td class="col-num inline-avg-preview" data-inline-preview="avgPower">—</td>
+              <td class="col-actions">
+                <button class="btn btn-success btn-sm" data-action="save-city-inline" data-id="${c.id}" title="儲存">💾</button>
+                <button class="btn btn-ghost btn-sm" data-action="cancel-city-inline" data-id="${c.id}" title="取消">✕</button>
+              </td>
+            </tr>`;
+          }
+
+          return `<tr class="${c.isCapital ? 'row-self' : ''}" data-city-id="${c.id}">
             <td><input type="checkbox" class="city-cb" data-id="${c.id}"></td>
             <td class="city-name">${c.isCapital ? '👑 ' : ''}${esc(c.name)}</td>
             <td><span class="chip" style="font-size:9px;">Lv.${c.level||1}</span></td>
@@ -1703,7 +1885,9 @@ const CityManager = (() => {
     if(tbody){
       tbody.querySelectorAll('[data-action="edit-city"]').forEach(b => {
         b.addEventListener('click', function(){
-          if(window.SLG.openCityModal) window.SLG.openCityModal(this.dataset.id);
+          const id = this.dataset.id;
+          /* v8.6.4：直接進 inline edit */
+          startInlineEditCity(id);
         });
       });
       tbody.querySelectorAll('[data-action="del-city"]').forEach(b => {
@@ -1721,10 +1905,47 @@ const CityManager = (() => {
           }
         });
       });
+
+      bindCityInlineEdit(tbody);
     }
 
     updateBatchBar();
     renderDistSummary();
+  }
+
+  /* ── v8.6.4：城池行內編輯事件 ── */
+  function bindCityInlineEdit(tbody){
+    tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
+      const teamsEl = tr.querySelector('[data-inline-field="totalTeams"]');
+      const powerEl = tr.querySelector('[data-inline-field="totalPowerYi"]');
+      const preview = tr.querySelector('[data-inline-preview="avgPower"]');
+      const updatePreview = () => {
+        const teams = parseFloat(teamsEl?.value) || 0;
+        const yi = parseFloat(powerEl?.value) || 0;
+        const total = Math.round(yi * 1e8);
+        const avg = teams > 0 ? Math.floor(total / teams) : 0;
+        if(preview) preview.textContent = avg > 0 ? formatAvgPower(avg) : '—';
+      };
+      if(teamsEl) teamsEl.addEventListener('input', updatePreview);
+      if(powerEl) powerEl.addEventListener('input', updatePreview);
+      updatePreview();
+    });
+
+    tbody.querySelectorAll('tr.inline-editing input, tr.inline-editing select').forEach(el => {
+      el.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          const tr = el.closest('tr');
+          const saveBtn = tr?.querySelector('[data-action="save-city-inline"]');
+          if(saveBtn) saveBtn.click();
+        } else if(e.key === 'Escape'){
+          e.preventDefault();
+          const tr = el.closest('tr');
+          const cancelBtn = tr?.querySelector('[data-action="cancel-city-inline"]');
+          if(cancelBtn) cancelBtn.click();
+        }
+      });
+    });
   }
 
   function populateFilters(){
@@ -1744,7 +1965,6 @@ const CityManager = (() => {
     }
   }
 
-  /* v8.6.3：批次戰區下拉 */
   function populateBatchZoneOptions(){
     const sel = document.getElementById('cityBatchZone');
     if(!sel) return;
@@ -1797,11 +2017,75 @@ const CityManager = (() => {
     }).join('');
   }
 
-  return { init, render };
+  /* v8.6.4：行內編輯控制 */
+  function startInlineEditCity(id){
+    if(editingCityRowId === id) return;
+    editingCityRowId = id;
+    render();
+    setTimeout(() => {
+      const tr = document.querySelector(`tr[data-city-id="${id}"]`);
+      if(tr){
+        const nameInput = tr.querySelector('[data-inline-field="name"]');
+        if(nameInput){ nameInput.focus(); nameInput.select(); }
+      }
+    }, 0);
+  }
+
+  function cancelInlineEditCity(){
+    editingCityRowId = null;
+    render();
+  }
+
+  function saveInlineEditCity(id){
+    const tr = document.querySelector(`tr[data-city-id="${id}"]`);
+    if(!tr) return false;
+    const city = state.cities.find(c => c.id === id);
+    if(!city) return false;
+
+    const getVal = (field) => {
+      const el = tr.querySelector(`[data-inline-field="${field}"]`);
+      return el ? el.value : '';
+    };
+
+    const name = String(getVal('name') || '').trim();
+    const level = parseInt(getVal('level'), 10) || 1;
+    const zoneId = String(getVal('zoneId') || '');
+    const allianceId = String(getVal('allianceId') || '');
+    const side = String(getVal('side') || 'self');
+    const memberCount = parseFloat(getVal('memberCount')) || 0;
+    const totalPowerYi = parseFloat(getVal('totalPowerYi')) || 0;
+    const totalPower = Math.round(totalPowerYi * 1e8);
+    const totalTeams = parseFloat(getVal('totalTeams')) || 0;
+
+    if(!name){ alert('城池名稱不能為空'); return false; }
+    if(name.length > 20){ alert('城池名稱最多 20 字'); return false; }
+    if(level < 1 || level > 10){ alert('等級必須在 1~10 之間'); return false; }
+
+    const avgPower = totalTeams > 0 ? Math.floor(totalPower / totalTeams) : 0;
+
+    window.SLG.upsertEntity('city', {
+      ...city,
+      name, zoneId, allianceId, side,
+      level, memberCount, totalPower, totalTeams, avgPower,
+    });
+
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+
+    editingCityRowId = null;
+    render();
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
+    window.SLG.saveState();
+    logSystem(`✅ 已儲存城池：${name}`);
+    return true;
+  }
+
+  return { init, render, startInlineEditCity, cancelInlineEditCity, saveInlineEditCity };
 })();
 
 /* ============================================================
-   WarManager — 宣戰清單 + 手動新增（v8.6.2：跨戰區過濾）
+   WarManager — 宣戰清單 + 手動新增
    ============================================================ */
 const WarManager = (() => {
   const LS_SORT_KEY = 'slg_war_sort_v856';
@@ -1885,7 +2169,6 @@ const WarManager = (() => {
     return false;
   }
 
-  /* v8.6.2：跨戰區判定 */
   function isSameZoneAsSource(srcCity, tgtCity){
     if(state.settings.crossZoneWarAllowed) return true;
     const srcZone = srcCity.zoneId || '';
@@ -1968,10 +2251,6 @@ const WarManager = (() => {
 
     alert('已無新的宣戰組合可新增（依目前規則與跨戰區限制）');
   }
-
-  /* ============================================================
-     v8.6.1：手動新增區（v8.6.2：跨戰區過濾）
-     ============================================================ */
 
   function renderAddForm(){
     const srcSel = document.getElementById('warAddSrc');
@@ -2978,7 +3257,7 @@ const RouteManager = (() => {
 })();
 
 /* ============================================================
-   GameMap — 地圖（v8.6.2：戰區過濾 + 跨戰區半截線）
+   GameMap — 地圖
    ============================================================ */
 const GameMap = (() => {
   let canvas, ctx, containerEl;
@@ -2994,7 +3273,6 @@ const GameMap = (() => {
   let hoveredCityId = null;
 
   let highlight = null;
-
   let currentZoneFilter = 'all';
 
   let pinchStartDist = 0;
@@ -3090,7 +3368,6 @@ const GameMap = (() => {
     refreshZoneSelector();
   }
 
-  /* v8.6.2：戰區過濾 */
   function loadZoneFilter(){
     try{
       const saved = localStorage.getItem(LS_MAP_ZONE_KEY);
@@ -3163,13 +3440,6 @@ const GameMap = (() => {
     else if(uy < -0.0001) minT = Math.min(minT, (rect.top - sy) / uy);
     if(!isFinite(minT) || minT <= 0) return null;
     return { x: sx + ux * minT, y: sy + uy * minT };
-  }
-
-  function isPointVisible(x, y, rect, buf){
-    if(!rect) return false;
-    buf = buf || 0;
-    return x >= rect.left - buf && x <= rect.right + buf &&
-           y >= rect.top - buf && y <= rect.bottom + buf;
   }
 
   function applyCursor(){
@@ -3473,9 +3743,7 @@ const GameMap = (() => {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
-    if(!any){
-      return;
-    }
+    if(!any) return;
     const contentW = Math.max(maxX - minX, 1);
     const contentH = Math.max(maxY - minY, 1);
     const availW = containerEl.clientWidth || 600;
@@ -3667,7 +3935,6 @@ const GameMap = (() => {
 
     const visRect = getVisibleRect();
 
-    /* ── 路線 ── */
     const highlightedRoutes = new Set(highlight ? highlight.routeKeys : []);
     for(const r of (state.routes || [])){
       const a = nodePositions.get(r.cityAId);
@@ -3701,7 +3968,6 @@ const GameMap = (() => {
       }
     }
 
-    /* ── 拖曳中的線 ── */
     if(routeDragFrom && routeDragEnd){
       const a = nodePositions.get(routeDragFrom.id);
       if(a){
@@ -3716,7 +3982,6 @@ const GameMap = (() => {
       }
     }
 
-    /* ── 宣戰半截箭頭 ── */
     if(!isAllView){
       for(const src of state.cities){
         const srcZone = src.zoneId || '__none__';
@@ -3744,7 +4009,6 @@ const GameMap = (() => {
       }
     }
 
-    /* ── 節點 ── */
     const highlightedCities = new Set(highlight ? highlight.cityIds : []);
     for(const c of state.cities){
       if(!isAllView){
@@ -3924,7 +4188,7 @@ function renderOverview(){
 }
 
 /* ============================================================
-   距離計算工具（v8.6.2：跨戰區警告）
+   距離計算工具
    ============================================================ */
 const DistanceTool = (() => {
   let currentResult = null;
@@ -4562,9 +4826,14 @@ Object.assign(window.SLG, {
   DeployInstr,
   RouteManager,
   GameMap,
+
+  /* v8.6.4：行內編輯 API */
+  startInlineEditAlliance: R.startInlineEditAlliance,
+  cancelInlineEditAlliance: R.cancelInlineEditAlliance,
+  saveInlineEditAlliance: R.saveInlineEditAlliance,
 });
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.6.3）
+ * ui.js 結束（v8.6.4）
  * ========================================================================== */
