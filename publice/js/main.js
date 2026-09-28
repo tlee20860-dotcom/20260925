@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.6.4：行內編輯（盟 + 城池）
+ * v8.6.7：同步定時器 + visibilitychange + beforeunload + 參數綁定
  * ========================================================================== */
 (function(){
 'use strict';
@@ -10,7 +10,7 @@ window.SLG = window.SLG || {};
 const {
   state, on, emit, EVT,
   uid, esc, logSystem,
-  saveState, loadState,
+  saveState, saveStateImportant, loadState,
   syncAIParamsToUI, readAIParamsFromUI,
   ROLE, ROLE_LABELS,
   buildFullSnapshot,
@@ -24,6 +24,12 @@ const {
   timeAgo,
   isAllianceIconUsed,
   resetAllianceOrder,
+  isOnline,
+  initNetworkWatcher,
+  /* v8.6.7 */
+  getSyncPrefs, setSyncPrefs,
+  performCloudUpload, startSyncTimer, stopSyncTimer,
+  markCloudDirty,
 } = window.SLG;
 
 const Auth = () => window.SLG.Auth;
@@ -118,8 +124,7 @@ function applyPermissions(){
     if(firstVisible) firstVisible.click();
   }
 
-  togglePerm(document.getElementById('btnCreateRoom'),
-    Auth() && Auth().canCreateRoom(), '需要幹部以上權限');
+  togglePerm(document.getElementById('btnCreateRoom'), Auth() && Auth().canCreateRoom(), '需要幹部以上權限');
   togglePerm(document.getElementById('btnJoinRoom'), signedIn, '請先登入');
 
   const canEditSettings = Auth() && Auth().canEditSettings();
@@ -129,8 +134,7 @@ function applyPermissions(){
   disableInputs([
     'globalTimeLimit','globalMarchTimeSec','globalConsumeMinPerMin','globalConsumeMaxPerMin',
     'globalSiegeEfficiency','globalMaxLossRatio','globalMinLossRatio',
-    'globalAttackRequireRoute',
-    'globalCrossZoneWar',
+    'globalAttackRequireRoute','globalCrossZoneWar',
     'aiR25','aiR20','aiR15','aiR12','aiR10','aiR08','aiR06','aiR00',
     'aiTeamFactor','aiWallFactor1','aiWallFactor2','aiDefendFactor','aiMinPct'
   ], !canEditSettings);
@@ -143,12 +147,10 @@ function applyPermissions(){
 
   togglePerm(document.getElementById('btnAddZone'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnOpenNewCity'), canEditData, '需要編輯資料權限');
-  togglePerm(document.getElementById('btnSimulate'),
-    Auth() && Auth().canRunSim(), '請先登入');
+  togglePerm(document.getElementById('btnSimulate'), Auth() && Auth().canRunSim(), '請先登入');
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
 
-  /* v8.6.3：城池批次操作 */
   const cityBatchZoneEl = document.getElementById('cityBatchZone');
   if(cityBatchZoneEl) cityBatchZoneEl.disabled = !canEditData;
   const cityBatchAllianceEl = document.getElementById('cityBatchAlliance');
@@ -169,7 +171,6 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnMapFit'), true, '');
   togglePerm(document.getElementById('btnMapClearHighlight'), true, '');
 
-  /* 宣戰按鈕（自動 + 手動）*/
   togglePerm(document.getElementById('btnAddWarLine'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnWarAddManual'), canEditData, '需要編輯資料權限');
   const warAddSrcEl = document.getElementById('warAddSrc');
@@ -190,7 +191,6 @@ function applyPermissions(){
   const chatInputEl = document.getElementById('chatInput');
   if(chatInputEl) chatInputEl.disabled = !signedIn;
 
-  /* v8.6.4：含行內編輯按鈕 */
   document.querySelectorAll(
     '[data-action="edit-city"],[data-action="del-city"],' +
     '[data-action="edit-alliance"],[data-action="del-alliance"],' +
@@ -201,31 +201,21 @@ function applyPermissions(){
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
 
-  /* 清單內編輯欄位 */
   document.querySelectorAll(
     '.list-table [data-war-time],' +
     '.list-table [data-war-src],' +
     '.list-table [data-war-type],' +
     '.list-table [data-war-tgt],' +
     '.list-table [data-deploy-field]'
-  ).forEach(el => {
-    el.disabled = !canEditData;
-  });
-  document.querySelectorAll(
-    '[data-war-del], [data-route-del]'
-  ).forEach(b => {
+  ).forEach(el => { el.disabled = !canEditData; });
+  document.querySelectorAll('[data-war-del], [data-route-del]').forEach(b => {
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
 
-  /* v8.6.4：行內編輯輸入框權限 */
-  document.querySelectorAll(
-    'tr.inline-editing input,' +
-    'tr.inline-editing select'
-  ).forEach(el => {
+  document.querySelectorAll('tr.inline-editing input, tr.inline-editing select').forEach(el => {
     el.disabled = !canEditData;
   });
 
-  /* 盟拖曳 */
   document.querySelectorAll('#allianceTableBody tr[draggable]').forEach(tr => {
     tr.draggable = canEditData;
   });
@@ -234,17 +224,146 @@ function applyPermissions(){
     el.style.opacity = canEditData ? '' : '.35';
   });
 
-  /* 盟徽快速選擇 */
   document.querySelectorAll('#iconQuickRow .icon-quick').forEach(b => {
-    if(!canEditData){
-      b.disabled = true;
-      b.style.pointerEvents = 'none';
-      b.style.opacity = '.35';
-    }
+    if(!canEditData){ b.disabled = true; b.style.pointerEvents = 'none'; b.style.opacity = '.35'; }
   });
 
   if(window.SLG.updateRoomEditButton) window.SLG.updateRoomEditButton();
   if(window.SLG.updateRoomSandboxActions) window.SLG.updateRoomSandboxActions();
+}
+
+/* ============================================================
+   網路中斷遮罩
+   ============================================================ */
+function showNetworkOverlay(){
+  const el = document.getElementById('networkOverlay');
+  if(el) el.classList.add('show');
+}
+function hideNetworkOverlay(){
+  const el = document.getElementById('networkOverlay');
+  if(el) el.classList.remove('show');
+}
+function handleNetworkChange({ online }){
+  if(online){
+    hideNetworkOverlay();
+    logSystem('🟢 網路已恢復');
+    if(state.auth.signedIn && state.mySandbox.cloudLoaded && state.sync.dirty){
+      performCloudUpload('reconnect').catch(e => console.warn('恢復後同步失敗', e));
+    }
+  } else {
+    showNetworkOverlay();
+    logSystem('🔴 網路已中斷');
+  }
+}
+
+/* ============================================================
+   v8.6.7：同步事件處理器
+   ============================================================ */
+function bindSyncWatchers(){
+  /* visibilitychange：頁面隱藏時上傳 */
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState !== 'hidden') return;
+    if(!state.sync.prefs.visibilitySync) return;
+    if(!state.auth.signedIn) return;
+    if(!state.sync.dirty) return;
+    if(!isOnline()) return;
+    logSystem('👁️ 分頁隱藏，觸發上傳');
+    performCloudUpload('visibilitychange').catch(e => console.warn(e));
+  });
+
+  /* beforeunload：關閉頁面前上傳（方案 1：阻止 + 提示）*/
+  window.addEventListener('beforeunload', (e) => {
+    saveState();
+    if(!state.auth.signedIn) return;
+    if(!state.sync.prefs.beforeUnloadSync) return;
+    if(!state.sync.dirty) return;
+    if(state.sync._allowClose) return;
+
+    /* 觸發非同步上傳（盡力而為）*/
+    try{ performCloudUpload('beforeunload'); }catch(_){}
+
+    /* 阻止關閉，顯示瀏覽器原生對話框 */
+    const msg = '您的資料正在同步到雲端，請稍候再關閉頁面。';
+    e.preventDefault();
+    e.returnValue = msg;
+    return msg;
+  });
+
+  /* 監聽 sync 狀態變更 → 更新 UI */
+  on(EVT.SYNC_STATE, () => {
+    if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
+    updateModeBar();
+  });
+}
+
+/* ============================================================
+   v8.6.7：同步設定 UI 綁定
+   ============================================================ */
+function bindSyncSettingsUI(){
+  const intervalEl = document.getElementById('syncIntervalMin');
+  const impEl = document.getElementById('syncImportantImmediate');
+  const visEl = document.getElementById('syncVisibility');
+  const buEl = document.getElementById('syncBeforeUnload');
+
+  /* 初始化：從 prefs 填入 */
+  const prefs = getSyncPrefs();
+  if(intervalEl) intervalEl.value = prefs.intervalMin;
+  if(impEl) impEl.checked = !!prefs.importantImmediate;
+  if(visEl) visEl.checked = !!prefs.visibilitySync;
+  if(buEl) buEl.checked = !!prefs.beforeUnloadSync;
+
+  /* 儲存按鈕 */
+  const btnSave = document.getElementById('btnSaveSyncPrefs');
+  if(btnSave){
+    btnSave.addEventListener('click', () => {
+      const intervalMin = Math.max(0, Math.min(60, parseInt(intervalEl?.value, 10) || 0));
+      const patch = {
+        intervalMin,
+        importantImmediate: !!impEl?.checked,
+        visibilitySync: !!visEl?.checked,
+        beforeUnloadSync: !!buEl?.checked,
+      };
+      setSyncPrefs(patch);
+      if(state.auth.signedIn && intervalMin > 0){ startSyncTimer(); }
+      else { stopSyncTimer(); }
+      updateModeBar();
+      logSystem('☁️ 同步設定已儲存（間隔 ' + (intervalMin === 0 ? '停用' : intervalMin + ' 分鐘') + '）');
+      alert('✅ 同步設定已儲存');
+    });
+  }
+
+  /* 立即上傳按鈕 */
+  const btnNow = document.getElementById('btnManualSyncNow');
+  if(btnNow){
+    btnNow.addEventListener('click', async () => {
+      if(!state.auth.signedIn){ alert('請先登入'); return; }
+      if(!isOnline()){ alert('離線中，無法上傳'); return; }
+      btnNow.disabled = true;
+      btnNow.textContent = '⏳ 上傳中...';
+      try{
+        await performCloudUpload('manual');
+        alert('✅ 已上傳到雲端');
+      }catch(e){
+        alert('❌ 上傳失敗：' + (e.message || e));
+      }finally{
+        btnNow.disabled = false;
+        btnNow.textContent = '☁️ 立即上傳';
+      }
+    });
+  }
+
+  /* 點擊同步狀態 → 開啟歷史 Modal */
+  const statusBtn = document.getElementById('syncStatus');
+  if(statusBtn && !statusBtn.dataset.bound){
+    statusBtn.dataset.bound = '1';
+    statusBtn.addEventListener('click', async () => {
+      if(!state.auth.signedIn){ alert('請先登入才能查看雲端歷史'); return; }
+      if(!isOnline()){ alert('離線中，無法讀取歷史'); return; }
+      const modal = document.getElementById('historyModal');
+      if(modal) modal.classList.add('show');
+      if(window.SLG.renderHistoryList) await window.SLG.renderHistoryList();
+    });
+  }
 }
 
 /* ============================================================
@@ -290,7 +409,6 @@ function executeSimulation(zoneId){
 
   const cities = collectCitiesForSim(zoneId);
   if(cities.length === 0){ logSystem('❌ 無城池資料'); return; }
-
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(cities);
 
   const v = validateCrossDay(cities, timeLimitMin);
@@ -411,16 +529,10 @@ function handleSimulationDone(result){
   saveState();
 
   if(window.SLG.Summary){
-    const summary = window.SLG.Summary.build(
-      result,
-      state.cities,
-      state.alliances,
-      state.dynRows
-    );
+    const summary = window.SLG.Summary.build(result, state.cities, state.alliances, state.dynRows);
     window.SLG.Summary.render(summary);
     logSystem('📊 推演總結已建立');
   }
-
   if(state.isHost && window.SLG.isConnected()){
     window.SLG.publish({ type:'viz_payload', data: viz().getAllSnapshots() });
     window.SLG.publish({ type:'dyn_payload', rows: state.dynRows });
@@ -431,13 +543,11 @@ function handleSimulationDone(result){
   logSystem('✅ 推演完成');
 
   const summaryTab = document.querySelector('.top-nav button[data-tab="tab-summary"]');
-  if(summaryTab && summaryTab.style.display !== 'none'){
-    summaryTab.click();
-  }
+  if(summaryTab && summaryTab.style.display !== 'none'){ summaryTab.click(); }
 }
 
 /* ============================================================
-   P6：審核彈窗渲染
+   審核彈窗
    ============================================================ */
 function renderEditRequestReview(){
   const list = document.getElementById('editRequestList');
@@ -454,9 +564,7 @@ function renderEditRequestReview(){
   if(visibleReqs.length === 0){ modal.classList.remove('show'); return; }
 
   list.innerHTML = visibleReqs.map(([uid, r]) => {
-    const time = r.requestedAt
-      ? new Date(r.requestedAt).toLocaleTimeString().slice(0,5)
-      : '—';
+    const time = r.requestedAt ? new Date(r.requestedAt).toLocaleTimeString().slice(0,5) : '—';
     return `<div class="edit-request-item" data-uid="${esc(uid)}">
       <div class="edit-request-info">
         <div class="edit-request-name">🙋 ${esc(r.displayName || r.username || uid)}</div>
@@ -485,12 +593,11 @@ function renderEditRequestReview(){
       window.SLG.rejectEditRequest(uid);
     });
   });
-
   modal.classList.add('show');
 }
 
 /* ============================================================
-   房間空沙盤提示 Modal
+   房間空沙盤提示
    ============================================================ */
 function showRoomEmptyPrompt(){
   if(!window.SLG.isInRoom()) return;
@@ -604,8 +711,7 @@ async function loadSandboxFromList(uid){
     const fileName = buildSandboxFileName(sb.displayName, sb.updatedAt);
     const ok = confirm(
       `確定要載入「${fileName}」嗎？\n\n` +
-      `這會覆蓋你目前的個人沙盤。\n` +
-      `（原沙盤會自動備份到本機）`
+      `這會覆蓋你目前的個人沙盤。\n（原沙盤會自動備份到本機）`
     );
     if(!ok) return;
     backupCurrentSandbox();
@@ -661,11 +767,8 @@ function switchMapView(view){
   const dynamicWrap = document.getElementById('mapDynamicWrap');
   if(routeWrap) routeWrap.style.display = (view === 'route') ? '' : 'none';
   if(dynamicWrap) dynamicWrap.style.display = (view === 'dynamic') ? '' : 'none';
-  if(view === 'route'){
-    if(window.SLG.GameMap) window.SLG.GameMap.activate();
-  } else {
-    if(window.SLG.viz) viz().activate();
-  }
+  if(view === 'route'){ if(window.SLG.GameMap) window.SLG.GameMap.activate(); }
+  else { if(window.SLG.viz) viz().activate(); }
 }
 
 /* ============================================================
@@ -696,7 +799,7 @@ function initListPrefs(){
    事件綁定
    ============================================================ */
 function bindUI(){
-  /* ── 側邊欄 Tab 切換 ── */
+  /* 側邊欄 Tab 切換 */
   document.querySelectorAll('.top-nav button').forEach(btn => {
     btn.addEventListener('click', function(){
       document.querySelectorAll('.top-nav button').forEach(b => b.classList.remove('active'));
@@ -710,7 +813,6 @@ function bindUI(){
         const sidebar = document.getElementById('sidebar');
         if(sidebar) sidebar.classList.remove('open');
       }
-
       if(tabId === 'tab-cities'){
         R().renderCities();
         if(window.SLG.CityManager) window.SLG.CityManager.render();
@@ -744,7 +846,7 @@ function bindUI(){
     });
   });
 
-  /* ── 手機選單 ── */
+  /* 手機選單 */
   const hamburger = document.getElementById('hamburger');
   if(hamburger){
     hamburger.addEventListener('click', () => {
@@ -775,23 +877,15 @@ function bindUI(){
     }
   });
 
-  /* ── 地圖子檢視切換 ── */
+  /* 地圖子檢視 */
   document.querySelectorAll('.map-view-tab').forEach(tab => {
-    tab.addEventListener('click', function(){
-      switchMapView(this.dataset.mapView);
-    });
+    tab.addEventListener('click', function(){ switchMapView(this.dataset.mapView); });
   });
 
-  /* ── 城池數據子 Tab ── */
   if(window.SLG.initCitySubtabs) window.SLG.initCitySubtabs();
-
-  /* ── 清單偏好 ── */
   initListPrefs();
-
-  /* ── 距離工具初始化 ── */
   if(window.SLG.DistanceTool) window.SLG.DistanceTool.init();
 
-  /* ── 地圖戰區選擇器 ── */
   const mapZoneSel = document.getElementById('mapZoneSelect');
   if(mapZoneSel && !mapZoneSel.dataset.bound){
     mapZoneSel.dataset.bound = '1';
@@ -802,7 +896,6 @@ function bindUI(){
     });
   }
 
-  /* ── 城矩陣過濾器 ── */
   const cityMatrixZoneSel = document.getElementById('cityMatrixZone');
   if(cityMatrixZoneSel){
     cityMatrixZoneSel.addEventListener('change', () => {
@@ -816,7 +909,6 @@ function bindUI(){
     });
   }
 
-  /* ── 重置盟排序 ── */
   const btnResetOrder = document.getElementById('btnResetAllianceOrder');
   if(btnResetOrder){
     btnResetOrder.addEventListener('click', () => {
@@ -831,35 +923,58 @@ function bindUI(){
     });
   }
 
-  /* ── 模式切換 ── */
   const btnSwitchMode = document.getElementById('btnSwitchMode');
   if(btnSwitchMode) btnSwitchMode.addEventListener('click', requestSwitchMode);
 
-  /* ── 帳號 UI ── */
   if(window.SLG.bindAuthUI) window.SLG.bindAuthUI();
 
-  /* ── 登出 ── */
+  /* v8.6.7：同步設定 UI */
+  bindSyncSettingsUI();
+
+  /* v8.6.7：登出按鈕（顯示確認對話框）*/
   const btnLogout = document.getElementById('btnLogout');
-  if(btnLogout){
+  if(btnLogout && !btnLogout.dataset.bound){
+    btnLogout.dataset.bound = '1';
     btnLogout.addEventListener('click', async () => {
-      showConfirm('登出', '確定要登出嗎？\n\n登出前會自動儲存你的個人沙盤，並中斷目前的房間連線。', async () => {
-        try{ await Auth().logout(); }
-        catch(e){ console.warn('登出失敗', e); alert('登出失敗：' + e.message); }
-      });
+      if(!isOnline()){ alert('離線中，無法登出。請先恢復網路連線。'); return; }
+      const modal = document.getElementById('logoutConfirmModal');
+      if(modal) modal.classList.add('show');
     });
   }
 
-  /* ── 指揮官名稱 ── */
+  /* v8.6.7：登出對話框按鈕 */
+  const logoutConfirm = document.getElementById('logoutConfirm');
+  if(logoutConfirm && !logoutConfirm.dataset.bound){
+    logoutConfirm.dataset.bound = '1';
+    logoutConfirm.addEventListener('click', async () => {
+      try{
+        await Auth().performLogout();
+      }catch(e){
+        console.warn('登出失敗', e);
+        alert('登出失敗：' + e.message);
+      }
+    });
+  }
+  const logoutCancel = document.getElementById('logoutCancel');
+  if(logoutCancel && !logoutCancel.dataset.bound){
+    logoutCancel.dataset.bound = '1';
+    logoutCancel.addEventListener('click', () => {
+      document.getElementById('logoutConfirmModal').classList.remove('show');
+    });
+  }
+
+  /* 指揮官名稱 */
   const nameInput = document.getElementById('commanderName');
   if(nameInput) nameInput.addEventListener('input', function(){
     state.commanderName = this.value.trim();
     saveState();
   });
 
-  /* ── 建立房間 ── */
+  /* 建立房間 */
   const btnCreateRoom = document.getElementById('btnCreateRoom');
   if(btnCreateRoom) btnCreateRoom.addEventListener('click', async () => {
     if(!requirePerm(() => Auth() && Auth().canCreateRoom(), '建立房間')) return;
+    if(!isOnline()){ alert('離線中，無法建立房間'); return; }
     const name = nameInput.value.trim();
     if(!name){ alert('請先填寫指揮官名稱'); return; }
     const db = window.SLG.getDb();
@@ -879,10 +994,11 @@ function bindUI(){
     saveState();
   });
 
-  /* ── 加入房間 ── */
+  /* 加入房間 */
   const btnJoinRoom = document.getElementById('btnJoinRoom');
   if(btnJoinRoom) btnJoinRoom.addEventListener('click', () => {
     if(!requirePerm(() => state.auth.signedIn, '請先登入才能加入房間')) return;
+    if(!isOnline()){ alert('離線中，無法加入房間'); return; }
     const name = nameInput.value.trim();
     if(!name){ alert('請先填寫指揮官名稱'); return; }
     const code = document.getElementById('roomCode').value.trim();
@@ -892,20 +1008,16 @@ function bindUI(){
     saveState();
   });
 
-  /* ── 中斷連線 ── */
+  /* 中斷連線 */
   const btnDisconnect = document.getElementById('btnDisconnect');
-  if(btnDisconnect) btnDisconnect.addEventListener('click', () => {
-    window.SLG.requestDisconnect();
-  });
+  if(btnDisconnect) btnDisconnect.addEventListener('click', () => { window.SLG.requestDisconnect(); });
 
-  /* ── 離開房間對話框 ── */
+  /* 離開房間對話框 */
   document.querySelectorAll('[data-exit-choice]').forEach(btn => {
     if(!btn.dataset.bound){
       btn.dataset.bound = '1';
       btn.addEventListener('click', function(){
-        if(typeof window.SLG.confirmExit === 'function'){
-          window.SLG.confirmExit(this.dataset.exitChoice);
-        }
+        if(typeof window.SLG.confirmExit === 'function'){ window.SLG.confirmExit(this.dataset.exitChoice); }
       });
     }
   });
@@ -917,29 +1029,23 @@ function bindUI(){
     });
   }
 
-  /* ── 房間沙盤操作 ── */
+  /* 房間沙盤操作 */
   const btnUploadSandbox = document.getElementById('btnUploadSandboxToRoom');
   if(btnUploadSandbox) btnUploadSandbox.addEventListener('click', uploadMySandboxToRoom);
   const btnDownloadRoomSandbox = document.getElementById('btnDownloadRoomSandbox');
   if(btnDownloadRoomSandbox) btnDownloadRoomSandbox.addEventListener('click', downloadRoomSandbox);
 
-  /* ── 申請編輯權限 ── */
+  /* 申請編輯權限 */
   const btnRequestRoomEdit = document.getElementById('btnRequestRoomEdit');
-  if(btnRequestRoomEdit){
-    btnRequestRoomEdit.addEventListener('click', () => {
-      window.SLG.requestRoomEditAccess();
-    });
-  }
+  if(btnRequestRoomEdit) btnRequestRoomEdit.addEventListener('click', () => { window.SLG.requestRoomEditAccess(); });
 
-  /* ── 審核彈窗關閉 ── */
+  /* 審核彈窗關閉 */
   const btnReviewClose = document.getElementById('editRequestReviewClose');
-  if(btnReviewClose){
-    btnReviewClose.addEventListener('click', () => {
-      document.getElementById('editRequestReviewModal').classList.remove('show');
-    });
-  }
+  if(btnReviewClose) btnReviewClose.addEventListener('click', () => {
+    document.getElementById('editRequestReviewModal').classList.remove('show');
+  });
 
-  /* ── 房間空沙盤提示 ── */
+  /* 房間空沙盤提示 */
   document.querySelectorAll('[data-room-action]').forEach(btn => {
     btn.addEventListener('click', function(){
       const action = this.dataset.roomAction;
@@ -951,20 +1057,53 @@ function bindUI(){
   const roomEmptyCancel = document.getElementById('roomEmptyCancel');
   if(roomEmptyCancel) roomEmptyCancel.addEventListener('click', hideRoomEmptyPrompt);
 
-  /* ── 沙盤清單選擇彈窗 ── */
+  /* 沙盤清單選擇彈窗 */
   const sandboxPickerCancel = document.getElementById('sandboxPickerCancel');
   if(sandboxPickerCancel) sandboxPickerCancel.addEventListener('click', () => {
     document.getElementById('sandboxPickerModal').classList.remove('show');
   });
 
-  /* ── 沙盤數據重整 ── */
+  /* 沙盤數據重整 */
   const btnSandboxRefresh = document.getElementById('btnSandboxesRefresh');
   if(btnSandboxRefresh) btnSandboxRefresh.addEventListener('click', refreshSandboxList);
 
-  /* ── 救援工具 ── */
+  /* 雲端歷史版本 */
+  const btnSandboxHistory = document.getElementById('btnSandboxHistory');
+  if(btnSandboxHistory){
+    btnSandboxHistory.addEventListener('click', async () => {
+      if(!state.auth.signedIn){ alert('請先登入'); return; }
+      if(!isOnline()){ alert('離線中，無法讀取歷史'); return; }
+      const modal = document.getElementById('historyModal');
+      if(modal) modal.classList.add('show');
+      if(window.SLG.renderHistoryList) await window.SLG.renderHistoryList();
+    });
+  }
+  const historyClose = document.getElementById('historyClose');
+  if(historyClose){
+    historyClose.addEventListener('click', () => {
+      document.getElementById('historyModal').classList.remove('show');
+    });
+  }
+
+  /* 立即上傳雲端 */
+  const btnSandboxForceSync = document.getElementById('btnSandboxForceSync');
+  if(btnSandboxForceSync){
+    btnSandboxForceSync.addEventListener('click', async () => {
+      if(!state.auth.signedIn){ alert('請先登入'); return; }
+      if(!isOnline()){ alert('離線中，無法上傳'); return; }
+      try{
+        await performCloudUpload('manual-button');
+        alert('✅ 已上傳到雲端');
+        if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+      }catch(e){ alert('❌ 上傳失敗：' + e.message); }
+    });
+  }
+
+  /* 救援工具 */
   const btnRescue = document.getElementById('btnRescueRoom');
   if(btnRescue){
     btnRescue.addEventListener('click', async () => {
+      if(!isOnline()){ alert('離線中，無法救援'); return; }
       const roomCode = document.getElementById('rescueRoomCode').value.trim();
       const statusEl = document.getElementById('rescueStatus');
       if(!roomCode || roomCode.length !== 6){ alert('請輸入 6 位數房間碼'); return; }
@@ -979,13 +1118,11 @@ function bindUI(){
       }catch(e){
         statusEl.textContent = '❌ 失敗：' + e.message;
         alert('❌ 救援失敗：' + e.message);
-      }finally{
-        btnRescue.disabled = false;
-      }
+      }finally{ btnRescue.disabled = false; }
     });
   }
 
-  /* ── 儲存戰鬥參數 ── */
+  /* 儲存戰鬥參數 */
   const btnSaveSettings = document.getElementById('btnSaveSettings');
   if(btnSaveSettings) btnSaveSettings.addEventListener('click', () => {
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改戰鬥參數')) return;
@@ -1011,7 +1148,7 @@ function bindUI(){
     alert('戰鬥參數已儲存');
   });
 
-  /* ── 重置所有數據 ── */
+  /* 重置所有數據 */
   const btnResetAll = document.getElementById('btnResetAll');
   if(btnResetAll) btnResetAll.addEventListener('click', () => {
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '重置資料')) return;
@@ -1020,17 +1157,13 @@ function bindUI(){
       localStorage.removeItem(AI_LS_KEY);
       try{
         const db = window.SLG.getDb();
-        if(db && state.auth.accountUid){
+        if(db && state.auth.accountUid && isOnline()){
           state.settings = {
             timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
             siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
-            attackRequireRoute: false,
-            crossZoneWarAllowed: false,
+            attackRequireRoute: false, crossZoneWarAllowed: false,
           };
-          state.alliances = [];
-          state.zones = [];
-          state.cities = [];
-          state.routes = [];
+          state.alliances = []; state.zones = []; state.cities = []; state.routes = [];
           await window.SLG.saveMySandbox();
         }
       }catch(e){}
@@ -1038,7 +1171,7 @@ function bindUI(){
     });
   });
 
-  /* ── AI 參數 ── */
+  /* AI 參數 */
   const btnAISave = document.getElementById('btnAISave');
   if(btnAISave) btnAISave.addEventListener('click', function(){
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改 AI 參數')) return;
@@ -1061,7 +1194,7 @@ function bindUI(){
     if (el) el.addEventListener('input', () => window.SLG.AI.setParams(readAIParamsFromUI()));
   });
 
-  /* ── 同盟表單（頂部舊版表單，仍保留可用）── */
+  /* 同盟表單 */
   const allyMC = document.getElementById('allyMemberCount');
   const allyTP = document.getElementById('allyTotalPower');
   if(allyMC) allyMC.addEventListener('input', window.SLG.updateAllianceAvgPowerPreview);
@@ -1081,10 +1214,8 @@ function bindUI(){
 
     const isEditingId = state.editingAllianceId || null;
     if(icon && isAllianceIconUsed && isAllianceIconUsed(icon, isEditingId)){
-      alert('❌ 此盟徽已被其他盟使用，請更換');
-      return;
+      alert('❌ 此盟徽已被其他盟使用，請更換'); return;
     }
-
     const avgPower = totalPower / memberCount;
     if(side === 'self'){
       state.alliances.forEach(a => {
@@ -1105,8 +1236,7 @@ function bindUI(){
     }
     window.SLG.upsertEntity('alliance', {
       id, name, icon, side, memberCount, totalPower, avgPower, power: totalPower,
-      order,
-      createdAt: existing ? existing.createdAt : Date.now(),
+      order, createdAt: existing ? existing.createdAt : Date.now(),
     });
     window.SLG.resetAllianceForm();
     R().renderAlliances();
@@ -1120,32 +1250,26 @@ function bindUI(){
   const btnCancelAllianceEdit = document.getElementById('btnCancelAllianceEdit');
   if(btnCancelAllianceEdit) btnCancelAllianceEdit.addEventListener('click', window.SLG.resetAllianceForm);
 
-  /* ── 參戰盟清單點擊（含行內編輯）── */
+  /* 參戰盟清單點擊 */
   const allianceTbody = document.getElementById('allianceTableBody');
   if(allianceTbody) allianceTbody.addEventListener('click', e => {
-    /* v8.6.4：行內編輯 — 儲存 */
     const saveInline = e.target.closest('[data-action="save-alliance-inline"]');
     if(saveInline){
       if(!requirePerm(() => effectiveCanEditData(), '編輯同盟')) return;
       if(window.SLG.saveInlineEditAlliance) window.SLG.saveInlineEditAlliance(saveInline.dataset.id);
       return;
     }
-    /* v8.6.4：行內編輯 — 取消 */
     const cancelInline = e.target.closest('[data-action="cancel-alliance-inline"]');
     if(cancelInline){
       if(window.SLG.cancelInlineEditAlliance) window.SLG.cancelInlineEditAlliance();
       return;
     }
-    /* v8.6.4：點 ✏️ → 進 inline 編輯（不再開頂部表單）*/
     const editBtn = e.target.closest('[data-action="edit-alliance"]');
     if(editBtn){
       if(!requirePerm(() => effectiveCanEditData(), '編輯同盟')) return;
-      if(window.SLG.startInlineEditAlliance){
-        window.SLG.startInlineEditAlliance(editBtn.dataset.id);
-      }
+      if(window.SLG.startInlineEditAlliance) window.SLG.startInlineEditAlliance(editBtn.dataset.id);
       return;
     }
-    /* 刪除 */
     const delBtn = e.target.closest('[data-action="del-alliance"]');
     if(delBtn){
       if(!requirePerm(() => effectiveCanEditData(), '刪除同盟')) return;
@@ -1162,7 +1286,7 @@ function bindUI(){
     }
   });
 
-  /* ── 戰區 ── */
+  /* 戰區 */
   const btnAddZone = document.getElementById('btnAddZone');
   if(btnAddZone) btnAddZone.addEventListener('click', () => {
     if(!requirePerm(() => effectiveCanEditData(), '新增戰區')) return;
@@ -1182,21 +1306,19 @@ function bindUI(){
 
   const zoneListEl = document.getElementById('zoneList');
   if(zoneListEl) zoneListEl.addEventListener('click', e => {
-    /* v8.6.3：編輯戰區名稱 */
     const editBtn = e.target.closest('[data-action="edit-zone"]');
     if(editBtn){
       if(!requirePerm(() => effectiveCanEditData(), '編輯戰區名稱')) return;
       const zone = state.zones.find(z => z.id === editBtn.dataset.id);
       if(!zone) return;
       const newName = prompt('編輯戰區名稱：', zone.name);
-      if(newName === null) return;  /* 使用者取消 */
+      if(newName === null) return;
       const trimmed = String(newName).trim();
       if(!trimmed){ alert('戰區名稱不能為空'); return; }
       if(trimmed.length > 20){ alert('戰區名稱最多 20 字'); return; }
-      if(trimmed === zone.name) return;  /* 未變更 */
+      if(trimmed === zone.name) return;
       if(state.zones.some(z => z.name === trimmed && z.id !== zone.id)){
-        alert('已有同名戰區，請改用其他名稱');
-        return;
+        alert('已有同名戰區，請改用其他名稱'); return;
       }
       const oldName = zone.name;
       zone.name = trimmed;
@@ -1215,8 +1337,6 @@ function bindUI(){
       logSystem(`✏️ 戰區已更名：${oldName} → ${trimmed}`);
       return;
     }
-
-    /* 刪除戰區 */
     const btn = e.target.closest('[data-action="del-zone"]');
     if(!btn) return;
     if(!requirePerm(() => effectiveCanEditData(), '刪除戰區')) return;
@@ -1234,14 +1354,14 @@ function bindUI(){
     });
   });
 
-  /* ── 新增城池 ── */
+  /* 新增城池 */
   const btnOpenNewCity = document.getElementById('btnOpenNewCity');
   if(btnOpenNewCity) btnOpenNewCity.addEventListener('click', () => {
     if(!requirePerm(() => effectiveCanEditData(), '新增城池')) return;
     window.SLG.openCityModal(null);
   });
 
-  /* ── 卡片檢視編輯/刪除 ── */
+  /* 卡片檢視編輯/刪除 */
   const cityListEl = document.getElementById('cityList');
   if(cityListEl) cityListEl.addEventListener('click', e => {
     const editBtn = e.target.closest('[data-action="edit-city"]');
@@ -1265,43 +1385,35 @@ function bindUI(){
     }
   });
 
-  /* ── 城池 Modal ── */
+  /* 城池 Modal */
   const cityModalCancel = document.getElementById('cityModalCancel');
   if(cityModalCancel) cityModalCancel.addEventListener('click', window.SLG.closeCityModal);
-
   const cityModalSave = document.getElementById('cityModalSave');
   if(cityModalSave) cityModalSave.addEventListener('click', () => {
     if(!requirePerm(() => effectiveCanEditData(), '儲存城池')) return;
     window.SLG.saveCityFromModal();
   });
-
   ['cm_totalPower', 'cm_totalTeams', 'cm_memberCount'].forEach(id => {
     const el = document.getElementById(id);
-    if(el) el.addEventListener('input', () => {
-      window.SLG.updateAutoCalcFields();
-    });
+    if(el) el.addEventListener('input', () => { window.SLG.updateAutoCalcFields(); });
   });
 
-  /* ── 路線管理 ── */
+  /* 路線管理 */
   if(window.SLG.RouteManager) window.SLG.RouteManager.init();
-
-  /* ── 宣戰清單（含手動新增） ── */
+  /* 宣戰清單 */
   if(window.SLG.WarManager) window.SLG.WarManager.init();
-
-  /* ── 出兵清單 ── */
+  /* 出兵清單 */
   if(window.SLG.DeployInstr) window.SLG.DeployInstr.init();
-
-  /* ── 地圖 ── */
+  /* 地圖 */
   if(window.SLG.GameMap) window.SLG.GameMap.init();
 
-  /* ── 匯出按鈕 ── */
+  /* 匯出按鈕 */
   const btnExportMapRoutes = document.getElementById('btnExportMapRoutesCSV');
   if(btnExportMapRoutes) btnExportMapRoutes.addEventListener('click', window.SLG.exportMapRoutesCSV);
-
   const btnExportAlliances = document.getElementById('btnExportAlliancesCSV');
   if(btnExportAlliances) btnExportAlliances.addEventListener('click', window.SLG.exportAlliancesCSV);
 
-  /* ── 執行推演 ── */
+  /* 執行推演 */
   const btnSimulate = document.getElementById('btnSimulate');
   if(btnSimulate) btnSimulate.addEventListener('click', () => {
     if(!requirePerm(() => Auth() && Auth().canRunSim(), '請先登入')) return;
@@ -1312,16 +1424,14 @@ function bindUI(){
       return;
     }
     window.SLG.publish({
-      type:'trigger_simulate',
-      zoneId,
-      clientId:state.myClientId,
-      name:state.commanderName
+      type:'trigger_simulate', zoneId,
+      clientId:state.myClientId, name:state.commanderName
     });
     logSystem(`⚡ ${state.commanderName} 啟動推演`);
     if(state.isHost) executeSimulation(zoneId);
   });
 
-  /* ── 確認 Modal ── */
+  /* 確認 Modal */
   const modalCancel = document.getElementById('modalCancel');
   if(modalCancel) modalCancel.addEventListener('click', () => {
     document.getElementById('confirmModal').classList.remove('show');
@@ -1334,42 +1444,32 @@ function bindUI(){
     confirmCb = null;
   });
 
-  /* ── Excel 匯入 / 匯出 ── */
+  /* Excel 匯入 / 匯出 */
   const btnOpenExcel = document.getElementById('btnOpenExcelImport');
   if(btnOpenExcel) btnOpenExcel.addEventListener('click', () => {
     if(!requirePerm(() => effectiveCanImportExcel(), 'Excel 匯入')) return;
     window.SLG.openExcelImportModal();
   });
-
   const btnExportCities = document.getElementById('btnExportCitiesCSV');
   if(btnExportCities) btnExportCities.addEventListener('click', window.SLG.exportCitiesCSV);
-
   const btnExportRoutes = document.getElementById('btnExportRoutesCSV');
   if(btnExportRoutes) btnExportRoutes.addEventListener('click', window.SLG.exportRoutesCSV);
-
   const btnTemplate = document.getElementById('btnDownloadTemplate');
   if(btnTemplate) btnTemplate.addEventListener('click', window.SLG.downloadExcelTemplate);
-
   const excelCancel = document.getElementById('excelImportCancel');
   if(excelCancel) excelCancel.addEventListener('click', window.SLG.closeExcelImportModal);
-
   const btnImpAll = document.getElementById('excelImportAlliancesBtn');
   if(btnImpAll) btnImpAll.addEventListener('click', window.SLG.doImportAlliances);
-
   const btnImpCities = document.getElementById('excelImportCitiesBtn');
   if(btnImpCities) btnImpCities.addEventListener('click', window.SLG.doImportCities);
-
   const btnImpMapRoutes = document.getElementById('excelImportMapRoutesBtn');
   if(btnImpMapRoutes) btnImpMapRoutes.addEventListener('click', window.SLG.doImportMapRoutes);
-
   const btnImpRoutes = document.getElementById('excelImportRoutesBtn');
   if(btnImpRoutes) btnImpRoutes.addEventListener('click', window.SLG.doImportRoutes);
-
   ['excelAlliancesText','excelCitiesText','excelMapRoutesText','excelRoutesText'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.addEventListener('input', window.SLG.updateExcelPreview);
   });
-
   document.querySelectorAll('[data-excel-upload]').forEach(btn => {
     btn.addEventListener('click', () => {
       const which = btn.dataset.excelUpload;
@@ -1380,7 +1480,6 @@ function bindUI(){
       if(fileInput) fileInput.click();
     });
   });
-
   document.querySelectorAll('[data-excel-clear]').forEach(btn => {
     btn.addEventListener('click', () => {
       const which = btn.dataset.excelClear;
@@ -1391,7 +1490,6 @@ function bindUI(){
       if(textarea){ textarea.value = ''; window.SLG.updateExcelPreview(); }
     });
   });
-
   const fileMap = {
     excelCitiesFile: 'excelCitiesText',
     excelRoutesFile: 'excelRoutesText',
@@ -1415,7 +1513,7 @@ function bindUI(){
     });
   });
 
-  /* ── 聊天室 ── */
+  /* 聊天室 */
   const chatInput = document.getElementById('chatInput');
   const btnSendChat = document.getElementById('btnSendChat');
   function doSendChat(){
@@ -1430,7 +1528,6 @@ function bindUI(){
   if(chatInput) chatInput.addEventListener('keydown', e => {
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); doSendChat(); }
   });
-
   const btnClearChat = document.getElementById('btnClearChat');
   if(btnClearChat){
     btnClearChat.addEventListener('click', () => {
@@ -1444,16 +1541,13 @@ function bindUI(){
     });
   }
 
-  /* ── 卸載 ── */
+  /* 卸載：僅本地儲存（beforeunload 已在上方處理同步）*/
   window.addEventListener('beforeunload', () => {
-    if(state.auth.signedIn && window.SLG.saveMySandbox){
-      try{ window.SLG.saveMySandbox(); }catch(e){}
-    }
     saveState();
     try{ releaseWorker(); }catch(e){}
   });
 
-  /* ── 初始化子模組 ── */
+  /* 初始化子模組 */
   DEPLOY().init();
   if(window.SLG.Accounts) window.SLG.Accounts.init();
 }
@@ -1463,15 +1557,14 @@ function bindUI(){
    ============================================================ */
 async function refreshSandboxList(){
   if(!state.auth.signedIn) return;
+  if(!isOnline()) return;
   try{
     const all = await window.SLG.fetchAllSandboxes();
     state.sandboxesList = all || {};
     emit(EVT.SANDBOXES_LIST_UPDATED);
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
     logSystem(`📊 已載入 ${Object.keys(state.sandboxesList).length} 個沙盤`);
-  }catch(e){
-    console.warn('載入沙盤清單失敗', e);
-  }
+  }catch(e){ console.warn('載入沙盤清單失敗', e); }
 }
 
 /* ============================================================
@@ -1484,6 +1577,7 @@ function bindEvents(){
     if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
     applyPermissions();
     updateModeBar();
+    if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
     if(!state.auth.signedIn){
       hideAllTabContent();
     } else {
@@ -1492,9 +1586,7 @@ function bindEvents(){
     }
     if(state.auth.signedIn && Auth() && (Auth().isSuperAdmin() || Auth().isAdmin())){
       const accTab = document.getElementById('tab-accounts');
-      if(accTab && accTab.classList.contains('active')){
-        window.SLG.Accounts.refresh();
-      }
+      if(accTab && accTab.classList.contains('active')){ window.SLG.Accounts.refresh(); }
     }
   });
 
@@ -1505,9 +1597,7 @@ function bindEvents(){
     applyPermissions();
     if(window.SLG.isConnected() && !state.roomHasSnapshot){
       setTimeout(() => {
-        if(window.SLG.isInRoom() && !state.roomHasSnapshot){
-          showRoomEmptyPrompt();
-        }
+        if(window.SLG.isInRoom() && !state.roomHasSnapshot){ showRoomEmptyPrompt(); }
       }, 1500);
     }
   });
@@ -1531,9 +1621,14 @@ function bindEvents(){
     if (document.getElementById('tab-deploy').classList.contains('active')) DEPLOY().render();
   });
 
+  on(EVT.NETWORK, handleNetworkChange);
+
+  on(EVT.SYNC_STATE, () => {
+    if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
+  });
+
   on(EVT.DATA, () => {
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-
     R().renderAlliances();
     R().renderZones();
     R().renderCities();
@@ -1550,17 +1645,11 @@ function bindEvents(){
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.GameMap){
       window.SLG.GameMap.reset();
-      if(window.SLG.GameMap.refreshZoneSelector){
-        window.SLG.GameMap.refreshZoneSelector();
-      }
+      if(window.SLG.GameMap.refreshZoneSelector){ window.SLG.GameMap.refreshZoneSelector(); }
       const mapTab = document.getElementById('tab-map');
-      if(mapTab && mapTab.classList.contains('active')){
-        window.SLG.GameMap.activate();
-      }
+      if(mapTab && mapTab.classList.contains('active')){ window.SLG.GameMap.activate(); }
     }
-    if(window.SLG.DistanceTool && state.distanceResult){
-      window.SLG.DistanceTool.renderResult();
-    }
+    if(window.SLG.DistanceTool && state.distanceResult){ window.SLG.DistanceTool.renderResult(); }
 
     const gt = document.getElementById('globalTimeLimit');
     if(gt) gt.value = state.settings.timeLimitMin;
@@ -1585,31 +1674,22 @@ function bindEvents(){
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
   });
 
-  on(EVT.DYN_RESULT, () => {
-    DYN().setRows(state.dynRows);
-    DYN().populateCityFilters();
-  });
+  on(EVT.DYN_RESULT, () => { DYN().setRows(state.dynRows); DYN().populateCityFilters(); });
 
   on(EVT.ROUTES_UPDATED, () => {
     if(window.SLG.RouteManager) window.SLG.RouteManager.render();
     if(window.SLG.GameMap){
       window.SLG.GameMap.reset();
-      if(window.SLG.GameMap.refreshZoneSelector){
-        window.SLG.GameMap.refreshZoneSelector();
-      }
+      if(window.SLG.GameMap.refreshZoneSelector){ window.SLG.GameMap.refreshZoneSelector(); }
       const mapTab = document.getElementById('tab-map');
-      if(mapTab && mapTab.classList.contains('active')){
-        window.SLG.GameMap.activate();
-      }
+      if(mapTab && mapTab.classList.contains('active')){ window.SLG.GameMap.activate(); }
     }
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.WarManager){
       window.SLG.WarManager.render();
       if(window.SLG.WarManager.renderAddForm) window.SLG.WarManager.renderAddForm();
     }
-    if(window.SLG.DistanceTool && state.distanceResult){
-      window.SLG.DistanceTool.renderResult();
-    }
+    if(window.SLG.DistanceTool && state.distanceResult){ window.SLG.DistanceTool.renderResult(); }
   });
 
   on(EVT.SIM_TRIGGER, payload => {
@@ -1626,9 +1706,7 @@ function bindEvents(){
   on(EVT.ROOM_GRANTS, () => {
     if(window.SLG.updateRoomEditButton) window.SLG.updateRoomEditButton();
     applyPermissions();
-    R().renderCities();
-    R().renderAlliances();
-    R().renderZones();
+    R().renderCities(); R().renderAlliances(); R().renderZones();
     if(window.SLG.CityManager) window.SLG.CityManager.render();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
   });
@@ -1643,6 +1721,7 @@ function bindEvents(){
 
   on(EVT.MY_SANDBOX_UPDATED, () => {
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
+    if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
   });
 
   on(EVT.SANDBOXES_LIST_UPDATED, () => {
@@ -1651,7 +1730,7 @@ function bindEvents(){
 }
 
 /* ============================================================
-   未登入時隱藏所有 Tab 內容
+   未登入時隱藏所有 Tab
    ============================================================ */
 function hideAllTabContent(){
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -1662,6 +1741,9 @@ function hideAllTabContent(){
    啟動
    ============================================================ */
 function boot(){
+  initNetworkWatcher();
+  if(!isOnline()) showNetworkOverlay();
+
   loadState();
 
   const cn = document.getElementById('commanderName');
@@ -1701,23 +1783,20 @@ function boot(){
     }
   });
   window.SLG.registerRoomSnapshotSync(() => {
-    if(state.isHost){
-      window.SLG.publishRoomSnapshot().catch(e => console.warn('房間快照同步失敗', e));
-    }
+    if(state.isHost){ window.SLG.publishRoomSnapshot().catch(e => console.warn('房間快照同步失敗', e)); }
   });
 
   window.SLG.registerSender(patches => {
     if(!state.connected) return;
     window.SLG.publish({
-      type:'sync_patch',
-      clientId:state.myClientId,
-      lamport:state.lamport,
-      patches
+      type:'sync_patch', clientId:state.myClientId,
+      lamport:state.lamport, patches
     });
   });
 
   bindUI();
   bindEvents();
+  bindSyncWatchers();
 
   viz().init();
   DYN().init();
@@ -1733,6 +1812,7 @@ function boot(){
   R().renderChat();
   R().renderChatBadge();
   R().renderProgress(0);
+  if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
   DEPLOY().populateZoneFilter();
   updateModeBar();
   if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
@@ -1754,7 +1834,7 @@ function boot(){
 
   (async () => {
     let ok = false;
-    if(window.SLG.Auth){ ok = await window.SLG.Auth.initFirebaseAuth(); }
+    if(window.SLG.Auth && isOnline()){ ok = await window.SLG.Auth.initFirebaseAuth(); }
     let loggedIn = false;
     if(ok){ loggedIn = await window.SLG.Auth.restoreSession(); }
 
@@ -1775,10 +1855,9 @@ function boot(){
       if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
         window.SLG.GameMap.refreshZoneSelector();
       }
+      if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
       logSystem('🚪 已自動登入，跳過入口');
-      if(document.getElementById('tab-sandbox')?.classList.contains('active')){
-        refreshSandboxList();
-      }
+      if(document.getElementById('tab-sandbox')?.classList.contains('active')){ refreshSandboxList(); }
     } else {
       hideAllTabContent();
       if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
@@ -1787,30 +1866,21 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.6.4] 清單內行內編輯（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.6.7] 雲端同步定時器 + 狀態列 + 網路監控（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
 }
 
 /* ============================================================
-   暴露 main.js 內部函式到 window.SLG
+   暴露
    ============================================================ */
 Object.assign(window.SLG, {
-  showConfirm,
-  applyPermissions,
-  requirePerm,
-  togglePerm,
-  effectiveCanEditData,
-  effectiveCanImportExcel,
-  loadSandboxFromList,
-  uploadMySandboxToRoom,
-  openSandboxPicker,
-  downloadRoomSandbox,
-  refreshSandboxList,
-  backupCurrentSandbox,
-  showRoomEmptyPrompt,
-  hideRoomEmptyPrompt,
-  switchMapView,
-  executeSimulation,
-  renderEditRequestReview,
+  showConfirm, applyPermissions, requirePerm, togglePerm,
+  effectiveCanEditData, effectiveCanImportExcel,
+  loadSandboxFromList, uploadMySandboxToRoom, openSandboxPicker,
+  downloadRoomSandbox, refreshSandboxList, backupCurrentSandbox,
+  showRoomEmptyPrompt, hideRoomEmptyPrompt,
+  switchMapView, executeSimulation, renderEditRequestReview,
+  showNetworkOverlay, hideNetworkOverlay, handleNetworkChange,
+  bindSyncWatchers, bindSyncSettingsUI,
 });
 
 if(document.readyState === 'loading'){

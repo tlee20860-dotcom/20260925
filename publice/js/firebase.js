@@ -1,6 +1,6 @@
 /* ============================================================================
  * firebase.js — Firebase 連線 / 個人沙盤 / 房間沙盤 / 聊天 / 編輯權限 / 退出
- * v8.6.5：雲端載入保護 + 衝突確認 + 歷史備份 + 還原工具
+ * v8.6.7：saveMySandbox 清 dirty + loadMySandbox 啟定時器
  * ========================================================================== */
 (function(){
 'use strict';
@@ -15,11 +15,9 @@ const {
   buildSandboxData, applySandboxData,
   enterRoomMode, exitRoomMode, updateModeBar,
   HOST_TIMEOUT, EDIT_LOCK_TTL, ROLE,
+  isOnline,
 } = window.SLG;
 
-/* ============================================================
-   Firebase 設定
-   ============================================================ */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDjfakubDKBpCi4xi1l_W_M6f9MdNC0oe0",
   authDomain: "ya-sandbox.firebaseapp.com",
@@ -30,9 +28,8 @@ const FIREBASE_CONFIG = {
   appId: "1:648660430942:web:bb09124cbb3a2dc72f44cf"
 };
 
-/* ============================================================
-   模組內部狀態
-   ============================================================ */
+const SANDBOX_HISTORY_LIMIT = 20;
+
 let fbApp = null;
 let fbDb = null;
 let fbConnected = false;
@@ -75,19 +72,14 @@ function getApp(){ return fbApp; }
 /* ============================================================
    個人雲端沙盤 API
    ============================================================ */
-function sandboxRef(uid){
-  return fbDb.ref(`userSandboxes/${uid}`);
-}
+function sandboxRef(u){ return fbDb.ref(`userSandboxes/${u}`); }
 
-async function fetchUserSandbox(uid){
+async function fetchUserSandbox(u){
   if(!fbDb) return null;
   try{
-    const snap = await sandboxRef(uid).once('value');
+    const snap = await sandboxRef(u).once('value');
     return snap.val() || null;
-  }catch(e){
-    console.warn(`讀取 ${uid} 沙盤失敗`, e);
-    return null;
-  }
+  }catch(e){ console.warn(`讀取 ${u} 沙盤失敗`, e); return null; }
 }
 
 async function fetchAllSandboxes(){
@@ -95,18 +87,15 @@ async function fetchAllSandboxes(){
   try{
     const snap = await fbDb.ref('userSandboxes').once('value');
     return snap.val() || {};
-  }catch(e){
-    console.warn('讀取沙盤清單失敗', e);
-    return {};
-  }
+  }catch(e){ console.warn('讀取沙盤清單失敗', e); return {}; }
 }
 
-/* v8.6.5：儲存前先把舊版存進 history（保留最近 10 筆） */
 async function saveMySandbox(){
   if(!fbDb) return false;
   if(!state.auth.signedIn) return false;
-  const uid = state.auth.accountUid;
-  if(!uid) return false;
+  if(!isOnline()){ console.warn('[sync] 離線中，跳過雲端儲存'); return false; }
+  const u = state.auth.accountUid;
+  if(!u) return false;
 
   const payload = {
     username: state.auth.username,
@@ -117,133 +106,183 @@ async function saveMySandbox(){
 
   try{
     state.mySandbox.saving = true;
-
-    /* v8.6.5：先把舊版存到 history */
+    /* 歷史備份 */
     try{
-      const prevSnap = await sandboxRef(uid).once('value');
+      const prevSnap = await sandboxRef(u).once('value');
       const prev = prevSnap.val();
       if(prev && prev.data && prev.data.cities && prev.data.cities.length > 0){
         const ts = prev.updatedAt || Date.now();
-        await sandboxRef(uid).child(`history/${ts}`).set({
+        await sandboxRef(u).child(`history/${ts}`).set({
           updatedAt: ts,
           citiesCount: prev.data.cities.length,
+          alliancesCount: prev.data.alliances?.length || 0,
           data: prev.data,
         });
-        /* 清理超過 10 筆 */
-        const histSnap = await sandboxRef(uid).child('history').once('value');
+        const histSnap = await sandboxRef(u).child('history').once('value');
         const hist = histSnap.val() || {};
         const keys = Object.keys(hist).sort();
-        while(keys.length > 10){
+        while(keys.length > SANDBOX_HISTORY_LIMIT){
           const k = keys.shift();
-          try{ await sandboxRef(uid).child(`history/${k}`).remove(); }catch(e){}
+          try{ await sandboxRef(u).child(`history/${k}`).remove(); }catch(e){}
         }
       }
-    }catch(e){ console.warn('[v8.6.5] 歷史備份失敗（不影響主流程）', e); }
+    }catch(e){ console.warn('[sync] 歷史備份失敗', e); }
 
-    /* 正式寫入 */
-    await sandboxRef(uid).set(payload);
+    await sandboxRef(u).set(payload);
     state.mySandbox.updatedAt = payload.updatedAt;
     state.mySandbox.loaded = true;
     state.mySandbox.saving = false;
     emit(EVT.MY_SANDBOX_UPDATED);
+    /* v8.6.7：清除 dirty 標記 */
+    if(window.SLG.clearCloudDirty) window.SLG.clearCloudDirty();
     return true;
   }catch(e){
     state.mySandbox.saving = false;
     console.warn('儲存個人沙盤失敗', e);
-    return false;
+    throw e;
   }
 }
 
-/* v8.6.5：載入 + 衝突確認 + cloudLoaded 標誌 */
 async function loadMySandbox(){
   if(!fbDb) return false;
   if(!state.auth.signedIn) return false;
-  const uid = state.auth.accountUid;
-  if(!uid) return false;
+  if(!isOnline()){
+    console.warn('[sync] 離線中，無法載入雲端沙盤');
+    state.mySandbox.cloudLoaded = true;
+    return false;
+  }
+  const u = state.auth.accountUid;
+  if(!u) return false;
 
   state.mySandbox.loading = true;
   emit(EVT.MY_SANDBOX_UPDATED);
 
   try{
-    const data = await fetchUserSandbox(uid);
+    const data = await fetchUserSandbox(u);
+    const hasCloudData = !!(data && data.data);
     const cloudCities = data?.data?.cities?.length || 0;
+    const cloudAlliances = data?.data?.alliances?.length || 0;
+    const cloudZones = data?.data?.zones?.length || 0;
     const localCities = state.cities.length || 0;
+    const localAlliances = state.alliances.length || 0;
 
-    if(data && data.data && cloudCities > 0){
-      /* v8.6.5：衝突檢查 */
-      if(localCities > 0 && localCities !== cloudCities){
-        const when = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '未知時間';
-        const useCloud = confirm(
-          `⚠️ 沙盤衝突偵測\n\n` +
-          `☁️ 雲端：${cloudCities} 城（${when}）\n` +
-          `💾 本機：${localCities} 城\n\n` +
-          `【確定】使用雲端覆蓋本機\n` +
-          `【取消】保留本機（不上傳雲端）`
-        );
-        if(useCloud){
-          applySandboxData(data.data);
-          logSystem('☁️ 已用雲端覆蓋本機');
-        } else {
-          logSystem('💾 保留本機資料，跳過雲端載入');
-          state.mySandbox.cloudLoaded = true;
-          state.mySandbox.loading = false;
-          emit(EVT.MY_SANDBOX_UPDATED);
-          return true;
-        }
-      } else {
-        applySandboxData(data.data);
-        logSystem('☁️ 已載入個人雲端沙盤');
-      }
+    if(hasCloudData){
+      applySandboxData(data.data);
       state.mySandbox.updatedAt = data.updatedAt || 0;
       state.mySandbox.loaded = true;
+      logSystem(`☁️ 已載入雲端沙盤（${cloudCities} 城 / ${cloudAlliances} 盟 / ${cloudZones} 戰區）`);
     } else {
-      /* 雲端無資料 */
       state.mySandbox.loaded = true;
       state.mySandbox.updatedAt = 0;
       logSystem('☁️ 雲端無沙盤');
-
-      /* v8.6.5：本機有資料時，改為詢問，不自動上傳 */
-      if(localCities > 0 || state.alliances.length > 0){
-        const ok = confirm(
-          `📤 雲端沒有沙盤\n\n` +
-          `本機有 ${localCities} 城 / ${state.alliances.length} 盟\n\n` +
-          `要把本機資料上傳到雲端嗎？`
-        );
-        if(ok){
+      if(localCities > 0 || localAlliances > 0){
+        logSystem(`📤 本機有 ${localCities} 城 / ${localAlliances} 盟，自動上傳到雲端`);
+        try{
           await saveMySandbox();
-        } else {
-          logSystem('💾 保留本機，不上傳');
-        }
+          logSystem('✅ 已將本機資料上傳為雲端初始沙盤');
+        }catch(e){ console.warn('自動上傳失敗', e); }
       }
     }
+
     state.mySandbox.loading = false;
-    state.mySandbox.cloudLoaded = true;   /* v8.6.5 */
+    state.mySandbox.cloudLoaded = true;
     emit(EVT.MY_SANDBOX_UPDATED);
+    /* v8.6.7：啟動定時上傳器 */
+    if(window.SLG.startSyncTimer && state.auth.signedIn){
+      window.SLG.startSyncTimer();
+    }
     return true;
   }catch(e){
     state.mySandbox.loading = false;
-    state.mySandbox.cloudLoaded = true;   /* v8.6.5：失敗也放行，允許使用者手動操作 */
+    state.mySandbox.cloudLoaded = true;
     console.warn('載入個人沙盤失敗', e);
     return false;
   }
 }
 
+function clearLocalSandbox(){
+  try{
+    localStorage.removeItem(window.SLG.LS_PREFIX + 'state');
+    logSystem('🗑️ 已清空本機沙盤');
+    return true;
+  }catch(e){ console.warn('清空本機沙盤失敗', e); return false; }
+}
+
+/* ============================================================
+   沙盤歷史備份工具
+   ============================================================ */
+async function listSandboxHistory(){
+  if(!fbDb) return [];
+  if(!state.auth.signedIn) return [];
+  const u = state.auth.accountUid;
+  if(!u) return [];
+  try{
+    const snap = await sandboxRef(u).child('history').once('value');
+    const all = snap.val() || {};
+    return Object.entries(all).map(([ts, item]) => ({
+      ts: parseInt(ts, 10),
+      citiesCount: item.citiesCount || item.data?.cities?.length || 0,
+      alliancesCount: item.alliancesCount || item.data?.alliances?.length || 0,
+      data: item.data,
+      savedAt: item.updatedAt,
+    })).sort((a, b) => b.ts - a.ts);
+  }catch(e){ console.warn('讀取歷史失敗', e); return []; }
+}
+
+async function restoreFromHistory(ts){
+  if(!fbDb) throw new Error('Firebase 未就緒');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  const u = state.auth.accountUid;
+  const snap = await sandboxRef(u).child(`history/${ts}`).once('value');
+  const item = snap.val();
+  if(!item || !item.data){ throw new Error('找不到此歷史版本'); }
+  const cities = item.data.cities?.length || 0;
+  const alliances = item.data.alliances?.length || 0;
+  const when = new Date(ts).toLocaleString();
+  const ok = confirm(
+    `確定要還原此版本嗎？\n\n時間：${when}\n內容：${cities} 城 / ${alliances} 盟\n\n` +
+    `⚠️ 目前的本機資料會被覆蓋（會先存到歷史備份）`
+  );
+  if(!ok) return false;
+  try{ await saveMySandbox(); }catch(e){}
+
+  applySandboxData(item.data);
+  state.mySandbox.cloudLoaded = true;
+  state.mySandbox.loaded = true;
+  state.mySandbox.updatedAt = item.updatedAt || ts;
+
+  if(window.SLG.R){
+    window.SLG.R.renderAlliances();
+    window.SLG.R.renderZones();
+  }
+  if(window.SLG.CityManager) window.SLG.CityManager.render();
+  if(window.SLG.renderOverview) window.SLG.renderOverview();
+  saveState();
+  logSystem(`✅ 已從歷史還原：${cities} 城 / ${alliances} 盟`);
+  return true;
+}
+
+async function previewHistory(ts){
+  if(!fbDb) throw new Error('Firebase 未就緒');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  const u = state.auth.accountUid;
+  const snap = await sandboxRef(u).child(`history/${ts}`).once('value');
+  const item = snap.val();
+  if(!item || !item.data) throw new Error('找不到此歷史版本');
+  return item.data;
+}
+
 /* ============================================================
    房間沙盤 API
    ============================================================ */
-function roomSnapshotPath(){
-  return `rooms/${state.roomCode}/latestSnapshot`;
-}
+function roomSnapshotPath(){ return `rooms/${state.roomCode}/latestSnapshot`; }
 
 async function fetchRoomSnapshot(roomCode){
   if(!fbDb) return null;
   try{
     const snap = await fbDb.ref(`rooms/${roomCode}/latestSnapshot`).once('value');
     return snap.val() || null;
-  }catch(e){
-    console.warn(`讀取房間 ${roomCode} 沙盤失敗`, e);
-    return null;
-  }
+  }catch(e){ console.warn(`讀取房間 ${roomCode} 沙盤失敗`, e); return null; }
 }
 
 async function fetchAllRoomSnapshots(){
@@ -253,52 +292,39 @@ async function fetchAllRoomSnapshots(){
     const all = snap.val() || {};
     const result = {};
     for(const code in all){
-      const room = all[code];
-      if(room && room.latestSnapshot){
-        result[code] = room.latestSnapshot;
-      }
+      if(all[code] && all[code].latestSnapshot) result[code] = all[code].latestSnapshot;
     }
     return result;
-  }catch(e){
-    console.warn('讀取房間沙盤清單失敗', e);
-    return {};
-  }
+  }catch(e){ console.warn('讀取房間沙盤清單失敗', e); return {}; }
 }
 
 async function publishRoomSnapshot(){
   if(!fbDb || !state.roomCode) return false;
   if(!window.SLG.canEditRoomData || !window.SLG.canEditRoomData()) return false;
-
+  if(!isOnline()) return false;
   const payload = {
     updatedAt: Date.now(),
     updatedBy: state.auth.accountUid || 'unknown',
     updatedByName: state.auth.displayName || state.commanderName || '未知',
     data: buildSandboxData(),
   };
-
   try{
     await fbDb.ref(roomSnapshotPath()).set(payload);
     state.roomHasSnapshot = true;
     state.roomSnapshot = payload;
     emit(EVT.ROOM_SNAPSHOT_UPDATED);
     return true;
-  }catch(e){
-    console.warn('寫入房間快照失敗', e);
-    return false;
-  }
+  }catch(e){ console.warn('寫入房間快照失敗', e); return false; }
 }
 
 async function uploadSandboxToRoom(sandboxData, sourceName){
   if(!fbDb || !state.roomCode) return false;
+  if(!isOnline()){ alert('離線中，無法上載'); return false; }
   if(!window.SLG.canUploadSandboxToRoom || !window.SLG.canUploadSandboxToRoom()){
     alert('您沒有上載沙盤到此房間的權限');
     return false;
   }
-  if(!sandboxData){
-    alert('沙盤資料為空');
-    return false;
-  }
-
+  if(!sandboxData){ alert('沙盤資料為空'); return false; }
   const payload = {
     updatedAt: Date.now(),
     updatedBy: state.auth.accountUid || 'unknown',
@@ -306,18 +332,14 @@ async function uploadSandboxToRoom(sandboxData, sourceName){
     sourceName: sourceName || '未知來源',
     data: JSON.parse(JSON.stringify(sandboxData)),
   };
-
   try{
     await fbDb.ref(roomSnapshotPath()).set(payload);
     state.roomSnapshot = payload;
     state.roomHasSnapshot = true;
-
     applySandboxData(sandboxData);
     saveState();
     emit(EVT.DATA);
-
     publish(buildFullSnapshot());
-
     emit(EVT.ROOM_SNAPSHOT_UPDATED);
     logSystem(`📤 已上載沙盤到房間：${sourceName || '未知'}`);
     return true;
@@ -329,70 +351,12 @@ async function uploadSandboxToRoom(sandboxData, sourceName){
 }
 
 /* ============================================================
-   v8.6.5：沙盤歷史備份工具
-   ============================================================ */
-async function listSandboxHistory(){
-  if(!fbDb) return [];
-  if(!state.auth.signedIn) return [];
-  const uid = state.auth.accountUid;
-  if(!uid) return [];
-  try{
-    const snap = await sandboxRef(uid).child('history').once('value');
-    const all = snap.val() || {};
-    return Object.entries(all).map(([ts, item]) => ({
-      ts: parseInt(ts, 10),
-      citiesCount: item.citiesCount || item.data?.cities?.length || 0,
-      data: item.data,
-      savedAt: item.updatedAt,
-    })).sort((a, b) => b.ts - a.ts);
-  }catch(e){
-    console.warn('讀取歷史失敗', e);
-    return [];
-  }
-}
-
-async function restoreFromHistory(ts){
-  if(!fbDb) throw new Error('Firebase 未就緒');
-  if(!state.auth.signedIn) throw new Error('請先登入');
-  const uid = state.auth.accountUid;
-  const snap = await sandboxRef(uid).child(`history/${ts}`).once('value');
-  const item = snap.val();
-  if(!item || !item.data){ throw new Error('找不到此歷史版本'); }
-  const cities = item.data.cities?.length || 0;
-  const ok = confirm(
-    `確定要還原此版本嗎？\n\n` +
-    `時間：${new Date(ts).toLocaleString()}\n` +
-    `內容：${cities} 城\n\n` +
-    `⚠️ 目前的本機資料會被覆蓋（會先存到歷史備份）`
-  );
-  if(!ok) return false;
-
-  try{ await saveMySandbox(); }catch(e){}
-
-  applySandboxData(item.data);
-  state.mySandbox.cloudLoaded = true;
-  state.mySandbox.loaded = true;
-  if(typeof window.SLG.CityManager !== 'undefined'){
-    window.SLG.CityManager.render();
-    window.SLG.R.renderAlliances();
-    window.SLG.R.renderZones();
-    if(window.SLG.renderOverview) window.SLG.renderOverview();
-  }
-  return true;
-}
-
-/* ============================================================
    連線
    ============================================================ */
 function connectFirebase(roomCode, asHost){
-  if(!roomCode || roomCode.length !== 6){
-    emit(EVT.DEBUG, {msg:'❌ 房間碼必須為6位數', err:true});
-    return;
-  }
-  if(!state.commanderName){
-    emit(EVT.DEBUG, {msg:'❌ 請先填寫指揮官名稱', err:true});
-    return;
-  }
+  if(!isOnline()){ emit(EVT.DEBUG, {msg:'❌ 離線中，無法連線房間', err:true}); alert('目前無網路連線，請稍後再試'); return; }
+  if(!roomCode || roomCode.length !== 6){ emit(EVT.DEBUG, {msg:'❌ 房間碼必須為6位數', err:true}); return; }
+  if(!state.commanderName){ emit(EVT.DEBUG, {msg:'❌ 請先填寫指揮官名稱', err:true}); return; }
 
   if(fbConnected || state.connecting) disconnectFirebase();
 
@@ -404,12 +368,7 @@ function connectFirebase(roomCode, asHost){
   emit(EVT.CONN);
   emit(EVT.DEBUG, {msg:'🟡 正在連線至 Firebase...'});
 
-  if(!fbDb){
-    state.connecting = false;
-    emit(EVT.CONN);
-    emit(EVT.DEBUG, {msg:'❌ Firebase 未初始化', err:true});
-    return;
-  }
+  if(!fbDb){ state.connecting = false; emit(EVT.CONN); emit(EVT.DEBUG, {msg:'❌ Firebase 未初始化', err:true}); return; }
 
   clearTimeout(connectWaitTimer);
   connectWaitTimer = setTimeout(() => {
@@ -439,9 +398,7 @@ async function onFirebaseConnected(asHost){
   fbConnected = true;
   state.connected = true;
   state.connecting = false;
-
   enterRoomMode();
-
   emit(EVT.CONN);
   emit(EVT.DEBUG, {msg:'🟢 已連線至 Firebase！'});
 
@@ -449,7 +406,6 @@ async function onFirebaseConnected(asHost){
   state.isHost = !!asHost;
   state.hostName = asHost ? state.commanderName : '';
 
-  /* 1. 先讀取房間 latestSnapshot */
   emit(EVT.DEBUG, {msg:'📥 讀取房間沙盤...'});
   try{
     const roomSnap = await fetchRoomSnapshot(state.roomCode);
@@ -467,23 +423,15 @@ async function onFirebaseConnected(asHost){
       emit(EVT.ROOM_SNAPSHOT_UPDATED);
       emit(EVT.DEBUG, {msg:'📭 房間尚無沙盤'});
     }
-  }catch(e){
-    console.warn('讀取房間沙盤失敗', e);
-  }
+  }catch(e){ console.warn('讀取房間沙盤失敗', e); }
 
-  /* 2. Presence */
   presenceRef = fbDb.ref(`rooms/${state.roomCode}/presence/${state.myClientId}`);
-  presenceRef.set({
-    name: state.commanderName,
-    joinTime: now,
-    isHost: state.isHost,
-    lastSeen: now,
-  });
+  presenceRef.set({ name: state.commanderName, joinTime: now, isHost: state.isHost, lastSeen: now });
   presenceRef.onDisconnect().remove();
 
   clearInterval(lastSeenTimer);
   lastSeenTimer = setInterval(() => {
-    if(fbConnected && presenceRef) presenceRef.update({ lastSeen: Date.now() });
+    if(fbConnected && presenceRef && isOnline()) presenceRef.update({ lastSeen: Date.now() });
   }, 5000);
 
   presenceWatchRef = fbDb.ref(`rooms/${state.roomCode}/presence`);
@@ -495,17 +443,13 @@ async function onFirebaseConnected(asHost){
       const m = presence[cid];
       if(!m) continue;
       if(nowTs - (m.lastSeen||0) < HOST_TIMEOUT){
-        state.members[cid] = {
-          name:m.name, joinTime:m.joinTime,
-          isHost:!!m.isHost, lastSeen:m.lastSeen
-        };
+        state.members[cid] = { name:m.name, joinTime:m.joinTime, isHost:!!m.isHost, lastSeen:m.lastSeen };
       }
     }
     emit(EVT.MEMBERS);
     checkHostHealthFirebase();
   });
 
-  /* 3. Events */
   eventsRef = fbDb.ref(`rooms/${state.roomCode}/events`);
   const evHandler = eventsRef.limitToLast(200).on('child_added', snap => {
     const p = snap.val();
@@ -516,14 +460,9 @@ async function onFirebaseConnected(asHost){
   });
   fbEventHandlers.push({ ref: eventsRef, evt:'child_added', fn: evHandler });
 
-  /* 4. Locks */
   locksRef = fbDb.ref(`rooms/${state.roomCode}/locks`);
-  locksRef.on('value', snap => {
-    state.editLocks = snap.val() || {};
-    emit(EVT.LOCKS);
-  });
+  locksRef.on('value', snap => { state.editLocks = snap.val() || {}; emit(EVT.LOCKS); });
 
-  /* 5. P6：編輯授權 */
   grantsRef = fbDb.ref(`rooms/${state.roomCode}/editGrants`);
   const grantsHandler = grantsRef.on('value', snap => {
     state.roomEditGrants = snap.val() || {};
@@ -536,7 +475,6 @@ async function onFirebaseConnected(asHost){
   });
   fbEventHandlers.push({ ref: grantsRef, evt:'value', fn: grantsHandler });
 
-  /* 6. P6：待審核申請 */
   pendingEditRef = fbDb.ref(`rooms/${state.roomCode}/pendingEditRequests`);
   const pendingEditHandler = pendingEditRef.on('value', snap => {
     state.pendingEditRequests = snap.val() || {};
@@ -549,7 +487,6 @@ async function onFirebaseConnected(asHost){
   });
   fbEventHandlers.push({ ref: pendingEditRef, evt:'value', fn: pendingEditHandler });
 
-  /* 7. 房間 latestSnapshot 監聽 */
   latestSnapshotRef = fbDb.ref(roomSnapshotPath());
   const latestSnapshotHandler = latestSnapshotRef.on('value', snap => {
     const val = snap.val();
@@ -571,7 +508,6 @@ async function onFirebaseConnected(asHost){
   });
   fbEventHandlers.push({ ref: latestSnapshotRef, evt:'value', fn: latestSnapshotHandler });
 
-  /* 8. Chat */
   chatRef = fbDb.ref(`rooms/${state.roomCode}/chat`);
   const chatHandler = chatRef.limitToLast(200).on('child_added', snap => {
     const m = snap.val();
@@ -579,20 +515,13 @@ async function onFirebaseConnected(asHost){
     const isSelf = (m._from === state.myClientId);
     const isSystem = !!m.isSystem;
     addChatMessage({
-      id: snap.key,
-      sender: m.sender || '系統',
-      text: m.text,
-      time: m.time,
-      isSelf,
-      isSystem,
+      id: snap.key, sender: m.sender || '系統', text: m.text, time: m.time, isSelf, isSystem,
     });
     if(!isSelf && !isSystem){
       const chatTab = document.getElementById('tab-chat');
       if(!chatTab || !chatTab.classList.contains('active')){
         state.unreadChat++;
-        if(typeof window.SLG.renderChatBadge === 'function'){
-          window.SLG.renderChatBadge();
-        }
+        if(typeof window.SLG.renderChatBadge === 'function') window.SLG.renderChatBadge();
       }
     }
   });
@@ -600,17 +529,10 @@ async function onFirebaseConnected(asHost){
 
   saveState();
   emit(EVT.HOST);
-
   startEditLockRenew();
-  if(typeof window.SLG.updatePushButtonState === 'function'){
-    window.SLG.updatePushButtonState();
-  }
-  if(typeof window.SLG.updateRoomEditButton === 'function'){
-    window.SLG.updateRoomEditButton();
-  }
-  if(typeof window.SLG.updateRoomSandboxActions === 'function'){
-    window.SLG.updateRoomSandboxActions();
-  }
+  if(typeof window.SLG.updatePushButtonState === 'function') window.SLG.updatePushButtonState();
+  if(typeof window.SLG.updateRoomEditButton === 'function') window.SLG.updateRoomEditButton();
+  if(typeof window.SLG.updateRoomSandboxActions === 'function') window.SLG.updateRoomSandboxActions();
 }
 
 function checkHostHealthFirebase(){
@@ -636,15 +558,9 @@ function checkHostHealthFirebase(){
       emit(EVT.HOST);
       logSystem('👑 你已成為房主');
       saveState();
-      if(typeof window.SLG.updatePushButtonState === 'function'){
-        window.SLG.updatePushButtonState();
-      }
-      if(typeof window.SLG.updateRoomEditButton === 'function'){
-        window.SLG.updateRoomEditButton();
-      }
-      if(typeof window.SLG.updateRoomSandboxActions === 'function'){
-        window.SLG.updateRoomSandboxActions();
-      }
+      if(typeof window.SLG.updatePushButtonState === 'function') window.SLG.updatePushButtonState();
+      if(typeof window.SLG.updateRoomEditButton === 'function') window.SLG.updateRoomEditButton();
+      if(typeof window.SLG.updateRoomSandboxActions === 'function') window.SLG.updateRoomSandboxActions();
     }
   }
 }
@@ -660,9 +576,7 @@ function disconnectFirebase(){
   fbEventHandlers.length = 0;
 
   if(locksRef && myEditLocks.size > 0){
-    for(const cityId of myEditLocks){
-      try{ locksRef.child(cityId).remove(); }catch(e){}
-    }
+    for(const cityId of myEditLocks){ try{ locksRef.child(cityId).remove(); }catch(e){} }
     myEditLocks.clear();
   }
 
@@ -675,9 +589,8 @@ function disconnectFirebase(){
   if(presenceWatchRef){ try{ presenceWatchRef.off(); }catch(e){} }
   if(connWatchRef){ try{ connWatchRef.off(); }catch(e){} }
 
-  presenceRef = null; locksRef = null; chatRef = null;
-  grantsRef = null; pendingEditRef = null; latestSnapshotRef = null;
-  presenceWatchRef = null; connWatchRef = null; eventsRef = null;
+  presenceRef = locksRef = chatRef = grantsRef = pendingEditRef = null;
+  latestSnapshotRef = presenceWatchRef = connWatchRef = eventsRef = null;
 
   fbConnected = false;
   state.connected = false;
@@ -687,36 +600,24 @@ function disconnectFirebase(){
   state.members = {};
   state.editLocks = {};
   state.roomCode = '';
-
   state.roomSnapshot = null;
   state.roomHasSnapshot = false;
   state.pendingUploadSandbox = null;
 
   if(window.SLG.resetRoomEditState) window.SLG.resetRoomEditState();
 
-  const exitModal = document.getElementById('exitRoomModal');
-  if(exitModal) exitModal.classList.remove('show');
-  const reviewModal = document.getElementById('editRequestReviewModal');
-  if(reviewModal) reviewModal.classList.remove('show');
-  const emptyModal = document.getElementById('roomEmptyPromptModal');
-  if(emptyModal) emptyModal.classList.remove('show');
-  const pickerModal = document.getElementById('sandboxPickerModal');
-  if(pickerModal) pickerModal.classList.remove('show');
+  ['exitRoomModal','editRequestReviewModal','roomEmptyPromptModal','sandboxPickerModal'].forEach(id => {
+    const m = document.getElementById(id);
+    if(m) m.classList.remove('show');
+  });
 
   exitRoomMode();
-
   emit(EVT.CONN); emit(EVT.MEMBERS); emit(EVT.HOST); emit(EVT.LOCKS);
   emit(EVT.DEBUG, {msg:'🔴 已中斷連線'});
   saveState();
-  if(typeof window.SLG.updatePushButtonState === 'function'){
-    window.SLG.updatePushButtonState();
-  }
-  if(typeof window.SLG.updateRoomEditButton === 'function'){
-    window.SLG.updateRoomEditButton();
-  }
-  if(typeof window.SLG.updateRoomSandboxActions === 'function'){
-    window.SLG.updateRoomSandboxActions();
-  }
+  if(typeof window.SLG.updatePushButtonState === 'function') window.SLG.updatePushButtonState();
+  if(typeof window.SLG.updateRoomEditButton === 'function') window.SLG.updateRoomEditButton();
+  if(typeof window.SLG.updateRoomSandboxActions === 'function') window.SLG.updateRoomSandboxActions();
 }
 
 /* ============================================================
@@ -724,15 +625,12 @@ function disconnectFirebase(){
    ============================================================ */
 function publish(payload){
   if(!fbConnected || !fbDb || !state.roomCode) return;
+  if(!isOnline()) return;
   try{
     fbDb.ref(`rooms/${state.roomCode}/events`).push({
-      ...payload,
-      _from: state.myClientId,
-      _ts: Date.now(),
+      ...payload, _from: state.myClientId, _ts: Date.now(),
     });
-  }catch(e){
-    console.warn('Firebase 發送失敗', e);
-  }
+  }catch(e){ console.warn('Firebase 發送失敗', e); }
 }
 
 /* ============================================================
@@ -740,12 +638,9 @@ function publish(payload){
    ============================================================ */
 function acquireEditLock(cityId){
   if(!fbConnected || !fbDb || !state.roomCode) return;
+  if(!isOnline()) return;
   const ref = fbDb.ref(`rooms/${state.roomCode}/locks/${cityId}`);
-  ref.set({
-    clientId: state.myClientId,
-    name: state.commanderName,
-    expiresAt: Date.now() + EDIT_LOCK_TTL,
-  });
+  ref.set({ clientId: state.myClientId, name: state.commanderName, expiresAt: Date.now() + EDIT_LOCK_TTL });
   ref.onDisconnect().remove();
   myEditLocks.add(cityId);
 }
@@ -758,6 +653,7 @@ function startEditLockRenew(){
   clearInterval(lockRenewTimer);
   lockRenewTimer = setInterval(() => {
     if(!fbConnected || !locksRef) return;
+    if(!isOnline()) return;
     for(const cityId of myEditLocks){
       try{ locksRef.child(cityId).update({ expiresAt: Date.now() + EDIT_LOCK_TTL }); }catch(e){}
     }
@@ -778,15 +674,12 @@ function handleIncoming(payload){
     }
     case 'sync_snapshot': {
       if(applyFullSnapshot(payload)){
-        emit(EVT.DATA);
-        saveState();
+        emit(EVT.DATA); saveState();
         emit(EVT.DEBUG, {msg:'🔄 已同步房主快照'});
       }
       break;
     }
-    case 'trigger_simulate':
-      emit(EVT.SIM_TRIGGER, payload);
-      break;
+    case 'trigger_simulate': emit(EVT.SIM_TRIGGER, payload); break;
     case 'viz_payload': {
       if(payload.data && window.SLG.viz){
         try{
@@ -799,10 +692,7 @@ function handleIncoming(payload){
       break;
     }
     case 'dyn_payload': {
-      if(payload.rows){
-        state.dynRows = payload.rows;
-        emit(EVT.DYN_RESULT);
-      }
+      if(payload.rows){ state.dynRows = payload.rows; emit(EVT.DYN_RESULT); }
       break;
     }
     case 'room_snapshot_updated': {
@@ -831,9 +721,7 @@ function handleIncoming(payload){
 function addChatMessage(msg){
   if(msg.id && state.chatMessages.some(m => m.id === msg.id)) return;
   state.chatMessages.push(msg);
-  if(state.chatMessages.length > 200){
-    state.chatMessages = state.chatMessages.slice(-200);
-  }
+  if(state.chatMessages.length > 200) state.chatMessages = state.chatMessages.slice(-200);
   if(typeof window.SLG.renderChat === 'function') window.SLG.renderChat();
   if(typeof window.SLG.renderChatBadge === 'function') window.SLG.renderChatBadge();
   saveState();
@@ -843,72 +731,41 @@ function sendChatMessage(text){
   text = (text || '').trim();
   if(!text) return;
   if(!state.commanderName){ alert('請先設定指揮官名稱'); return; }
-
-  if(!isConnected()){
-    addChatMessage({
-      id: uid(),
-      sender: state.commanderName,
-      text,
-      time: nowTime(),
-      isSelf: true,
-      isSystem: false,
-    });
+  if(!isConnected() || !isOnline()){
+    addChatMessage({ id: uid(), sender: state.commanderName, text, time: nowTime(), isSelf: true, isSystem: false });
     return;
   }
-
   try{
     fbDb.ref(`rooms/${state.roomCode}/chat`).push({
-      sender: state.commanderName,
-      text,
-      time: nowTime(),
-      _from: state.myClientId,
-      _ts: Date.now(),
+      sender: state.commanderName, text, time: nowTime(),
+      _from: state.myClientId, _ts: Date.now(),
     });
   }catch(e){
     console.warn('聊天發送失敗', e);
-    addChatMessage({
-      id: uid(),
-      sender: state.commanderName,
-      text,
-      time: nowTime(),
-      isSelf: true,
-      isSystem: false,
-    });
+    addChatMessage({ id: uid(), sender: state.commanderName, text, time: nowTime(), isSelf: true, isSystem: false });
   }
 }
 
 function sendSystemChat(text){
   if(!isConnected()) return;
+  if(!isOnline()) return;
   try{
     fbDb.ref(`rooms/${state.roomCode}/chat`).push({
-      sender: '系統',
-      text: text,
-      time: nowTime(),
-      _from: state.myClientId,
-      _ts: Date.now(),
-      isSystem: true,
+      sender: '系統', text, time: nowTime(),
+      _from: state.myClientId, _ts: Date.now(), isSystem: true,
     });
   }catch(e){}
 }
 
 /* ============================================================
-   房間編輯權限申請 / 批准 / 拒絕
+   房間編輯權限
    ============================================================ */
 function requestRoomEditAccess(){
   if(!isConnected()){ alert('請先加入房間'); return; }
-  if(window.SLG.canEditRoomData && window.SLG.canEditRoomData()){
-    alert('您已擁有編輯權限');
-    return;
-  }
-  if(state.myEditRequestStatus === 'pending'){
-    alert('已送出申請，等待審核中');
-    return;
-  }
-  if(!state.auth.signedIn){
-    alert('請先登入');
-    return;
-  }
-
+  if(!isOnline()){ alert('離線中，無法送出申請'); return; }
+  if(window.SLG.canEditRoomData && window.SLG.canEditRoomData()){ alert('您已擁有編輯權限'); return; }
+  if(state.myEditRequestStatus === 'pending'){ alert('已送出申請，等待審核中'); return; }
+  if(!state.auth.signedIn){ alert('請先登入'); return; }
   const myUid = state.auth.accountUid;
   const ref = fbDb.ref(`rooms/${state.roomCode}/pendingEditRequests/${myUid}`);
   ref.set({
@@ -917,95 +774,59 @@ function requestRoomEditAccess(){
     requestedAt: Date.now(),
   }).then(() => {
     state.myEditRequestStatus = 'pending';
-    if(typeof window.SLG.updateRoomEditButton === 'function'){
-      window.SLG.updateRoomEditButton();
-    }
+    if(typeof window.SLG.updateRoomEditButton === 'function') window.SLG.updateRoomEditButton();
     logSystem('📝 已送出編輯權限申請');
     alert('✅ 申請已送出，等待房主或管理員審核。');
-  }).catch(e => {
-    console.warn('申請失敗', e);
-    alert('❌ 申請失敗：' + e.message);
-  });
+  }).catch(e => { console.warn('申請失敗', e); alert('❌ 申請失敗：' + e.message); });
 }
 
-function approveEditRequest(uid){
+function approveEditRequest(u){
   const isAdmin = window.SLG.Auth && window.SLG.Auth.isAdmin();
-  if(!state.isHost && !isAdmin){
-    alert('權限不足');
-    return;
-  }
-  const req = state.pendingEditRequests[uid];
+  if(!state.isHost && !isAdmin){ alert('權限不足'); return; }
+  const req = state.pendingEditRequests[u];
   if(!req) return;
-
   const updates = {};
-  updates[`rooms/${state.roomCode}/editGrants/${uid}`] = {
-    username: req.username,
-    displayName: req.displayName,
-    grantedAt: Date.now(),
-    grantedBy: state.auth.accountUid,
-    grantedByName: state.auth.displayName,
+  updates[`rooms/${state.roomCode}/editGrants/${u}`] = {
+    username: req.username, displayName: req.displayName,
+    grantedAt: Date.now(), grantedBy: state.auth.accountUid, grantedByName: state.auth.displayName,
   };
-  updates[`rooms/${state.roomCode}/pendingEditRequests/${uid}`] = null;
-
+  updates[`rooms/${state.roomCode}/pendingEditRequests/${u}`] = null;
   fbDb.ref().update(updates).then(() => {
     logSystem(`✅ 已批准 ${req.displayName} 的編輯權限`);
     sendSystemChat(`✅ ${req.displayName} 已獲得此房間的編輯權限`);
-  }).catch(e => {
-    console.warn('批准失敗', e);
-    alert('❌ 批准失敗：' + e.message);
-  });
+  }).catch(e => { console.warn('批准失敗', e); alert('❌ 批准失敗：' + e.message); });
 }
 
-function rejectEditRequest(uid){
+function rejectEditRequest(u){
   const isAdmin = window.SLG.Auth && window.SLG.Auth.isAdmin();
-  if(!state.isHost && !isAdmin){
-    alert('權限不足');
-    return;
-  }
-  const req = state.pendingEditRequests[uid];
+  if(!state.isHost && !isAdmin){ alert('權限不足'); return; }
+  const req = state.pendingEditRequests[u];
   if(!req) return;
-
-  fbDb.ref(`rooms/${state.roomCode}/pendingEditRequests/${uid}`).remove()
-    .then(() => {
-      logSystem(`❌ 已拒絕 ${req.displayName} 的編輯權限申請`);
-    })
-    .catch(e => {
-      console.warn('拒絕失敗', e);
-      alert('❌ 拒絕失敗：' + e.message);
-    });
+  fbDb.ref(`rooms/${state.roomCode}/pendingEditRequests/${u}`).remove()
+    .then(() => logSystem(`❌ 已拒絕 ${req.displayName} 的編輯權限申請`))
+    .catch(e => { console.warn('拒絕失敗', e); alert('❌ 拒絕失敗：' + e.message); });
 }
 
 /* ============================================================
-   資料救援工具（僅管理員/超管）
+   資料救援
    ============================================================ */
 async function rescueRoomSnapshot(roomCode){
   if(!fbDb) throw new Error('Firebase 未就緒');
-  if(!window.SLG.canUseRescueTool || !window.SLG.canUseRescueTool()){
-    throw new Error('您沒有救援權限');
-  }
-  if(!roomCode || roomCode.length !== 6){
-    throw new Error('房間碼必須為 6 位數');
-  }
+  if(!isOnline()) throw new Error('離線中，無法救援');
+  if(!window.SLG.canUseRescueTool || !window.SLG.canUseRescueTool()) throw new Error('您沒有救援權限');
+  if(!roomCode || roomCode.length !== 6) throw new Error('房間碼必須為 6 位數');
 
   const snap = await fbDb.ref(`rooms/${roomCode}/events`).once('value');
   const all = snap.val() || {};
-  const events = Object.entries(all)
-    .map(([k, v]) => ({ key:k, ...v }))
-    .filter(e => e && e._ts)
-    .sort((a, b) => a._ts - b._ts);
+  const events = Object.entries(all).map(([k, v]) => ({ key:k, ...v }))
+    .filter(e => e && e._ts).sort((a, b) => a._ts - b._ts);
 
-  if(events.length === 0){
-    throw new Error('此房間沒有任何事件');
-  }
+  if(events.length === 0) throw new Error('此房間沒有任何事件');
 
   const reconstructed = {
-    settings: {},
-    alliances: [],
-    zones: [],
-    cities: [],
+    settings: {}, alliances: [], zones: [], cities: [],
     entityRev: { alliance:{}, zone:{}, city:{} },
   };
-
   let lastSnapshotTs = 0;
   let patchCount = 0;
 
@@ -1019,16 +840,12 @@ async function rescueRoomSnapshot(roomCode){
       lastSnapshotTs = evt._ts;
     } else if(evt.type === 'sync_patch'){
       if(!evt.patches) continue;
-      for(const p of evt.patches){
-        applyPatchToReconstructed(reconstructed, p);
-      }
-      patchCount += p_count(evt.patches);
+      for(const p of evt.patches) applyPatchToReconstructed(reconstructed, p);
+      patchCount += (evt.patches || []).length;
     }
   }
 
-  if(reconstructed.cities.length === 0 && reconstructed.alliances.length === 0){
-    throw new Error('重播後無任何資料');
-  }
+  if(reconstructed.cities.length === 0 && reconstructed.alliances.length === 0) throw new Error('重播後無任何資料');
 
   const payload = {
     updatedAt: Date.now(),
@@ -1042,42 +859,23 @@ async function rescueRoomSnapshot(roomCode){
       cities: reconstructed.cities,
     },
   };
-
   await fbDb.ref(`rooms/${roomCode}/latestSnapshot`).set(payload);
 
   return {
-    eventsCount: events.length,
-    patchesCount: patchCount,
-    lastSnapshotTs,
-    citiesCount: reconstructed.cities.length,
-    alliancesCount: reconstructed.alliances.length,
+    eventsCount: events.length, patchesCount: patchCount, lastSnapshotTs,
+    citiesCount: reconstructed.cities.length, alliancesCount: reconstructed.alliances.length,
   };
 }
 
-function p_count(arr){ return (arr || []).length; }
-
 function applyPatchToReconstructed(rec, patch){
   if(!patch || !patch.kind) return;
-  const { kind, id, rev, op, data } = patch;
-
-  if(kind === 'settings'){
-    Object.assign(rec.settings, data || {});
-    return;
-  }
-
-  const key = kind === 'alliance' ? 'alliances'
-            : kind === 'zone'     ? 'zones'
-            : kind === 'city'     ? 'cities'
-            : null;
+  const { kind, id, op, data } = patch;
+  if(kind === 'settings'){ Object.assign(rec.settings, data || {}); return; }
+  const key = kind === 'alliance' ? 'alliances' : kind === 'zone' ? 'zones' : kind === 'city' ? 'cities' : null;
   if(!key) return;
-
   const arr = rec[key];
   const idx = arr.findIndex(x => x.id === id);
-
-  if(op === 'delete'){
-    if(idx >= 0) arr.splice(idx, 1);
-    return;
-  }
+  if(op === 'delete'){ if(idx >= 0) arr.splice(idx, 1); return; }
   if(op === 'upsert'){
     if(idx >= 0) arr[idx] = { ...arr[idx], ...(data || {}) };
     else arr.push(data);
@@ -1088,109 +886,52 @@ function applyPatchToReconstructed(rec, patch){
    退出房間
    ============================================================ */
 function requestDisconnect(){
-  if(!isConnected()){
-    disconnectFirebase();
-    return;
-  }
-
+  if(!isConnected()){ disconnectFirebase(); return; }
   const hasRoomData = state.alliances.length || state.zones.length || state.cities.length;
-
   if(!hasRoomData){
     if(typeof window.SLG.showConfirm === 'function'){
       window.SLG.showConfirm('中斷連線', '確定要中斷與盟友的連線嗎？', () => disconnectFirebase());
-    } else if(confirm('確定要中斷與盟友的連線嗎？')){
-      disconnectFirebase();
-    }
+    } else if(confirm('確定要中斷與盟友的連線嗎？')){ disconnectFirebase(); }
     return;
   }
-
   const desc = document.getElementById('exitRestoreDesc');
-  if(desc){
-    desc.textContent = '還原成加入房間前的個人沙盤（會從雲端重新載入）';
-  }
-
+  if(desc) desc.textContent = '還原成加入房間前的個人沙盤（會從雲端重新載入）';
   document.getElementById('exitRoomModal').classList.add('show');
 }
 
 async function confirmExit(choice){
   document.getElementById('exitRoomModal').classList.remove('show');
-
   if(choice === 'keepRoom'){
     logSystem('💾 正在將房間資料寫入個人沙盤...');
-    try{
-      await saveMySandbox();
-      logSystem('✅ 房間資料已寫入個人沙盤');
-    }catch(e){
-      console.warn('寫入個人沙盤失敗', e);
-    }
+    try{ await saveMySandbox(); logSystem('✅ 房間資料已寫入個人沙盤'); }
+    catch(e){ console.warn('寫入個人沙盤失敗', e); }
   } else {
     logSystem('↩️ 正在從雲端重新載入個人沙盤...');
     disconnectFirebase();
-    try{
-      await loadMySandbox();
-      logSystem('✅ 已恢復個人沙盤');
-    }catch(e){
-      console.warn('恢復沙盤失敗', e);
-    }
+    try{ await loadMySandbox(); logSystem('✅ 已恢復個人沙盤'); }
+    catch(e){ console.warn('恢復沙盤失敗', e); }
   }
-
-  if(choice === 'keepRoom'){
-    disconnectFirebase();
-  }
-
+  if(choice === 'keepRoom') disconnectFirebase();
   if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
-  if(typeof window.SLG.populateCityFilters === 'function') window.SLG.populateCityFilters();
-  if(typeof window.SLG.populateZoneFilter === 'function') window.SLG.populateZoneFilter();
 }
 
 /* ============================================================
    暴露
    ============================================================ */
 Object.assign(window.SLG, {
-  FIREBASE_CONFIG,
-  initFirebase,
-  getDb,
-  getApp,
-  isConnected,
-  connectFirebase,
-  disconnectFirebase,
-  publish,
-  acquireEditLock,
-  releaseEditLock,
-  handleIncoming,
-  addChatMessage,
-  sendChatMessage,
-  sendSystemChat,
-
-  /* 個人沙盤 API */
-  sandboxRef,
-  fetchUserSandbox,
-  fetchAllSandboxes,
-  saveMySandbox,
-  loadMySandbox,
-
-  /* 房間沙盤 API */
-  roomSnapshotPath,
-  fetchRoomSnapshot,
-  fetchAllRoomSnapshots,
-  publishRoomSnapshot,
-  uploadSandboxToRoom,
-
-  /* 救援 */
+  FIREBASE_CONFIG, SANDBOX_HISTORY_LIMIT,
+  initFirebase, getDb, getApp, isConnected,
+  connectFirebase, disconnectFirebase, publish,
+  acquireEditLock, releaseEditLock,
+  handleIncoming, addChatMessage, sendChatMessage, sendSystemChat,
+  sandboxRef, fetchUserSandbox, fetchAllSandboxes,
+  saveMySandbox, loadMySandbox, clearLocalSandbox,
+  roomSnapshotPath, fetchRoomSnapshot, fetchAllRoomSnapshots,
+  publishRoomSnapshot, uploadSandboxToRoom,
   rescueRoomSnapshot,
-
-  /* v8.6.5：沙盤歷史備份 */
-  listSandboxHistory,
-  restoreFromHistory,
-
-  /* P6：房間編輯權限 */
-  requestRoomEditAccess,
-  approveEditRequest,
-  rejectEditRequest,
-
-  /* 退出 */
-  requestDisconnect,
-  confirmExit,
+  listSandboxHistory, restoreFromHistory, previewHistory,
+  requestRoomEditAccess, approveEditRequest, rejectEditRequest,
+  requestDisconnect, confirmExit,
 });
 
 })();

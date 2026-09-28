@@ -1,13 +1,12 @@
 /* ============================================================================
- * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI
- * v8.6.5：雲端載入保護（防止本機舊資料覆蓋雲端）
+ * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI、網路監控、同步
+ * v8.6.7：加入雲端同步狀態管理（state.sync）
  * ========================================================================== */
 (function(){
 'use strict';
 
 window.SLG = window.SLG || {};
 
-/* 引用 simulation.js 已暴露的工具 */
 const {
   hhmmToMinutes, minutesToHHMM, fmtSimTime, clamp, yieldToMain, computeAllocation,
   COMBAT_TICK, SIM_CHUNK, VIZ_SNAPSHOT_INTERVAL, DYN_ROUTE_SAMPLE_SEC
@@ -19,6 +18,7 @@ const {
 const LS_PREFIX = 'slg_sandtable_v82_';
 const LS_LEGACY_PREFIX = 'slg_sandtable_v75_';
 const AI_LS_KEY = 'slg_ai_params';
+const SYNC_PREFS_KEY = 'slg_sync_prefs';
 const ACCOUNT_UID_KEY = 'slg_sandtable_v82_accountUid';
 const HOST_TIMEOUT = 15000;
 const EDIT_LOCK_TTL = 30000;
@@ -26,27 +26,21 @@ const EDIT_LOCK_TTL = 30000;
 const SANDBOX_SYNC_DEBOUNCE = 1500;
 const ROOM_SNAPSHOT_DEBOUNCE = 2000;
 
+const NETWORK_HEARTBEAT_INTERVAL = 15000;
+
 const NPC_ALLIANCE_NAME = 'NPC';
 const NPC_ALLIANCE_ICON = '🏰';
 
-/* v8.5.6：戰力單位換算 */
 const POWER_YI = 1e8;
 const POWER_WAN = 1e4;
 const POWER_MIGRATE_THRESHOLD = 1e6;
 
-/* v8.6.0：盟徽清單 */
 const DEFAULT_ALLIANCE_ICONS = [
-  /* ── 古代兵種 ── */
   '⚔️','🗡️','🏹','🔱','🪓','🛡️','⚒️','🔨','🪃','⚜️','🏰','🚩',
-  /* ── 現代兵種 ── */
   '🎯','🔫','🚁','✈️','🚢','🛩️','🚀','💣','🧨','🛰️','🪖','🎖️',
-  /* ── 動物 ── */
   '🐉','🦅','🐺','🦁','💀','🦂','🐍','🦈','🐻',
-  /* ── 神話 / 旗幟 ── */
   '👑','🌟','💎','✨','☀️','🌙','⭐','💫','🏴','🏳️','🎌',
-  /* ── 自然 ── */
   '⚡','🔥','❄️','🌊','🌪️','🌋','🏔️','🌲','🍀',
-  /* ── 特殊 ── */
   '🎪','🎭','🎨','🎵','☯️'
 ];
 
@@ -73,58 +67,32 @@ const SIDE_LABELS = {
   common_enemy:'共同敵方',
   npc:'NPC',
 };
-const ALLIANCE_SIDE_LABELS = {
-  self:'本方',
-  ally:'同盟',
-  enemy:'敵方',
-};
+const ALLIANCE_SIDE_LABELS = { self:'本方', ally:'同盟', enemy:'敵方' };
 
 const ROLE = {
-  SUPERADMIN: 'superadmin',
-  ADMIN: 'admin',
-  OFFICER: 'officer',
-  MEMBER: 'member',
-  GUEST: 'guest',
+  SUPERADMIN: 'superadmin', ADMIN: 'admin', OFFICER: 'officer',
+  MEMBER: 'member', GUEST: 'guest',
 };
 const ROLE_LABELS = {
-  superadmin: '👑 超級管理員',
-  admin: '🛡️ 管理員',
-  officer: '⚔️ 幹部',
-  member: '🙋 成員',
-  guest: '👻 訪客',
+  superadmin: '👑 超級管理員', admin: '🛡️ 管理員', officer: '⚔️ 幹部',
+  member: '🙋 成員', guest: '👻 訪客',
 };
 const ROLE_CLASS = {
-  superadmin: 'role-superadmin',
-  admin: 'role-admin',
-  officer: 'role-officer',
-  member: 'role-member',
-  guest: 'role-guest',
+  superadmin: 'role-superadmin', admin: 'role-admin', officer: 'role-officer',
+  member: 'role-member', guest: 'role-guest',
 };
 const ROLE_ORDER = { superadmin:0, admin:1, officer:2, member:3, guest:4 };
 
 const EVT = {
-  MEMBERS:'members',
-  LOCKS:'locks',
-  DATA:'data',
-  CONN:'conn',
-  HOST:'host',
-  CHAT_NEW:'chat:new',
-  SIM_TRIGGER:'sim:trigger',
-  DEBUG:'debug',
-  VIZ_SNAPSHOTS:'viz:snapshots',
-  VIZ_RESET:'viz:reset',
-  DYN_RESULT:'dyn:result',
-  MODE:'mode',
-  AUTH:'auth',
-  ROOM_GRANTS:'room:grants',
-  ROOM_PENDING:'room:pending',
-  MY_SANDBOX_UPDATED:'sandbox:mine',
-  SANDBOXES_LIST_UPDATED:'sandbox:list',
-  ROOM_SNAPSHOT_UPDATED:'room:snapshot',
-  ROUTES_UPDATED:'routes:updated',
-  /* v8.6.0：距離計算高亮 */
-  DISTANCE_HIGHLIGHT:'distance:highlight',
-  DISTANCE_CLEAR:'distance:clear',
+  MEMBERS:'members', LOCKS:'locks', DATA:'data', CONN:'conn', HOST:'host',
+  CHAT_NEW:'chat:new', SIM_TRIGGER:'sim:trigger', DEBUG:'debug',
+  VIZ_SNAPSHOTS:'viz:snapshots', VIZ_RESET:'viz:reset', DYN_RESULT:'dyn:result',
+  MODE:'mode', AUTH:'auth', ROOM_GRANTS:'room:grants', ROOM_PENDING:'room:pending',
+  MY_SANDBOX_UPDATED:'sandbox:mine', SANDBOXES_LIST_UPDATED:'sandbox:list',
+  ROOM_SNAPSHOT_UPDATED:'room:snapshot', ROUTES_UPDATED:'routes:updated',
+  DISTANCE_HIGHLIGHT:'distance:highlight', DISTANCE_CLEAR:'distance:clear',
+  NETWORK:'network',
+  SYNC_STATE:'sync:state',
 };
 
 /* ============================================================
@@ -133,24 +101,16 @@ const EVT = {
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const nowTime = () => new Date().toTimeString().slice(0,8);
 const esc = s => s == null ? '' : String(s)
-  .replace(/&/g,'&amp;')
-  .replace(/</g,'&lt;')
-  .replace(/>/g,'&gt;')
-  .replace(/"/g,'&quot;');
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const sideLabel = s => SIDE_LABELS[s] || s;
 const allianceSideLabel = s => ALLIANCE_SIDE_LABELS[s] || s;
-const sideClass = s => (s==='self') ? 'self'
-  : (s==='ally') ? 'ally'
-  : (s==='enemy'||s==='common_enemy') ? 'enemy'
-  : 'npc';
+const sideClass = s => (s==='self') ? 'self' : (s==='ally') ? 'ally'
+  : (s==='enemy'||s==='common_enemy') ? 'enemy' : 'npc';
 const logSystem = text => console.log('[系統] ' + text);
 
 function formatDateCompact(ts){
   const d = ts ? new Date(ts) : new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  return `${y}${m}${day}`;
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 }
 
 function timeAgo(ts){
@@ -169,66 +129,40 @@ function buildSandboxFileName(displayName, updatedAt){
   return `${safe}_${formatDateCompact(updatedAt)}`;
 }
 
-/* ============================================================
-   v8.5.6：戰力單位換算工具
-   ============================================================ */
 function formatPower(num){
   const n = Number(num) || 0;
   if(n === 0) return '0.00 億';
-  const yi = n / POWER_YI;
-  return yi.toFixed(2) + ' 億';
+  return (n / POWER_YI).toFixed(2) + ' 億';
 }
-
 function formatAvgPower(num){
   const n = Number(num) || 0;
   if(n === 0) return '0 萬';
-  const wan = Math.round(n / POWER_WAN);
-  return wan.toLocaleString() + ' 萬';
+  return Math.round(n / POWER_WAN).toLocaleString() + ' 萬';
 }
-
 function parsePowerInput(input){
   const n = parseFloat(input);
   if(isNaN(n) || n < 0) return 0;
   return Math.round(n * POWER_YI);
 }
-
 function migratePower(num){
   const n = Number(num) || 0;
   if(n === 0) return 0;
   if(n < POWER_MIGRATE_THRESHOLD) return Math.round(n * POWER_YI);
   return n;
 }
-
 function powerToYiInput(num){
   const n = Number(num) || 0;
   if(n === 0) return '0.00';
   return (n / POWER_YI).toFixed(2);
 }
 
-/* ============================================================
-   v8.6.0：盟徽工具
-   ============================================================ */
-function getAllianceIcons(){
-  return DEFAULT_ALLIANCE_ICONS.slice();
-}
-
-/**
- * 檢查盟徽是否已被使用
- */
-function isAllianceIconUsed(icon, excludeAllianceId){
+function getAllianceIcons(){ return DEFAULT_ALLIANCE_ICONS.slice(); }
+function isAllianceIconUsed(icon, excludeId){
   if(!icon) return false;
-  return state.alliances.some(a =>
-    a.icon === icon && a.id !== excludeAllianceId
-  );
+  return state.alliances.some(a => a.icon === icon && a.id !== excludeId);
 }
-
-/**
- * 取得未被使用的盟徽清單
- */
-function getAvailableAllianceIcons(excludeAllianceId){
-  return DEFAULT_ALLIANCE_ICONS.filter(icon =>
-    !isAllianceIconUsed(icon, excludeAllianceId)
-  );
+function getAvailableAllianceIcons(excludeId){
+  return DEFAULT_ALLIANCE_ICONS.filter(icon => !isAllianceIconUsed(icon, excludeId));
 }
 
 /* ============================================================
@@ -333,18 +267,11 @@ const AI = (() => {
 const state = {
   mode: 'local',
   auth: {
-    signedIn: false,
-    accountUid: '',
-    username: '',
-    displayName: '',
-    role: 'guest',
-    status: 'active',
+    signedIn: false, accountUid: '', username: '', displayName: '',
+    role: 'guest', status: 'active',
     extraPerms: {
-      canEditData: false,
-      canImportExcel: false,
-      canRunSim: false,
-      canKick: false,
-      canEditSettings: false,
+      canEditData: false, canImportExcel: false, canRunSim: false,
+      canKick: false, canEditSettings: false,
     },
   },
   commanderName:'', roomCode:'', isHost:false, hostName:'',
@@ -353,11 +280,9 @@ const state = {
   settings:{
     timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
     siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
-    attackRequireRoute: false,
-    crossZoneWarAllowed: false,  /* v8.6.2 */
+    attackRequireRoute: false, crossZoneWarAllowed: false,
   },
-  alliances:[], zones:[], cities:[],
-  routes: [],
+  alliances:[], zones:[], cities:[], routes: [],
   lamport:0, settingsRev:0,
   entityRev:{ alliance:{}, zone:{}, city:{} },
   dirty:{
@@ -366,33 +291,31 @@ const state = {
     allianceDeleted:new Set(), zoneDeleted:new Set(), cityDeleted:new Set()
   },
   roomEpoch:'', simBaseMin: 0, dynRows: [], editingAllianceId: null,
-  narrativeLines: [],
-  chatMessages: [],
-  unreadChat: 0,
-  roomEditGrants: {},
-  pendingEditRequests: {},
-  myEditRequestStatus: 'idle',
-  mySandbox: {
-    loading: false,
-    loaded: false,
-    cloudLoaded: false,   /* v8.6.5：雲端載入完成標誌 */
-    updatedAt: 0,
-    saving: false,
-  },
-  sandboxesList: {},
-  roomSnapshot: null,
-  roomHasSnapshot: false,
+  narrativeLines: [], chatMessages: [], unreadChat: 0,
+  roomEditGrants: {}, pendingEditRequests: {}, myEditRequestStatus: 'idle',
+  mySandbox: { loading: false, loaded: false, cloudLoaded: false, updatedAt: 0, saving: false },
+  sandboxesList: {}, roomSnapshot: null, roomHasSnapshot: false,
   pendingUploadSandbox: null,
-  listPrefs: {
-    warSort: 'time',
-    warGroup: 'none',
-    deploySort: 'alliance',
-    deployGroup: 'none',
+  listPrefs: { warSort:'time', warGroup:'none', deploySort:'alliance', deployGroup:'none' },
+  distanceResult: null, distanceView: 'number', distanceHighlight: null,
+  network: { online: true, lastChange: 0, lastCheck: 0, initialized: false },
+  /* v8.6.7：雲端同步狀態 */
+  sync: {
+    dirty: false,
+    dirtyCount: 0,
+    lastUploadAt: 0,
+    uploading: false,
+    lastError: '',
+    nextUploadAt: 0,
+    timer: null,
+    _allowClose: false,
+    prefs: {
+      intervalMin: 5,
+      importantImmediate: true,
+      visibilitySync: true,
+      beforeUnloadSync: true,
+    },
   },
-  /* v8.6.0：距離計算狀態 */
-  distanceResult: null,
-  distanceView: 'number',  /* number | path | map */
-  distanceHighlight: null,
 };
 
 /* ============================================================
@@ -410,6 +333,220 @@ function emit(evt, data){
   for(const fn of s){
     try{ fn(data); }catch(e){ console.error('[emit]', evt, e); }
   }
+}
+
+/* ============================================================
+   網路監控
+   ============================================================ */
+let networkHeartbeatTimer = null;
+
+function isOnline(){
+  return state.network.online && navigator.onLine !== false;
+}
+
+function setNetworkStatus(online, reason){
+  const prev = state.network.online;
+  if(prev === online && state.network.initialized) return;
+  state.network.online = online;
+  state.network.lastChange = Date.now();
+  state.network.lastCheck = Date.now();
+  state.network.initialized = true;
+  console.log(`[網路] ${online ? '🟢 已恢復連線' : '🔴 連線中斷'}${reason ? ' (' + reason + ')' : ''}`);
+  emit(EVT.NETWORK, { online, prev, reason, timestamp: Date.now() });
+}
+
+function initNetworkWatcher(){
+  if(state.network.initialized) return;
+  state.network.online = navigator.onLine !== false;
+  state.network.lastChange = Date.now();
+  state.network.lastCheck = Date.now();
+  state.network.initialized = true;
+  console.log(`[網路] 初始狀態：${state.network.online ? '🟢 在線' : '🔴 離線'}`);
+
+  window.addEventListener('online', () => setNetworkStatus(true, 'online event'));
+  window.addEventListener('offline', () => setNetworkStatus(false, 'offline event'));
+
+  clearInterval(networkHeartbeatTimer);
+  networkHeartbeatTimer = setInterval(() => {
+    state.network.lastCheck = Date.now();
+    const navOnline = navigator.onLine !== false;
+    if(navOnline !== state.network.online){
+      setNetworkStatus(navOnline, 'heartbeat');
+    }
+  }, NETWORK_HEARTBEAT_INTERVAL);
+}
+
+/* ============================================================
+   v8.6.7：雲端同步管理
+   ============================================================ */
+let cloudSyncFn = null;
+let cloudSyncTimer = null;
+let syncCountdownTimer = null;
+
+function loadSyncPrefs(){
+  try{
+    const raw = localStorage.getItem(SYNC_PREFS_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      Object.assign(state.sync.prefs, parsed);
+    }
+  }catch(e){ console.warn('載入同步設定失敗', e); }
+}
+
+function saveSyncPrefs(){
+  try{
+    localStorage.setItem(SYNC_PREFS_KEY, JSON.stringify(state.sync.prefs));
+  }catch(e){ console.warn('儲存同步設定失敗', e); }
+}
+
+function getSyncPrefs(){ return Object.assign({}, state.sync.prefs); }
+
+function setSyncPrefs(patch){
+  Object.assign(state.sync.prefs, patch);
+  saveSyncPrefs();
+  if(state.auth.signedIn){
+    startSyncTimer();
+  }
+}
+
+/**
+ * 標記雲端為「待上傳」
+ * @param {string} reason - 'important' 會觸發立即上傳
+ */
+function markCloudDirty(reason){
+  state.sync.dirty = true;
+  state.sync.dirtyCount++;
+  emit(EVT.SYNC_STATE, state.sync);
+  if(reason === 'important' && state.sync.prefs.importantImmediate){
+    scheduleUpload(SANDBOX_SYNC_DEBOUNCE, 'important');
+  }
+}
+
+function clearCloudDirty(){
+  state.sync.dirty = false;
+  state.sync.dirtyCount = 0;
+  state.sync.lastError = '';
+  emit(EVT.SYNC_STATE, state.sync);
+}
+
+function resetSyncState(){
+  state.sync.dirty = false;
+  state.sync.dirtyCount = 0;
+  state.sync.lastUploadAt = 0;
+  state.sync.uploading = false;
+  state.sync.lastError = '';
+  state.sync.nextUploadAt = 0;
+  state.sync._allowClose = false;
+  if(state.sync.timer){ clearTimeout(state.sync.timer); state.sync.timer = null; }
+  clearTimeout(cloudSyncTimer);
+  clearInterval(syncCountdownTimer);
+  syncCountdownTimer = null;
+  emit(EVT.SYNC_STATE, state.sync);
+}
+
+function scheduleUpload(delayMs, reason){
+  if(!state.auth.signedIn) return;
+  if(!isOnline()) return;
+  if(!state.mySandbox.cloudLoaded) return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => {
+    performCloudUpload(reason || 'scheduled');
+  }, delayMs || SANDBOX_SYNC_DEBOUNCE);
+}
+
+/**
+ * 執行雲端上傳
+ * @param {string} reason - 上傳原因（用於 log）
+ * @returns {Promise<boolean>}
+ */
+async function performCloudUpload(reason){
+  if(!state.auth.signedIn) return false;
+  if(!isOnline()) return false;
+  if(state.sync.uploading) return false;
+  if(!state.mySandbox.cloudLoaded){
+    console.warn('[sync] 雲端尚未載入，跳過上傳');
+    return false;
+  }
+
+  const fn = cloudSyncFn || (window.SLG && window.SLG.saveMySandbox);
+  if(typeof fn !== 'function'){
+    console.warn('[sync] 無上傳函式');
+    return false;
+  }
+
+  state.sync.uploading = true;
+  state.sync.lastError = '';
+  emit(EVT.SYNC_STATE, state.sync);
+
+  try{
+    await fn();
+    state.sync.dirty = false;
+    state.sync.dirtyCount = 0;
+    state.sync.lastUploadAt = Date.now();
+    const interval = state.sync.prefs.intervalMin || 5;
+    state.sync.nextUploadAt = Date.now() + interval * 60 * 1000;
+    logSystem('☁️ 雲端已同步（' + reason + '）');
+    return true;
+  }catch(e){
+    state.sync.lastError = e.message || '同步失敗';
+    console.warn('[sync] 上傳失敗', e);
+    return false;
+  }finally{
+    state.sync.uploading = false;
+    emit(EVT.SYNC_STATE, state.sync);
+  }
+}
+
+/**
+ * 啟動定時上傳器（從上次成功上傳起算）
+ */
+function startSyncTimer(){
+  stopSyncTimer();
+  if(!state.auth.signedIn) return;
+  const intervalMin = state.sync.prefs.intervalMin;
+  if(!intervalMin || intervalMin <= 0) return;
+
+  const intervalMs = intervalMin * 60 * 1000;
+  const now = Date.now();
+  if(!state.sync.nextUploadAt || state.sync.nextUploadAt < now + 1000){
+    state.sync.nextUploadAt = now + intervalMs;
+  }
+
+  const delay = Math.max(1000, state.sync.nextUploadAt - now);
+
+  state.sync.timer = setTimeout(async () => {
+    state.sync.timer = null;
+    if(!state.auth.signedIn) return;
+    if(!isOnline()){
+      state.sync.nextUploadAt = Date.now() + intervalMs;
+      startSyncTimer();
+      return;
+    }
+    if(state.sync.dirty){
+      await performCloudUpload('timer');
+    } else {
+      state.sync.nextUploadAt = Date.now() + intervalMs;
+    }
+    startSyncTimer();
+  }, delay);
+
+  emit(EVT.SYNC_STATE, state.sync);
+}
+
+function stopSyncTimer(){
+  if(state.sync.timer){
+    clearTimeout(state.sync.timer);
+    state.sync.timer = null;
+  }
+}
+
+/* 舊 API 保留相容 */
+function registerCloudSync(fn){ cloudSyncFn = fn; }
+function triggerCloudSync(delay){
+  if(!state.auth.signedIn) return;
+  if(!isOnline()) return;
+  if(!state.mySandbox.cloudLoaded) return;
+  scheduleUpload(delay, 'legacy');
 }
 
 /* ============================================================
@@ -431,26 +568,7 @@ function clearDirty(){
 /* ============================================================
    持久化
    ============================================================ */
-let cloudSyncTimer = null;
-let cloudSyncFn = null;
-
-function registerCloudSync(fn){ cloudSyncFn = fn; }
-
-/* v8.6.5：雲端載入完成前禁止上傳（防止本機舊資料覆蓋雲端） */
-function triggerCloudSync(delay){
-  if(!cloudSyncFn) return;
-  if(!state.auth.signedIn) return;
-  if(!state.mySandbox.cloudLoaded){
-    console.warn('[v8.6.5] 雲端尚未載入完成，跳過同步上傳');
-    return;
-  }
-  clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = setTimeout(() => {
-    try{ cloudSyncFn(); }catch(e){ console.warn('雲端同步失敗', e); }
-  }, delay || SANDBOX_SYNC_DEBOUNCE);
-}
-
-function saveState(){
+function saveState(reason){
   try{
     localStorage.setItem(LS_PREFIX+'state', JSON.stringify({
       commanderName: state.commanderName,
@@ -470,15 +588,21 @@ function saveState(){
       listPrefs: state.listPrefs,
     }));
   }catch(e){ console.warn('儲存失敗', e); }
-  if(state.mode === 'local'){
-    triggerCloudSync();
+
+  /* v8.6.7：標記雲端 dirty（依 reason 決定是否立即上傳）*/
+  if(state.mode === 'local' && state.auth.signedIn){
+    markCloudDirty(reason || 'auto');
   }
   if(state.mode === 'room' && state.isHost){
     triggerRoomSnapshotSync();
   }
 }
 
-/* v8.5.6：遷移盟 / 城戰力單位 */
+/* 供「重要操作」使用（地圖路線、城池基本資料）*/
+function saveStateImportant(){
+  saveState('important');
+}
+
 function migratePowerInState(){
   if(Array.isArray(state.alliances)){
     for(const a of state.alliances){
@@ -499,21 +623,17 @@ function migratePowerInState(){
   }
 }
 
-/* v8.6.0：遷移盟排序 */
 function migrateAllianceOrder(){
   if(!Array.isArray(state.alliances)) return;
-  let hasAnyOrder = state.alliances.some(a => typeof a.order === 'number');
+  const hasAnyOrder = state.alliances.some(a => typeof a.order === 'number');
   if(hasAnyOrder) return;
+  const sideOrder = { self: 0, ally: 1, enemy: 2, common_enemy: 3, npc: 4 };
   const sorted = [...state.alliances].sort((a, b) => {
-    const sideOrder = { self: 0, ally: 1, enemy: 2, common_enemy: 3, npc: 4 };
-    const oa = sideOrder[a.side] ?? 9;
-    const ob = sideOrder[b.side] ?? 9;
+    const oa = sideOrder[a.side] ?? 9, ob = sideOrder[b.side] ?? 9;
     if(oa !== ob) return oa - ob;
     return (a.createdAt || 0) - (b.createdAt || 0);
   });
-  sorted.forEach((a, i) => {
-    a.order = i;
-  });
+  sorted.forEach((a, i) => { a.order = i; });
 }
 
 function loadState(){
@@ -522,7 +642,6 @@ function loadState(){
     const raw = localStorage.getItem(LS_PREFIX+'state');
     if(!raw) return;
     const d = JSON.parse(raw);
-
     for(const k of ['commanderName','roomCode','settingsRev','lamport','roomEpoch']){
       if(d[k]!==undefined) state[k]=d[k];
     }
@@ -533,13 +652,8 @@ function loadState(){
     if(typeof state.settings.maxLossRatio !== 'number') state.settings.maxLossRatio = 0.9;
     if(typeof state.settings.minLossRatio !== 'number') state.settings.minLossRatio = 0.1;
     if(typeof state.settings.marchTimeSec !== 'number') state.settings.marchTimeSec = 0;
-    if(typeof state.settings.attackRequireRoute !== 'boolean'){
-      state.settings.attackRequireRoute = false;
-    }
-    if(typeof state.settings.crossZoneWarAllowed !== 'boolean'){
-      state.settings.crossZoneWarAllowed = false;
-    }
-
+    if(typeof state.settings.attackRequireRoute !== 'boolean') state.settings.attackRequireRoute = false;
+    if(typeof state.settings.crossZoneWarAllowed !== 'boolean') state.settings.crossZoneWarAllowed = false;
     if(d.entityRev) state.entityRev = d.entityRev;
 
     if(Array.isArray(d.alliances)){
@@ -558,15 +672,13 @@ function loadState(){
       });
     }
     if(Array.isArray(d.zones)) state.zones = d.zones;
-
     if(Array.isArray(d.cities)){
       state.cities = d.cities.map(c => {
         if(!c.defStartTime) c.defStartTime = '19:00';
         if(typeof c.level !== 'number') c.level = 1;
         const migrate = arr => (arr||[]).map(t => ({
           cityId: t.cityId,
-          preWarPercent: t.preWarPercent !== undefined
-            ? t.preWarPercent
+          preWarPercent: t.preWarPercent !== undefined ? t.preWarPercent
             : (t.teams ? Math.round(t.teams / (c.totalTeams||100) * 100) : 50),
           postRevivePercent: t.postRevivePercent !== undefined ? t.postRevivePercent : 50,
           priority: t.priority !== undefined ? t.priority : 1,
@@ -577,22 +689,15 @@ function loadState(){
         return c;
       });
     }
-
     if(Array.isArray(d.routes)){
       state.routes = d.routes.map(r => ({
-        id: r.id || uid(),
-        cityAId: r.cityAId || '',
-        cityBId: r.cityBId || '',
+        id: r.id || uid(), cityAId: r.cityAId || '', cityBId: r.cityBId || '',
       })).filter(r => r.cityAId && r.cityBId);
     }
-
     if(Array.isArray(d.dynRows)) state.dynRows = d.dynRows.slice(-5000);
     if(Array.isArray(d.narrativeLines)) state.narrativeLines = d.narrativeLines.slice(-1000);
     if(Array.isArray(d.chatMessages)) state.chatMessages = d.chatMessages.slice(-200);
-
-    if(d.listPrefs){
-      state.listPrefs = Object.assign(state.listPrefs, d.listPrefs);
-    }
+    if(d.listPrefs) state.listPrefs = Object.assign(state.listPrefs, d.listPrefs);
 
     migratePowerInState();
     migrateAllianceOrder();
@@ -615,32 +720,19 @@ function migrateLegacyState(){
    同步補丁
    ============================================================ */
 function buildSettingsPatch(){
-  return {
-    kind:'settings', rev:state.settingsRev, lamport:state.lamport,
-    op:'upsert', data:Object.assign({}, state.settings)
-  };
+  return { kind:'settings', rev:state.settingsRev, lamport:state.lamport, op:'upsert',
+    data:Object.assign({}, state.settings) };
 }
 function buildEntityPatch(kind, id){
   const coll = kind==='alliance' ? state.alliances
-             : kind==='zone'     ? state.zones
-             : state.cities;
+             : kind==='zone'     ? state.zones : state.cities;
   const entity = coll.find(x => x.id === id);
   if(!entity) return null;
-  return {
-    kind, id,
-    rev: state.entityRev[kind][id] || 0,
-    lamport: state.lamport,
-    op:'upsert',
-    data: JSON.parse(JSON.stringify(entity))
-  };
+  return { kind, id, rev: state.entityRev[kind][id] || 0, lamport: state.lamport,
+    op:'upsert', data: JSON.parse(JSON.stringify(entity)) };
 }
 function buildDeletePatch(kind, id){
-  return {
-    kind, id,
-    rev: state.entityRev[kind][id] || 0,
-    lamport: state.lamport,
-    op:'delete'
-  };
+  return { kind, id, rev: state.entityRev[kind][id] || 0, lamport: state.lamport, op:'delete' };
 }
 function collectDirtyPatches(){
   const patches = [];
@@ -661,12 +753,10 @@ function upsertEntity(kind, entity, opts){
   opts = opts || {};
   const silent = !!opts.silent;
   const coll = kind==='alliance' ? state.alliances
-             : kind==='zone'     ? state.zones
-             : state.cities;
+             : kind==='zone'     ? state.zones : state.cities;
   const idx = coll.findIndex(x => x.id === entity.id);
   state.entityRev[kind][entity.id] = (state.entityRev[kind][entity.id] || 0) + 1;
-  if(idx>=0) coll[idx] = entity;
-  else coll.push(entity);
+  if(idx>=0) coll[idx] = entity; else coll.push(entity);
   if(!silent){ markDirty(kind, entity.id); tickLamport(); flushPatches(); }
   return entity;
 }
@@ -674,8 +764,7 @@ function deleteEntity(kind, id, opts){
   opts = opts || {};
   const silent = !!opts.silent;
   const coll = kind==='alliance' ? state.alliances
-             : kind==='zone'     ? state.zones
-             : state.cities;
+             : kind==='zone'     ? state.zones : state.cities;
   const idx = coll.findIndex(x => x.id === id);
   if(idx<0) return;
   coll.splice(idx,1);
@@ -684,10 +773,9 @@ function deleteEntity(kind, id, opts){
 }
 function updateSettings(patch, opts){
   opts = opts || {};
-  const silent = !!opts.silent;
   Object.assign(state.settings, patch);
   state.settingsRev++;
-  if(!silent){ markDirty('settings'); tickLamport(); flushPatches(); }
+  if(!opts.silent){ markDirty('settings'); tickLamport(); flushPatches(); }
 }
 function applyPatch(patch){
   if(!patch || !patch.kind) return false;
@@ -703,8 +791,7 @@ function applyPatch(patch){
 
   const coll = kind==='alliance' ? state.alliances
              : kind==='zone'     ? state.zones
-             : kind==='city'     ? state.cities
-             : null;
+             : kind==='city'     ? state.cities : null;
   if(!coll) return false;
 
   const localRev = state.entityRev[kind][id] || 0;
@@ -744,6 +831,7 @@ function triggerRoomSnapshotSync(){
   if(!roomSnapshotFn) return;
   if(state.mode !== 'room') return;
   if(!window.SLG.canEditRoomData || !window.SLG.canEditRoomData()) return;
+  if(!isOnline()) return;
   clearTimeout(roomSnapshotTimer);
   roomSnapshotTimer = setTimeout(() => {
     try{ roomSnapshotFn(); }catch(e){ console.warn('房間快照同步失敗', e); }
@@ -755,9 +843,7 @@ function triggerRoomSnapshotSync(){
    ============================================================ */
 function buildFullSnapshot(){
   return {
-    type:'sync_snapshot',
-    epoch: state.roomEpoch,
-    lamport: state.lamport,
+    type:'sync_snapshot', epoch: state.roomEpoch, lamport: state.lamport,
     settingsRev: state.settingsRev,
     settings: Object.assign({}, state.settings),
     entityRev: JSON.parse(JSON.stringify(state.entityRev)),
@@ -765,8 +851,7 @@ function buildFullSnapshot(){
     zones: JSON.parse(JSON.stringify(state.zones)),
     cities: JSON.parse(JSON.stringify(state.cities)),
     routes: JSON.parse(JSON.stringify(state.routes)),
-    clientId: state.myClientId,
-    name: state.commanderName
+    clientId: state.myClientId, name: state.commanderName
   };
 }
 function applyFullSnapshot(snap){
@@ -781,20 +866,13 @@ function applyFullSnapshot(snap){
   state.cities    = JSON.parse(JSON.stringify(snap.cities    || []));
   state.routes    = JSON.parse(JSON.stringify(snap.routes    || []));
   state.entityRev = { alliance:{}, zone:{}, city:{} };
-  for(const item of [
-    ['alliance', state.alliances],
-    ['zone',     state.zones],
-    ['city',     state.cities]
-  ]){
-    const kind = item[0], arr = item[1];
+  for(const [kind, arr] of [['alliance', state.alliances],['zone', state.zones],['city', state.cities]]){
     for(const ent of arr){
       state.entityRev[kind][ent.id] = (snap.entityRev && snap.entityRev[kind] && snap.entityRev[kind][ent.id]) || 0;
     }
   }
   tickLamport(snap.lamport || 0);
-  if(typeof state.settings.crossZoneWarAllowed !== 'boolean'){
-    state.settings.crossZoneWarAllowed = false;
-  }
+  if(typeof state.settings.crossZoneWarAllowed !== 'boolean') state.settings.crossZoneWarAllowed = false;
   migratePowerInState();
   migrateAllianceOrder();
   return true;
@@ -813,26 +891,15 @@ function buildSandboxData(){
 function applySandboxData(data){
   if(!data) return false;
   if(data.settings) Object.assign(state.settings, data.settings);
-  if(typeof state.settings.attackRequireRoute !== 'boolean'){
-    state.settings.attackRequireRoute = false;
-  }
-  if(typeof state.settings.crossZoneWarAllowed !== 'boolean'){
-    state.settings.crossZoneWarAllowed = false;
-  }
+  if(typeof state.settings.attackRequireRoute !== 'boolean') state.settings.attackRequireRoute = false;
+  if(typeof state.settings.crossZoneWarAllowed !== 'boolean') state.settings.crossZoneWarAllowed = false;
   state.alliances = JSON.parse(JSON.stringify(data.alliances || []));
   state.zones     = JSON.parse(JSON.stringify(data.zones     || []));
   state.cities    = JSON.parse(JSON.stringify(data.cities    || []));
   state.routes    = JSON.parse(JSON.stringify(data.routes    || []));
   state.entityRev = { alliance:{}, zone:{}, city:{} };
-  for(const item of [
-    ['alliance', state.alliances],
-    ['zone',     state.zones],
-    ['city',     state.cities]
-  ]){
-    const kind = item[0], arr = item[1];
-    for(const ent of arr){
-      state.entityRev[kind][ent.id] = 1;
-    }
+  for(const [kind, arr] of [['alliance', state.alliances],['zone', state.zones],['city', state.cities]]){
+    for(const ent of arr){ state.entityRev[kind][ent.id] = 1; }
   }
   migratePowerInState();
   migrateAllianceOrder();
@@ -840,18 +907,13 @@ function applySandboxData(data){
 }
 
 function getAllianceDist(allianceId){
-  const allocatedPower = state.cities
-    .filter(c => c.allianceId === allianceId)
+  const allocatedPower = state.cities.filter(c => c.allianceId === allianceId)
     .reduce((s, c) => s + (Number(c.totalPower) || 0), 0);
-  const allocatedTeams = state.cities
-    .filter(c => c.allianceId === allianceId)
+  const allocatedTeams = state.cities.filter(c => c.allianceId === allianceId)
     .reduce((s, c) => s + (Number(c.totalTeams) || 0), 0);
   return { allocatedPower, allocatedTeams };
 }
 
-/* ============================================================
-   盟查找 / NPC 預設
-   ============================================================ */
 function getAllianceByName(name){
   if(!name) return null;
   return state.alliances.find(a => a.name === name) || null;
@@ -861,24 +923,14 @@ function ensureNpcAlliance(){
   let npc = getAllianceByName(NPC_ALLIANCE_NAME);
   if(npc) return npc;
   npc = {
-    id: uid(),
-    name: NPC_ALLIANCE_NAME,
-    icon: NPC_ALLIANCE_ICON,
-    side: 'enemy',
-    memberCount: 0,
-    totalPower: 0,
-    avgPower: 0,
-    power: 0,
-    order: 9999,
+    id: uid(), name: NPC_ALLIANCE_NAME, icon: NPC_ALLIANCE_ICON, side: 'enemy',
+    memberCount: 0, totalPower: 0, avgPower: 0, power: 0, order: 9999,
   };
   state.alliances.push(npc);
   logSystem('已建立預設 NPC 盟');
   return npc;
 }
 
-/* ============================================================
-   v8.6.0：盟排序
-   ============================================================ */
 function getAlliancesSorted(){
   return [...state.alliances].sort((a, b) => {
     const oa = typeof a.order === 'number' ? a.order : 9999;
@@ -898,17 +950,14 @@ function reorderAlliances(orderedIds){
     state.entityRev.alliance[id] = (state.entityRev.alliance[id] || 0) + 1;
     markDirty('alliance', id);
   });
-  tickLamport();
-  flushPatches();
-  saveState();
+  tickLamport(); flushPatches(); saveState();
   logSystem('🤝 盟排序已更新');
 }
 
 function resetAllianceOrder(){
   const sideOrder = { self: 0, ally: 1, enemy: 2, common_enemy: 3, npc: 4 };
   const sorted = [...state.alliances].sort((a, b) => {
-    const oa = sideOrder[a.side] ?? 9;
-    const ob = sideOrder[b.side] ?? 9;
+    const oa = sideOrder[a.side] ?? 9, ob = sideOrder[b.side] ?? 9;
     if(oa !== ob) return oa - ob;
     return (a.createdAt || 0) - (b.createdAt || 0);
   });
@@ -917,9 +966,7 @@ function resetAllianceOrder(){
     state.entityRev.alliance[a.id] = (state.entityRev.alliance[a.id] || 0) + 1;
     markDirty('alliance', a.id);
   });
-  tickLamport();
-  flushPatches();
-  saveState();
+  tickLamport(); flushPatches(); saveState();
   logSystem('🔄 盟排序已重置');
 }
 
@@ -939,6 +986,8 @@ function addRoute(cityAId, cityBId){
   const route = { id: uid(), cityAId, cityBId };
   state.routes.push(route);
   emit(EVT.ROUTES_UPDATED);
+  /* v8.6.7：路線變更 → 重要操作 */
+  saveStateImportant();
   return route;
 }
 
@@ -947,6 +996,7 @@ function removeRoute(routeId){
   if(idx < 0) return false;
   state.routes.splice(idx, 1);
   emit(EVT.ROUTES_UPDATED);
+  saveStateImportant();
   return true;
 }
 
@@ -959,9 +1009,6 @@ function getReachableCityIds(cityId){
   return ids;
 }
 
-/* ============================================================
-   v8.5.5：防守開始時間推算
-   ============================================================ */
 function computeDefStartTimes(cities){
   const list = cities || state.cities;
   for(const city of list){
@@ -983,7 +1030,7 @@ function computeDefStartTimes(cities){
 }
 
 /* ============================================================
-   v8.6.0：距離計算（BFS）
+   距離計算（BFS）
    ============================================================ */
 function isNpcCity(city){
   if(!city) return false;
@@ -992,28 +1039,21 @@ function isNpcCity(city){
   if(a && a.name === NPC_ALLIANCE_NAME) return true;
   return false;
 }
-
 function isSrcAllianceCity(city, srcAllianceId){
   if(!city || !srcAllianceId) return false;
   return (city.allianceId || '') === srcAllianceId;
 }
-
 function bfsPath(srcId, tgtId, passableFn){
   if(srcId === tgtId) return [srcId];
   const visited = new Set([srcId]);
   const queue = [{ id: srcId, path: [srcId] }];
-
   while(queue.length > 0){
     const { id, path } = queue.shift();
-    const neighbors = getReachableCityIds(id);
-    for(const nid of neighbors){
+    for(const nid of getReachableCityIds(id)){
       if(visited.has(nid)) continue;
       const city = state.cities.find(c => c.id === nid);
       if(!city) continue;
-
-      if(nid === tgtId){
-        return [...path, nid];
-      }
+      if(nid === tgtId) return [...path, nid];
       if(!passableFn(city)) continue;
       visited.add(nid);
       queue.push({ id: nid, path: [...path, nid] });
@@ -1021,24 +1061,14 @@ function bfsPath(srcId, tgtId, passableFn){
   }
   return null;
 }
-
 function computeCityDistance(srcId, tgtId){
   if(!srcId || !tgtId) return null;
   const src = state.cities.find(c => c.id === srcId);
   const tgt = state.cities.find(c => c.id === tgtId);
-  if(!src || !tgt) return null;
-  if(srcId === tgtId) return null;
-
+  if(!src || !tgt || srcId === tgtId) return null;
   const srcAllianceId = src.allianceId || '';
-
-  const passableFn = (city) => {
-    if(isSrcAllianceCity(city, srcAllianceId)) return true;
-    if(isNpcCity(city)) return true;
-    return false;
-  };
-
+  const passableFn = (city) => isSrcAllianceCity(city, srcAllianceId) || isNpcCity(city);
   const conquerFn = () => true;
-
   const passablePath = bfsPath(srcId, tgtId, passableFn);
   const conquerPath = bfsPath(srcId, tgtId, conquerFn);
 
@@ -1047,64 +1077,31 @@ function computeCityDistance(srcId, tgtId){
     const nodes = path.map(id => {
       const c = state.cities.find(x => x.id === id);
       return c ? {
-        id: c.id,
-        name: c.name,
-        side: c.side,
-        allianceId: c.allianceId,
+        id: c.id, name: c.name, side: c.side, allianceId: c.allianceId,
         allianceName: (state.alliances.find(a => a.id === c.allianceId)?.name || ''),
-        isNpc: isNpcCity(c),
-        isSrcAlliance: isSrcAllianceCity(c, srcAllianceId),
-        isSrc: id === srcId,
-        isTgt: id === tgtId,
+        isNpc: isNpcCity(c), isSrcAlliance: isSrcAllianceCity(c, srcAllianceId),
+        isSrc: id === srcId, isTgt: id === tgtId,
       } : null;
     }).filter(Boolean);
-
     const conquerNodes = [];
-    if(mode === 'passable'){
-      for(let i = 0; i < nodes.length; i++){
-        const n = nodes[i];
-        if(n.isSrc || n.isTgt) continue;
-        if(n.isNpc) conquerNodes.push(n.id);
-      }
-    } else {
-      for(let i = 0; i < nodes.length; i++){
-        const n = nodes[i];
-        if(n.isSrc || n.isTgt) continue;
-        if(n.isNpc) continue;
-        if(n.isSrcAlliance) continue;
-        conquerNodes.push(n.id);
-      }
+    for(let i = 0; i < nodes.length; i++){
+      const n = nodes[i];
+      if(n.isSrc || n.isTgt) continue;
+      if(mode === 'passable'){ if(n.isNpc) conquerNodes.push(n.id); }
+      else { if(!n.isNpc && !n.isSrcAlliance) conquerNodes.push(n.id); }
     }
-
-    return {
-      found: true,
-      path: path.slice(),
-      steps: path.length - 1,
-      nodes,
-      conquerNodes,
-    };
+    return { found: true, path: path.slice(), steps: path.length - 1, nodes, conquerNodes };
   };
 
   return {
-    src: {
-      id: src.id,
-      name: src.name,
-      side: src.side,
-      allianceId: src.allianceId,
-      allianceName: (state.alliances.find(a => a.id === src.allianceId)?.name || ''),
-    },
-    tgt: {
-      id: tgt.id,
-      name: tgt.name,
-      side: tgt.side,
-      allianceId: tgt.allianceId,
-      allianceName: (state.alliances.find(a => a.id === tgt.allianceId)?.name || ''),
-    },
+    src: { id: src.id, name: src.name, side: src.side, allianceId: src.allianceId,
+      allianceName: (state.alliances.find(a => a.id === src.allianceId)?.name || '') },
+    tgt: { id: tgt.id, name: tgt.name, side: tgt.side, allianceId: tgt.allianceId,
+      allianceName: (state.alliances.find(a => a.id === tgt.allianceId)?.name || '') },
     passable: buildResult(passablePath, 'passable'),
     conquer: buildResult(conquerPath, 'conquer'),
   };
 }
-
 function setDistanceHighlight(result){
   if(!result || !result.passable || !result.passable.found){
     state.distanceHighlight = null;
@@ -1112,16 +1109,13 @@ function setDistanceHighlight(result){
     return;
   }
   const path = result.passable.path;
-  const cityIds = path.slice();
   const routeKeys = [];
   for(let i = 0; i < path.length - 1; i++){
-    const a = path[i], b = path[i+1];
-    routeKeys.push([a, b].sort().join('|'));
+    routeKeys.push([path[i], path[i+1]].sort().join('|'));
   }
-  state.distanceHighlight = { cityIds, routeKeys };
+  state.distanceHighlight = { cityIds: path.slice(), routeKeys };
   emit(EVT.DISTANCE_HIGHLIGHT, state.distanceHighlight);
 }
-
 function clearDistanceHighlight(){
   state.distanceHighlight = null;
   emit(EVT.DISTANCE_CLEAR);
@@ -1168,21 +1162,28 @@ function updateModeBar(){
   } else if(state.mode === 'room' && state.connecting){
     bar.className = 'mode-bar room';
     indicator.textContent = '連線中...';
-    const user = userLabel ? ' / ' + userLabel : '';
-    detail.textContent = '正在連線至房間 ' + (state.roomCode || '') + user;
+    detail.textContent = '正在連線至房間 ' + (state.roomCode || '') + (userLabel ? ' / ' + userLabel : '');
     btn.textContent = '取消連線';
   } else {
     bar.className = 'mode-bar local';
-    indicator.textContent = '本機模式';
+    /* v8.6.7：本機模式 → 依同步參數顯示 */
+    const prefs = state.sync.prefs;
+    if(a.signedIn){
+      if(prefs.intervalMin > 0){
+        indicator.textContent = `🖥️ 同步雲端模式（每 ${prefs.intervalMin} 分鐘）`;
+      } else {
+        indicator.textContent = '🖥️ 本機模式（同步已停用）';
+      }
+    } else {
+      indicator.textContent = '🖥️ 本機模式';
+    }
     detail.textContent = userLabel ? userLabel + ' / 尚未進入房間' : '尚未進入房間';
     btn.textContent = '進入房間';
   }
 }
 function requestSwitchMode(){
   if(state.mode === 'room'){
-    if(typeof window.SLG.requestDisconnect === 'function'){
-      window.SLG.requestDisconnect();
-    }
+    if(typeof window.SLG.requestDisconnect === 'function') window.SLG.requestDisconnect();
   } else {
     document.querySelectorAll('.top-nav button').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -1207,9 +1208,7 @@ function requestSwitchMode(){
 /* ============================================================
    房間編輯權限判斷
    ============================================================ */
-function isInRoom(){
-  return state.mode === 'room' && state.connected;
-}
+function isInRoom(){ return state.mode === 'room' && state.connected; }
 function canEditRoomData(){
   if(!state.auth.signedIn) return false;
   if(window.SLG.Auth && window.SLG.Auth.isAdmin()) return true;
@@ -1222,9 +1221,7 @@ function getEffectiveEditPermission(){
   return window.SLG.Auth && window.SLG.Auth.canEditData();
 }
 function getEffectiveImportExcelPermission(){
-  if(isInRoom()){
-    return canEditRoomData() && window.SLG.Auth && window.SLG.Auth.canImportExcel();
-  }
+  if(isInRoom()) return canEditRoomData() && window.SLG.Auth && window.SLG.Auth.canImportExcel();
   return window.SLG.Auth && window.SLG.Auth.canImportExcel();
 }
 function resetRoomEditState(){
@@ -1233,9 +1230,6 @@ function resetRoomEditState(){
   state.myEditRequestStatus = 'idle';
 }
 
-/* ============================================================
-   沙盤權限判斷
-   ============================================================ */
 function canViewSandboxes(){
   if(!state.auth.signedIn) return false;
   return true;
@@ -1243,9 +1237,7 @@ function canViewSandboxes(){
 function canViewSandboxOf(targetUid, targetRole){
   if(!state.auth.signedIn) return false;
   if(targetUid === state.auth.accountUid) return true;
-  if(window.SLG.Auth && (window.SLG.Auth.isAdmin() || state.auth.role === ROLE.OFFICER)){
-    return true;
-  }
+  if(window.SLG.Auth && (window.SLG.Auth.isAdmin() || state.auth.role === ROLE.OFFICER)) return true;
   if(state.auth.role === ROLE.MEMBER && targetRole === ROLE.MEMBER) return true;
   return false;
 }
@@ -1292,40 +1284,46 @@ function readAIParamsFromUI(){
   return result;
 }
 
+/* 初始化同步設定 */
+loadSyncPrefs();
+
 /* ============================================================
    暴露到全域
    ============================================================ */
 Object.assign(window.SLG, {
   LS_PREFIX, LS_LEGACY_PREFIX, AI_LS_KEY, ACCOUNT_UID_KEY,
+  SYNC_PREFS_KEY,
   HOST_TIMEOUT, EDIT_LOCK_TTL,
   SANDBOX_SYNC_DEBOUNCE, ROOM_SNAPSHOT_DEBOUNCE,
+  NETWORK_HEARTBEAT_INTERVAL,
   PERCENT_OPTIONS,
   NPC_ALLIANCE_NAME, NPC_ALLIANCE_ICON,
   ATTACK_RULES, DEFEND_RULES, SIDE_LABELS, ALLIANCE_SIDE_LABELS,
   ROLE, ROLE_LABELS, ROLE_CLASS, ROLE_ORDER, EVT,
 
-  /* v8.5.6：戰力單位常量 */
   POWER_YI, POWER_WAN, POWER_MIGRATE_THRESHOLD,
-
-  /* v8.6.0：盟徽清單 */
   DEFAULT_ALLIANCE_ICONS,
 
   uid, nowTime, esc, sideLabel, allianceSideLabel, sideClass, logSystem,
   formatDateCompact, timeAgo, buildSandboxFileName,
 
-  /* v8.5.6：戰力單位工具 */
   formatPower, formatAvgPower, parsePowerInput, migratePower, powerToYiInput,
-
-  /* v8.6.0：盟徽工具 */
   getAllianceIcons, isAllianceIconUsed, getAvailableAllianceIcons,
 
   AI,
-
   state, on, emit,
+
+  isOnline, initNetworkWatcher, setNetworkStatus,
+
+  /* v8.6.7：同步 */
+  loadSyncPrefs, saveSyncPrefs, getSyncPrefs, setSyncPrefs,
+  markCloudDirty, clearCloudDirty, resetSyncState,
+  performCloudUpload, scheduleUpload,
+  startSyncTimer, stopSyncTimer,
 
   tickLamport, isNewer, markDirty, clearDirty,
 
-  saveState, loadState, migrateLegacyState,
+  saveState, saveStateImportant, loadState, migrateLegacyState,
   registerCloudSync, triggerCloudSync,
   registerRoomSnapshotSync, triggerRoomSnapshotSync,
 
@@ -1337,49 +1335,25 @@ Object.assign(window.SLG, {
 
   enterRoomMode, exitRoomMode, updateModeBar, requestSwitchMode,
 
-  isInRoom,
-  canEditRoomData,
-  getEffectiveEditPermission,
-  getEffectiveImportExcelPermission,
+  isInRoom, canEditRoomData,
+  getEffectiveEditPermission, getEffectiveImportExcelPermission,
   resetRoomEditState,
 
-  canViewSandboxes,
-  canViewSandboxOf,
-  canViewRoomSandboxes,
-  canUploadSandboxToRoom,
-  canUseRescueTool,
+  canViewSandboxes, canViewSandboxOf, canViewRoomSandboxes,
+  canUploadSandboxToRoom, canUseRescueTool,
 
   syncAIParamsToUI, readAIParamsFromUI,
 
-  getAllianceDist,
-  getAllianceByName,
-  ensureNpcAlliance,
+  getAllianceDist, getAllianceByName, ensureNpcAlliance,
 
-  /* 路線 API */
-  findRoute,
-  addRoute,
-  removeRoute,
-  getReachableCityIds,
+  findRoute, addRoute, removeRoute, getReachableCityIds,
 
-  /* v8.5.5：防守時間推算 */
-  computeDefStartTimes,
+  computeDefStartTimes, migratePowerInState,
 
-  /* v8.5.6：遷移 */
-  migratePowerInState,
+  getAlliancesSorted, reorderAlliances, resetAllianceOrder, migrateAllianceOrder,
 
-  /* v8.6.0：盟排序 */
-  getAlliancesSorted,
-  reorderAlliances,
-  resetAllianceOrder,
-  migrateAllianceOrder,
-
-  /* v8.6.0：距離計算 */
-  isNpcCity,
-  isSrcAllianceCity,
-  bfsPath,
-  computeCityDistance,
-  setDistanceHighlight,
-  clearDistanceHighlight,
+  isNpcCity, isSrcAllianceCity, bfsPath, computeCityDistance,
+  setDistanceHighlight, clearDistanceHighlight,
 });
 
 })();

@@ -1,6 +1,6 @@
 /* ============================================================================
- * auth.js — 認證模組 + 帳號管理 + 入口門禁（v8.3）
- * v8.3：移除訪客 + 帳號 Tab 顯示 + 登出回入口 + 嚴格登入門禁
+ * auth.js — 認證模組 + 帳號管理 + 入口門禁（v8.6.7）
+ * v8.6.7：登出流程簡化（移除保留/清空選擇，一律保留本機）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -11,7 +11,7 @@ const {
   state, emit, EVT,
   uid, esc, logSystem,
   ROLE, ROLE_LABELS, ROLE_CLASS, ROLE_ORDER,
-  saveState, updateModeBar,
+  saveState, updateModeBar, isOnline,
 } = window.SLG;
 
 const getDb = () => window.SLG.getDb();
@@ -42,14 +42,12 @@ const Auth = (() => {
       return true;
     }catch(e){
       console.warn('匿名 Auth 失敗', e);
-      emit(EVT.DEBUG, {msg:'❌ 匿名登入失敗：' + e.message + '（請確認 Console 已開啟 Anonymous 登入）', err:true});
+      emit(EVT.DEBUG, {msg:'❌ 匿名登入失敗：' + e.message, err:true});
       return false;
     }
   }
 
-  function accountRef(uid){
-    return getDb().ref(`accounts/${uid}`);
-  }
+  function accountRef(uid){ return getDb().ref(`accounts/${uid}`); }
 
   async function findAccountByUsername(username){
     try{
@@ -70,91 +68,70 @@ const Auth = (() => {
   }
 
   async function login(username, password){
-    if(!username || !password){ throw new Error('請輸入帳號與密碼'); }
-    if(!getDb()){ throw new Error('Firebase 尚未就緒，請稍後再試'); }
+    if(!username || !password) throw new Error('請輸入帳號與密碼');
+    if(!getDb()) throw new Error('Firebase 尚未就緒，請稍後再試');
+    if(!isOnline()) throw new Error('目前無網路連線，請稍後再試');
 
     const found = await findAccountByUsername(username);
-    if(!found){ throw new Error('帳號不存在'); }
-    if(found.data.password !== password){ throw new Error('密碼錯誤'); }
-    if(found.data.status === 'suspended'){ throw new Error('此帳號已停用，請聯繫管理員'); }
-    if(found.data.status === 'pending'){ throw new Error('此帳號尚未啟用'); }
+    if(!found) throw new Error('帳號不存在');
+    if(found.data.password !== password) throw new Error('密碼錯誤');
+    if(found.data.status === 'suspended') throw new Error('此帳號已停用，請聯繫管理員');
+    if(found.data.status === 'pending') throw new Error('此帳號尚未啟用');
 
-    try{
-      await accountRef(found.uid).update({ lastLoginAt: Date.now() });
-    }catch(e){ /* 忽略 */ }
+    try{ await accountRef(found.uid).update({ lastLoginAt: Date.now() }); }catch(e){}
 
     setSession(found.uid, found.data);
     localStorage.setItem(window.SLG.ACCOUNT_UID_KEY, found.uid);
     logSystem(`✅ ${found.data.displayName} 登入成功`);
 
-    /* ★ v8.2：登入後載入個人雲端沙盤 */
-    try{
-      await window.SLG.loadMySandbox();
-    }catch(e){
-      console.warn('載入雲端沙盤失敗', e);
-    }
-
+    try{ await window.SLG.loadMySandbox(); }catch(e){ console.warn('載入雲端沙盤失敗', e); }
     return found.data;
   }
 
   async function register(username, displayName, password, password2){
-    if(!username || !displayName || !password){ throw new Error('請填寫所有欄位'); }
-    if(username.length < 3){ throw new Error('帳號至少 3 字元'); }
-    if(!/^[a-zA-Z0-9_]+$/.test(username)){ throw new Error('帳號只能使用英文、數字、底線'); }
-    if(displayName.length > 12){ throw new Error('顯示名稱最多 12 字'); }
-    if(password.length < 4){ throw new Error('密碼至少 4 字元'); }
-    if(password !== password2){ throw new Error('兩次密碼不一致'); }
-    if(!getDb()){ throw new Error('Firebase 尚未就緒'); }
+    if(!username || !displayName || !password) throw new Error('請填寫所有欄位');
+    if(username.length < 3) throw new Error('帳號至少 3 字元');
+    if(!/^[a-zA-Z0-9_]+$/.test(username)) throw new Error('帳號只能使用英文、數字、底線');
+    if(displayName.length > 12) throw new Error('顯示名稱最多 12 字');
+    if(password.length < 4) throw new Error('密碼至少 4 字元');
+    if(password !== password2) throw new Error('兩次密碼不一致');
+    if(!getDb()) throw new Error('Firebase 尚未就緒');
+    if(!isOnline()) throw new Error('目前無網路連線');
 
     const existing = await findAccountByUsername(username);
-    if(existing){ throw new Error('帳號已被使用'); }
+    if(existing) throw new Error('帳號已被使用');
 
     const newUid = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
     const entity = {
-      username,
-      password,
-      displayName,
-      role: ROLE.MEMBER,
-      status: 'active',
+      username, password, displayName,
+      role: ROLE.MEMBER, status: 'active',
       createdAt: Date.now(),
       createdBy: state.auth.accountUid || 'self',
       lastLoginAt: Date.now(),
       note: '',
       extraPerms: {
-        canEditData: false,
-        canImportExcel: false,
-        canRunSim: false,
-        canKick: false,
-        canEditSettings: false,
+        canEditData: false, canImportExcel: false, canRunSim: false,
+        canKick: false, canEditSettings: false,
       },
     };
-
     await accountRef(newUid).set(entity);
     setSession(newUid, entity);
     localStorage.setItem(window.SLG.ACCOUNT_UID_KEY, newUid);
-    logSystem(`✅ 註冊成功，${displayName}（${ROLE_LABELS[ROLE.MEMBER]}）`);
+    logSystem(`✅ 註冊成功，${displayName}`);
 
-    /* ★ v8.2：註冊後建立空白個人沙盤 */
-    try{
-      await window.SLG.saveMySandbox();
-    }catch(e){
-      console.warn('建立初始沙盤失敗', e);
-    }
-
+    try{ await window.SLG.saveMySandbox(); }catch(e){ console.warn('建立初始沙盤失敗', e); }
     return entity;
   }
 
   async function restoreSession(){
     const uid = localStorage.getItem(window.SLG.ACCOUNT_UID_KEY);
     if(!uid) return false;
-    if(!getDb()){ return false; }
+    if(!getDb()) return false;
+    if(!isOnline()) return false;
     try{
       const snap = await accountRef(uid).once('value');
       const data = snap.val();
-      if(!data){
-        localStorage.removeItem(window.SLG.ACCOUNT_UID_KEY);
-        return false;
-      }
+      if(!data){ localStorage.removeItem(window.SLG.ACCOUNT_UID_KEY); return false; }
       if(data.status === 'suspended'){
         localStorage.removeItem(window.SLG.ACCOUNT_UID_KEY);
         logSystem('⚠️ 您的帳號已被停用，請聯繫管理員');
@@ -162,19 +139,9 @@ const Auth = (() => {
       }
       setSession(uid, data);
       logSystem(`🔄 已恢復登入：${data.displayName}`);
-
-      /* ★ v8.2：載入個人雲端沙盤 */
-      try{
-        await window.SLG.loadMySandbox();
-      }catch(e){
-        console.warn('載入雲端沙盤失敗', e);
-      }
-
+      try{ await window.SLG.loadMySandbox(); }catch(e){ console.warn('載入雲端沙盤失敗', e); }
       return true;
-    }catch(e){
-      console.warn('恢復登入失敗', e);
-      return false;
-    }
+    }catch(e){ console.warn('恢復登入失敗', e); return false; }
   }
 
   function setSession(uid, data){
@@ -185,74 +152,89 @@ const Auth = (() => {
     state.auth.role = data.role || ROLE.MEMBER;
     state.auth.status = data.status || 'active';
     state.auth.extraPerms = Object.assign({
-      canEditData: false,
-      canImportExcel: false,
-      canRunSim: false,
-      canKick: false,
-      canEditSettings: false,
+      canEditData: false, canImportExcel: false, canRunSim: false,
+      canKick: false, canEditSettings: false,
     }, data.extraPerms || {});
     if(!state.commanderName) state.commanderName = state.auth.displayName;
     emit(EVT.AUTH, state.auth);
   }
 
+  /**
+   * v8.6.7：登出流程（簡化）
+   * 步驟：① 顯示確認對話框 → ② 強制上傳 → ③ 一律保留本機 → ④ 中斷房間 → ⑤ 清 auth
+   */
   async function logout(){
-    /* ★ v8.2：登出前先儲存個人沙盤（等儲存完成再清狀態） */
-    if(state.auth.signedIn && window.SLG.saveMySandbox){
+    const modal = document.getElementById('logoutConfirmModal');
+    if(modal) modal.classList.add('show');
+  }
+
+  async function performLogout(){
+    const modal = document.getElementById('logoutConfirmModal');
+    if(modal) modal.classList.remove('show');
+
+    logSystem('🚪 開始登出流程');
+
+    /* ① 先停定時器 */
+    if(window.SLG.stopSyncTimer) window.SLG.stopSyncTimer();
+
+    /* ② 強制上傳雲端（最後一次）*/
+    if(state.auth.signedIn && isOnline() && state.mySandbox.cloudLoaded){
+      logSystem('☁️ 登出前強制上傳...');
       try{
-        await window.SLG.saveMySandbox();
-        logSystem('💾 登出前已儲存個人沙盤');
-      }catch(e){
-        console.warn('登出前儲存失敗', e);
-      }
+        if(window.SLG.performCloudUpload){
+          await window.SLG.performCloudUpload('logout');
+        } else if(window.SLG.saveMySandbox){
+          await window.SLG.saveMySandbox();
+        }
+        logSystem('✅ 已上傳到雲端');
+      }catch(e){ console.warn('登出前上傳失敗', e); }
+    } else if(!isOnline()){
+      logSystem('⚠️ 離線中，跳過登出前上傳');
     }
 
-    /* ★ v8.3：若在房間內，先中斷連線 */
+    /* ③ v8.6.7：一律保留本機（不再詢問）*/
+    logSystem('💾 已保留本機沙盤');
+
+    /* ④ 中斷房間連線 */
     if(window.SLG.isConnected && window.SLG.isConnected()){
-      try{
-        window.SLG.disconnectFirebase();
-      }catch(e){ console.warn('中斷連線失敗', e); }
+      try{ window.SLG.disconnectFirebase(); }catch(e){ console.warn('中斷連線失敗', e); }
     }
 
+    /* ⑤ 清空 state.auth */
     state.auth = {
-      signedIn: false,
-      accountUid: '',
-      username: '',
-      displayName: '',
-      role: ROLE.GUEST,
-      status: 'active',
+      signedIn: false, accountUid: '', username: '', displayName: '',
+      role: ROLE.GUEST, status: 'active',
       extraPerms: {
-        canEditData: false,
-        canImportExcel: false,
-        canRunSim: false,
-        canKick: false,
-        canEditSettings: false,
+        canEditData: false, canImportExcel: false, canRunSim: false,
+        canKick: false, canEditSettings: false,
       },
     };
+    state.mySandbox = {
+      loading: false, loaded: false, cloudLoaded: false, updatedAt: 0, saving: false,
+    };
+
+    /* 重設同步狀態 */
+    if(window.SLG.resetSyncState) window.SLG.resetSyncState();
+
     localStorage.removeItem(window.SLG.ACCOUNT_UID_KEY);
     emit(EVT.AUTH, state.auth);
     logSystem('🚪 已登出');
 
-    /* ★ v8.3：登出後回到入口遮罩 */
-    if(window.SLG.EntryGate){
-      window.SLG.EntryGate.showForm();
-    }
+    if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
+    return true;
   }
 
   async function updateDisplayName(newName){
     if(!state.auth.signedIn) throw new Error('請先登入');
     if(!newName || newName.length > 12) throw new Error('顯示名稱 1-12 字');
+    if(!isOnline()) throw new Error('離線中，無法更新');
     await accountRef(state.auth.accountUid).update({ displayName: newName });
     state.auth.displayName = newName;
     if(state.commanderName === state.auth.displayName || !state.commanderName){
       state.commanderName = newName;
     }
     emit(EVT.AUTH, state.auth);
-
-    /* ★ v8.2：同步更新雲端沙盤的 displayName */
-    try{
-      await getDb().ref(`userSandboxes/${state.auth.accountUid}`).update({ displayName: newName });
-    }catch(e){ /* 忽略 */ }
-
+    try{ await getDb().ref(`userSandboxes/${state.auth.accountUid}`).update({ displayName: newName }); }catch(e){}
     logSystem('✏️ 顯示名稱已更新');
   }
 
@@ -260,6 +242,7 @@ const Auth = (() => {
     if(!state.auth.signedIn) throw new Error('請先登入');
     if(!oldPwd || !newPwd) throw new Error('請輸入舊密碼與新密碼');
     if(newPwd.length < 4) throw new Error('新密碼至少 4 字元');
+    if(!isOnline()) throw new Error('離線中，無法更新');
     const snap = await accountRef(state.auth.accountUid).once('value');
     const data = snap.val();
     if(!data || data.password !== oldPwd) throw new Error('舊密碼錯誤');
@@ -271,7 +254,6 @@ const Auth = (() => {
   function isAdmin(){ return state.auth.role === ROLE.ADMIN || isSuperAdmin(); }
   function isOfficer(){ return state.auth.role === ROLE.OFFICER || isAdmin(); }
   function isSignedIn(){ return state.auth.signedIn; }
-
   function canEditData(){
     if(isAdmin()) return true;
     if(state.auth.role === ROLE.OFFICER && state.auth.extraPerms.canEditData) return true;
@@ -282,22 +264,14 @@ const Auth = (() => {
     if(state.auth.role === ROLE.OFFICER && state.auth.extraPerms.canImportExcel) return true;
     return false;
   }
-  function canRunSim(){
-    return isSignedIn();
-  }
-  function canEditSettings(){
-    return isAdmin();
-  }
-  function canCreateRoom(){
-    return isOfficer();
-  }
-  function canKick(){
-    return isOfficer();
-  }
+  function canRunSim(){ return isSignedIn(); }
+  function canEditSettings(){ return isAdmin(); }
+  function canCreateRoom(){ return isOfficer(); }
+  function canKick(){ return isOfficer(); }
 
   return {
     initFirebaseAuth, getAnonAuthUid,
-    login, register, restoreSession, logout,
+    login, register, restoreSession, logout, performLogout,
     updateDisplayName, updatePassword,
     isSuperAdmin, isAdmin, isOfficer, isSignedIn,
     canEditData, canImportExcel, canRunSim, canEditSettings, canCreateRoom, canKick,
@@ -305,13 +279,14 @@ const Auth = (() => {
 })();
 
 /* ============================================================
-   Accounts 模組（帳號管理）
+   Accounts 模組
    ============================================================ */
 const Accounts = (() => {
   let allAccounts = {};
 
   async function loadAll(){
     if(!getDb()) throw new Error('Firebase 未就緒');
+    if(!isOnline()) throw new Error('離線中');
     const snap = await getDb().ref('accounts').once('value');
     allAccounts = snap.val() || {};
     return allAccounts;
@@ -334,8 +309,7 @@ const Accounts = (() => {
         return true;
       })
       .sort((a, b) => {
-        const oa = ROLE_ORDER[a.role] ?? 9;
-        const ob = ROLE_ORDER[b.role] ?? 9;
+        const oa = ROLE_ORDER[a.role] ?? 9, ob = ROLE_ORDER[b.role] ?? 9;
         if(oa !== ob) return oa - ob;
         return (a.createdAt || 0) - (b.createdAt || 0);
       });
@@ -357,11 +331,8 @@ const Accounts = (() => {
 
     const hint = document.getElementById('accountsHint');
     if(hint){
-      if(isSuper){
-        hint.innerHTML = '👑 您擁有最高權限：可查看密碼、修改角色、刪除帳號。';
-      } else if(Auth.isAdmin()){
-        hint.innerHTML = '🛡️ 您為管理員：可停用帳號、修改 extraPerms，無法查閱密碼。';
-      }
+      if(isSuper){ hint.innerHTML = '👑 您擁有最高權限：可查看密碼、修改角色、刪除帳號。'; }
+      else if(Auth.isAdmin()){ hint.innerHTML = '🛡️ 您為管理員：可停用帳號、修改 extraPerms，無法查閱密碼。'; }
     }
 
     if(list.length === 0){
@@ -379,7 +350,6 @@ const Accounts = (() => {
 
       const isSelf = a.uid === state.auth.accountUid;
       const canEdit = isSuper || (!isSelf && Auth.isAdmin() && a.role !== 'superadmin');
-
       const fmtDate = ts => {
         if(!ts) return '—';
         try{
@@ -387,7 +357,6 @@ const Accounts = (() => {
           return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         }catch(e){ return '—'; }
       };
-
       const pwdCell = isSuper
         ? `<td class="pwd-cell"><span class="pwd-mask" data-uid="${a.uid}">●●●●●●</span> <button class="btn btn-ghost btn-sm" data-action="toggle-pwd" data-uid="${a.uid}" data-real="${esc(a.password||'')}" style="padding:0 4px;font-size:10px;">👁</button></td>`
         : '';
@@ -424,9 +393,7 @@ const Accounts = (() => {
     });
 
     tbody.querySelectorAll('[data-action="edit-account"]').forEach(btn => {
-      btn.addEventListener('click', function(){
-        openEditModal(this.dataset.uid);
-      });
+      btn.addEventListener('click', function(){ openEditModal(this.dataset.uid); });
     });
 
     tbody.querySelectorAll('[data-action="del-account"]').forEach(btn => {
@@ -446,9 +413,7 @@ const Accounts = (() => {
           window.SLG.showConfirm('刪除帳號',
             `確定要刪除帳號「${a.username}」嗎？\n\n⚠️ 此操作無法復原，該帳號的所有資料將永久移除。`,
             doDelete);
-        } else if(confirm(`確定要刪除帳號「${a.username}」嗎？`)){
-          doDelete();
-        }
+        } else if(confirm(`確定要刪除帳號「${a.username}」嗎？`)){ doDelete(); }
       });
     });
   }
@@ -537,7 +502,6 @@ const Accounts = (() => {
         if(newPwd.length < 4){ alert('新密碼至少 4 字元'); return; }
         updates.password = newPwd;
       }
-
       if(isSelf && newRole !== 'superadmin'){
         if(!confirm('⚠️ 您正在將自己從「超管」降級，將失去最高權限！\n\n確定要繼續嗎？')) return;
       }
@@ -548,7 +512,6 @@ const Accounts = (() => {
       logSystem(`✏️ 已更新帳號：${a.username}`);
       closeEditModal();
       await refresh();
-
       if(isSelf){
         const snap = await getDb().ref(`accounts/${editingUid}`).once('value');
         const data = snap.val();
@@ -558,28 +521,16 @@ const Accounts = (() => {
           state.auth.status = data.status || state.auth.status;
           state.auth.extraPerms = Object.assign(state.auth.extraPerms, data.extraPerms || {});
           emit(EVT.AUTH, state.auth);
-
-          /* ★ v8.2：同步更新雲端沙盤 */
-          try{
-            await getDb().ref(`userSandboxes/${editingUid}`).update({ displayName: state.auth.displayName });
-          }catch(e){}
+          try{ await getDb().ref(`userSandboxes/${editingUid}`).update({ displayName: state.auth.displayName }); }catch(e){}
         }
       }
       alert('✅ 已儲存');
-    }catch(e){
-      alert('❌ 儲存失敗：' + e.message);
-    }
+    }catch(e){ alert('❌ 儲存失敗：' + e.message); }
   }
 
   async function refresh(){
-    try{
-      await loadAll();
-      renderTable();
-      return true;
-    }catch(e){
-      alert('讀取帳號失敗：' + e.message);
-      return false;
-    }
+    try{ await loadAll(); renderTable(); return true; }
+    catch(e){ alert('讀取帳號失敗：' + e.message); return false; }
   }
 
   function exportCSV(){
@@ -591,10 +542,7 @@ const Accounts = (() => {
 
     const rows = list.map(a => {
       const r = [
-        a.username || '',
-        a.displayName || '',
-        a.role || '',
-        a.status || '',
+        a.username || '', a.displayName || '', a.role || '', a.status || '',
         a.createdAt ? new Date(a.createdAt).toISOString() : '',
         a.lastLoginAt ? new Date(a.lastLoginAt).toISOString() : '',
         a.note || '',
@@ -632,7 +580,6 @@ const Accounts = (() => {
 
     const cancel = document.getElementById('ae_cancel');
     if(cancel) cancel.addEventListener('click', closeEditModal);
-
     const save = document.getElementById('ae_save');
     if(save) save.addEventListener('click', saveEdit);
   }
@@ -641,16 +588,12 @@ const Accounts = (() => {
 })();
 
 /* ============================================================
-   EntryGate 模組（v8.2：無訪客）
+   EntryGate 模組
    ============================================================ */
 const EntryGate = (() => {
-
   function show(){
     const el = document.getElementById('entryGate');
-    if(el){
-      el.classList.remove('hidden');
-      document.body.style.overflow = 'hidden';
-    }
+    if(el){ el.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
     const loading = document.getElementById('entryLoading');
     const main = document.getElementById('entryMain');
     if(loading) loading.style.display = '';
@@ -666,9 +609,7 @@ const EntryGate = (() => {
       const el = document.getElementById(id);
       if(el) el.textContent = '';
     });
-    ['entryLoginUsername','entryLoginPassword',
-     'entryRegUsername','entryRegDisplayName',
-     'entryRegPassword','entryRegPassword2'].forEach(id => {
+    ['entryLoginUsername','entryLoginPassword','entryRegUsername','entryRegDisplayName','entryRegPassword','entryRegPassword2'].forEach(id => {
       const el = document.getElementById(id);
       if(el) el.value = '';
     });
@@ -699,6 +640,7 @@ const EntryGate = (() => {
 
     errEl.textContent = '';
     if(!u || !p){ errEl.textContent = '請輸入帳號與密碼'; return; }
+    if(!isOnline()){ errEl.textContent = '目前無網路連線'; return; }
 
     btn.disabled = true;
     btn.textContent = '登入中...';
@@ -726,6 +668,7 @@ const EntryGate = (() => {
     const btn = document.getElementById('entryBtnRegister');
 
     errEl.textContent = '';
+    if(!isOnline()){ errEl.textContent = '目前無網路連線'; return; }
 
     btn.disabled = true;
     btn.textContent = '註冊中...';
@@ -747,29 +690,19 @@ const EntryGate = (() => {
 
   function init(){
     document.querySelectorAll('.entry-tab').forEach(tab => {
-      tab.addEventListener('click', function(){
-        switchView(this.dataset.entryView);
-      });
+      tab.addEventListener('click', function(){ switchView(this.dataset.entryView); });
     });
-
     const btnLogin = document.getElementById('entryBtnLogin');
     if(btnLogin) btnLogin.addEventListener('click', doLogin);
-
     ['entryLoginUsername','entryLoginPassword'].forEach(id => {
       const el = document.getElementById(id);
-      if(el) el.addEventListener('keydown', e => {
-        if(e.key === 'Enter') doLogin();
-      });
+      if(el) el.addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
     });
-
     const btnReg = document.getElementById('entryBtnRegister');
     if(btnReg) btnReg.addEventListener('click', doRegister);
-
     ['entryRegUsername','entryRegDisplayName','entryRegPassword','entryRegPassword2'].forEach(id => {
       const el = document.getElementById(id);
-      if(el) el.addEventListener('keydown', e => {
-        if(e.key === 'Enter') doRegister();
-      });
+      if(el) el.addEventListener('keydown', e => { if(e.key === 'Enter') doRegister(); });
     });
   }
 
@@ -777,7 +710,7 @@ const EntryGate = (() => {
 })();
 
 /* ============================================================
-   ★ v8.3：帳號 Tab UI（renderAuthUI / bindAuthUI）
+   帳號 Tab UI
    ============================================================ */
 function renderAuthUI(){
   const a = state.auth;
@@ -793,28 +726,21 @@ function renderAuthUI(){
   if(guestPanel) guestPanel.style.display = 'none';
   if(userPanel)  userPanel.style.display = '';
 
-  /* 頭像（用顯示名首字） */
   const avatarEl = document.getElementById('authAvatar');
   if(avatarEl){
     const ch = (a.displayName || a.username || '👤').trim().charAt(0) || '👤';
     avatarEl.textContent = ch;
   }
-
-  /* 名稱 / 帳號 */
   const nameEl = document.getElementById('authDisplayName');
   if(nameEl) nameEl.textContent = a.displayName || '—';
-
   const userEl = document.getElementById('authUsername');
   if(userEl) userEl.textContent = '@' + (a.username || '—');
-
-  /* 角色 chip */
   const roleEl = document.getElementById('authRoleChip');
   if(roleEl){
     roleEl.textContent = ROLE_LABELS[a.role] || a.role;
     roleEl.className = 'auth-role-chip ' + (ROLE_CLASS[a.role] || 'role-guest');
   }
 
-  /* 帳號資訊 */
   const metaEl = document.getElementById('authMeta');
   if(metaEl){
     const rows = [
@@ -828,11 +754,9 @@ function renderAuthUI(){
     ).join('');
   }
 
-  /* 顯示名稱輸入框預填 */
   const editNameEl = document.getElementById('editDisplayName');
   if(editNameEl) editNameEl.value = a.displayName || '';
 
-  /* 管理權限提示卡 */
   const adminHint = document.getElementById('authAdminHint');
   const adminHintText = document.getElementById('authAdminHintText');
   if(adminHint){
@@ -850,7 +774,6 @@ function renderAuthUI(){
 }
 
 function bindAuthUI(){
-  /* ── 更新顯示名稱 ── */
   const btnName = document.getElementById('btnUpdateDisplayName');
   if(btnName && !btnName.dataset.bound){
     btnName.dataset.bound = '1';
@@ -863,15 +786,11 @@ function bindAuthUI(){
         await Auth.updateDisplayName(newName);
         alert('✅ 顯示名稱已更新');
         renderAuthUI();
-      }catch(e){
-        alert('❌ 更新失敗：' + e.message);
-      }finally{
-        btnName.disabled = false;
-      }
+      }catch(e){ alert('❌ 更新失敗：' + e.message); }
+      finally{ btnName.disabled = false; }
     });
   }
 
-  /* ── 更新密碼 ── */
   const btnPwd = document.getElementById('btnUpdatePassword');
   if(btnPwd && !btnPwd.dataset.bound){
     btnPwd.dataset.bound = '1';
@@ -887,15 +806,11 @@ function bindAuthUI(){
         alert('✅ 密碼已更新');
         if(oldEl) oldEl.value = '';
         if(newEl) newEl.value = '';
-      }catch(e){
-        alert('❌ 更新失敗：' + e.message);
-      }finally{
-        btnPwd.disabled = false;
-      }
+      }catch(e){ alert('❌ 更新失敗：' + e.message); }
+      finally{ btnPwd.disabled = false; }
     });
   }
 
-  /* ── 前往帳號管理 ── */
   const btnGoto = document.getElementById('btnGotoAccounts');
   if(btnGoto && !btnGoto.dataset.bound){
     btnGoto.dataset.bound = '1';
@@ -912,11 +827,8 @@ function bindAuthUI(){
    暴露
    ============================================================ */
 Object.assign(window.SLG, {
-  Auth,
-  Accounts,
-  EntryGate,
-  renderAuthUI,
-  bindAuthUI,
+  Auth, Accounts, EntryGate,
+  renderAuthUI, bindAuthUI,
 });
 
 })();
