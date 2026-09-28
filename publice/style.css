@@ -1500,6 +1500,152 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .distance-result .dist-node{font-size:10px;padding:1px 6px;}
 }
 
+/* ============================================================
+   v8.6.4：清單內行內編輯
+   ============================================================ */
+tr.inline-editing td{
+  background:rgba(255,204,0,.06) !important;
+  padding:4px 6px !important;
+}
+tr.inline-editing .col-name{
+  font-weight:600;
+}
+.inline-icon-name{
+  display:flex;
+  gap:4px;
+  align-items:center;
+}
+.inline-icon-input{
+  flex:0 0 42px;
+  text-align:center;
+  font-size:16px;
+  padding:4px 2px;
+  background-color:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+  font-family:inherit;
+}
+.inline-icon-input:focus{
+  border-color:var(--neon-blue);
+  outline:none;
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+}
+.inline-name-input{
+  flex:1;
+  min-width:80px;
+  padding:4px 8px;
+  background-color:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+  font-size:12px;
+  font-family:inherit;
+}
+.inline-name-input:focus{
+  border-color:var(--neon-blue);
+  outline:none;
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+}
+.inline-side-select{
+  font-size:11px;
+  padding:4px 22px 4px 6px;
+  background-color:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+  font-family:inherit;
+  min-width:80px;
+}
+.inline-side-select:focus{
+  border-color:var(--neon-blue);
+  outline:none;
+}
+.inline-num-input{
+  width:100%;
+  min-width:50px;
+  padding:4px 6px;
+  background-color:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+  font-size:12px;
+  font-family:"SF Mono","Consolas",monospace;
+  text-align:right;
+}
+.inline-num-input:focus{
+  border-color:var(--neon-blue);
+  outline:none;
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+}
+.inline-power-wrap{
+  display:flex;
+  align-items:stretch;
+  background:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  overflow:hidden;
+}
+.inline-power-wrap:focus-within{
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+}
+.inline-power-input{
+  flex:1;
+  min-width:0;
+  padding:4px 6px;
+  background:transparent;
+  border:none;
+  color:var(--text-primary);
+  font-size:12px;
+  font-family:"SF Mono","Consolas",monospace;
+  text-align:right;
+  outline:none;
+}
+.inline-power-input:focus{box-shadow:none;}
+.inline-unit{
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  padding:0 6px;
+  background:#0a101a;
+  color:var(--neon-blue);
+  font-size:10px;
+  font-weight:700;
+  border-left:1px solid var(--border);
+}
+.inline-avg-preview{
+  color:var(--neon-green);
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:11px;
+  font-weight:700;
+  text-align:right;
+}
+.inline-select-td{
+  padding:4px 6px !important;
+}
+.inline-select-td select{
+  width:100%;
+  min-width:80px;
+  font-size:11px;
+  padding:4px 22px 4px 6px;
+  background-color:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+}
+.inline-select-td select:focus{
+  border-color:var(--neon-blue);
+  outline:none;
+}
+
+/* 手機版：編輯時縮小欄位 */
+@media (max-width:600px){
+  .inline-icon-input{flex:0 0 34px;font-size:14px;}
+  .inline-name-input{font-size:11px;}
+  .inline-num-input,.inline-power-input{font-size:11px;}
+  .inline-side-select{font-size:10px;}
+}
 @media (max-width:480px){
   .main-container{padding:8px}.card{padding:10px}.form-row{gap:6px}
   .top-nav button{padding:6px 11px;font-size:11px}.modal-lg{padding:12px}
