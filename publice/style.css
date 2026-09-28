@@ -1,6 +1,6 @@
 /* ============================================================================
- * style.css — v8.6.2
- * v8.6.2：新增地圖戰區選擇器 + 距離跨戰區警告樣式
+ * style.css — v8.6.7
+ * v8.6.7：雲端同步狀態列 + 參數設定同步區塊 + 登出簡化
  * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
@@ -167,6 +167,60 @@ body{background:var(--bg-deep);color:var(--text-primary);
 .mode-bar.room .mode-indicator{color:#22ff88;}
 .mode-bar.room .btn-mode{color:#a7ffcf;}
 .mode-bar.idle{background:linear-gradient(90deg,rgba(50,50,60,.92),rgba(70,70,85,.92));color:var(--text-secondary);}
+
+/* ============ v8.6.7：同步狀態 ============ */
+.sync-status{
+  flex:0 0 auto;
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:12px;
+  background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);
+  font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;
+  color:inherit;transition:all .15s;white-space:nowrap;
+}
+.sync-status:hover{background:rgba(0,0,0,.4);border-color:rgba(255,255,255,.25);}
+.sync-status:active{transform:scale(.96);}
+.sync-dot{font-size:10px;line-height:1;}
+.sync-text{font-size:10px;letter-spacing:.3px;}
+
+/* 狀態顏色 */
+.sync-status.state-idle .sync-dot{color:var(--text-dim);}
+.sync-status.state-synced .sync-dot{color:var(--neon-green);text-shadow:0 0 6px var(--neon-green);}
+.sync-status.state-pending .sync-dot{color:var(--neon-yellow);text-shadow:0 0 6px var(--neon-yellow);animation:syncPulse 1.5s ease-in-out infinite;}
+.sync-status.state-uploading .sync-dot{color:var(--neon-blue);text-shadow:0 0 6px var(--neon-blue);animation:syncSpin 1s linear infinite;display:inline-block;}
+.sync-status.state-error .sync-dot{color:var(--neon-red);text-shadow:0 0 6px var(--neon-red);animation:syncPulse 1s ease-in-out infinite;}
+
+@keyframes syncPulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+@keyframes syncSpin{to{transform:rotate(360deg);}}
+
+.mode-divider{flex:0 0 auto;color:rgba(255,255,255,.2);font-size:14px;}
+
+/* ============ v8.6.7：同步參數區塊 ============ */
+.sync-params-card{
+  background:linear-gradient(135deg,rgba(30,58,95,.25),rgba(42,74,111,.1));
+  border:1px solid rgba(68,170,255,.3);
+}
+.sync-params-card .card-title{color:var(--neon-blue);}
+
+.sync-toggle-list{
+  display:flex;flex-direction:column;gap:8px;
+}
+.sync-toggle-item{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  padding:10px 12px;
+  background:#0a101a;border:1px solid var(--border);border-radius:var(--radius-sm);
+  cursor:pointer;transition:all .15s;
+}
+.sync-toggle-item:hover{border-color:var(--neon-blue);background:rgba(68,170,255,.05);}
+.sync-toggle-item input[type=checkbox]{
+  width:18px;height:18px;flex:0 0 18px;accent-color:var(--neon-blue);cursor:pointer;
+}
+.sync-toggle-label{
+  font-size:12px;font-weight:700;color:var(--text-primary);flex:1;min-width:120px;
+}
+.sync-toggle-hint{
+  font-size:10px;color:var(--text-dim);line-height:1.4;
+  flex-basis:100%;padding-left:26px;margin-top:-2px;
+}
 
 /* ============ 通用元件 ============ */
 .main-container{padding:10px;max-width:900px;margin:0 auto;padding-bottom:80px;width:100%;}
@@ -458,7 +512,6 @@ select{
 .distance-result .dist-note.warn{color:var(--neon-red);}
 .distance-result .dist-note.info{color:var(--neon-blue);}
 
-/* v8.6.2：跨戰區警告 */
 .distance-result .dist-crosszone-warn{
   margin-top:6px;
   margin-bottom:6px;
@@ -472,7 +525,6 @@ select{
   line-height:1.5;
 }
 
-/* ============ 城對城矩陣容器 ============ */
 #cityMatrixWrap{
   max-height:60vh;
   overflow:auto;
@@ -1247,7 +1299,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   v8.6.1：宣戰手動新增區
+   宣戰手動新增區
    ============================================================ */
 .war-add-row{
   margin-top:12px;
@@ -1380,7 +1432,6 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .map-toolbar .text-dim{font-size:10px;margin-left:auto;}
 .map-toolbar .btn.active{background:linear-gradient(135deg,#1e3a5f,#2a4a6f);color:var(--neon-blue);border-color:var(--neon-blue);}
 
-/* v8.6.2：地圖戰區選擇器 */
 .map-toolbar .map-zone-select{
   flex:0 0 auto;
   min-width:130px;
@@ -1428,80 +1479,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 }
 
 /* ============================================================
-   響應式
-   ============================================================ */
-@media (max-width:768px){
-  .sidebar{transform:translateX(-100%);box-shadow:0 0 30px rgba(0,0,0,.7);}
-  .sidebar.open{transform:translateX(0);}
-  .sidebar-close{display:inline-flex;align-items:center;justify-content:center;}
-  .main-content{margin-left:0;}
-  .mobile-header{display:flex;}
-  .mode-bar{position:relative;top:auto;}
-  .game-map-container{height:60vh;min-height:350px;}
-  .sim-launch-row{flex-direction:column;align-items:stretch;gap:8px;}
-  .sim-launch-btn{width:100%;}
-  .city-subtab{padding:9px 12px;font-size:11px;}
-  .list-toolbar{flex-direction:column;align-items:stretch;}
-  .list-toolbar .toolbar-item{min-width:0;width:100%;}
-  .list-table{font-size:10px;}
-  .list-table th,.list-table td{padding:5px 6px;}
-  .deploy-list-container .list-table .col-time{display:none;}
-
-  .distance-input-row{flex-direction:column;gap:6px;}
-  .distance-input-item{min-width:0;width:100%;}
-  .distance-arrow{
-    transform:rotate(90deg);
-    padding:0;
-    margin:0 auto;
-    display:block;
-  }
-  .distance-input-row .btn{width:100%;}
-
-  /* v8.6.2：手機地圖工具列戰區選擇器 */
-  .map-toolbar .map-zone-select{
-    width:100%;
-    max-width:none;
-    margin-bottom:6px;
-  }
-}
-
-@media (max-width:600px){
-  .form-row{gap:6px;}
-  .form-row > [style*="0 0 auto"]{flex:0 0 100% !important;min-width:0 !important;margin-top:4px;}
-  .viz-timeline{flex-wrap:wrap;}
-  .viz-time-label{min-width:auto;width:100%;text-align:center;margin-top:4px;}
-  .param-grid{grid-template-columns:1fr;}
-  .mode-bar{padding:5px 10px;font-size:11px;}
-  .mode-bar-inner{gap:8px;}
-  .mode-detail{font-size:10px;}
-  .btn-mode{padding:3px 10px;font-size:10px;}
-  .sandbox-me-row{flex-direction:column;align-items:flex-start;gap:4px;}
-  .sandbox-me-stats{font-size:11px;gap:10px;}
-  .summary-overview{grid-template-columns:repeat(2,1fr);}
-  .summary-stat .value{font-size:16px;}
-  .summary-city-table th,.summary-city-table td{padding:4px 6px;font-size:10px;}
-  .route-quick-row{flex-direction:column;align-items:stretch;gap:6px;}
-  .route-quick-row select{width:100%;}
-  .route-quick-arrow{text-align:center;transform:rotate(90deg);display:none;}
-  .route-quick-row .btn{width:100%;}
-  .route-line{grid-template-columns:1fr 1fr auto auto;gap:4px;}
-  .route-line .route-arrow{display:none;}
-  .route-line select{padding:4px 18px 4px 4px;font-size:10px;}
-  .route-line .route-modal-btn{padding:3px 6px;font-size:10px;}
-  .overview-stats{grid-template-columns:repeat(2,1fr);}
-  .overview-stat .val{font-size:18px;}
-  .overview-quick-actions .btn{min-width:0;flex:1 1 calc(50% - 4px);}
-  .alliance-dist-row{flex-wrap:wrap;gap:6px;}
-  .alliance-dist-row .bar{flex-basis:100%;order:10;}
-  .alliance-dist-row .name{min-width:0;flex:1 1 100%;}
-  .ally-table .drag-handle{width:24px;font-size:14px;}
-  .distance-result{padding:10px;font-size:11px;}
-  .distance-result .dist-path{gap:3px;}
-  .distance-result .dist-node{font-size:10px;padding:1px 6px;}
-}
-
-/* ============================================================
-   v8.6.4：清單內行內編輯
+   清單內行內編輯
    ============================================================ */
 tr.inline-editing td{
   background:rgba(255,204,0,.06) !important;
@@ -1639,13 +1617,82 @@ tr.inline-editing .col-name{
   outline:none;
 }
 
-/* 手機版：編輯時縮小欄位 */
+/* ============================================================
+   響應式
+   ============================================================ */
+@media (max-width:768px){
+  .sidebar{transform:translateX(-100%);box-shadow:0 0 30px rgba(0,0,0,.7);}
+  .sidebar.open{transform:translateX(0);}
+  .sidebar-close{display:inline-flex;align-items:center;justify-content:center;}
+  .main-content{margin-left:0;}
+  .mobile-header{display:flex;}
+  .mode-bar{position:relative;top:auto;}
+  .game-map-container{height:60vh;min-height:350px;}
+  .sim-launch-row{flex-direction:column;align-items:stretch;gap:8px;}
+  .sim-launch-btn{width:100%;}
+  .city-subtab{padding:9px 12px;font-size:11px;}
+  .list-toolbar{flex-direction:column;align-items:stretch;}
+  .list-toolbar .toolbar-item{min-width:0;width:100%;}
+  .list-table{font-size:10px;}
+  .list-table th,.list-table td{padding:5px 6px;}
+  .deploy-list-container .list-table .col-time{display:none;}
+
+  .distance-input-row{flex-direction:column;gap:6px;}
+  .distance-input-item{min-width:0;width:100%;}
+  .distance-arrow{
+    transform:rotate(90deg);
+    padding:0;
+    margin:0 auto;
+    display:block;
+  }
+  .distance-input-row .btn{width:100%;}
+
+  .map-toolbar .map-zone-select{
+    width:100%;
+    max-width:none;
+    margin-bottom:6px;
+  }
+}
+
 @media (max-width:600px){
+  .form-row{gap:6px;}
+  .form-row > [style*="0 0 auto"]{flex:0 0 100% !important;min-width:0 !important;margin-top:4px;}
+  .viz-timeline{flex-wrap:wrap;}
+  .viz-time-label{min-width:auto;width:100%;text-align:center;margin-top:4px;}
+  .param-grid{grid-template-columns:1fr;}
+  .mode-bar{padding:5px 10px;font-size:11px;}
+  .mode-bar-inner{gap:8px;}
+  .mode-detail{font-size:10px;}
+  .btn-mode{padding:3px 10px;font-size:10px;}
+  .sandbox-me-row{flex-direction:column;align-items:flex-start;gap:4px;}
+  .sandbox-me-stats{font-size:11px;gap:10px;}
+  .summary-overview{grid-template-columns:repeat(2,1fr);}
+  .summary-stat .value{font-size:16px;}
+  .summary-city-table th,.summary-city-table td{padding:4px 6px;font-size:10px;}
+  .route-quick-row{flex-direction:column;align-items:stretch;gap:6px;}
+  .route-quick-row select{width:100%;}
+  .route-quick-arrow{text-align:center;transform:rotate(90deg);display:none;}
+  .route-quick-row .btn{width:100%;}
+  .route-line{grid-template-columns:1fr 1fr auto auto;gap:4px;}
+  .route-line .route-arrow{display:none;}
+  .route-line select{padding:4px 18px 4px 4px;font-size:10px;}
+  .route-line .route-modal-btn{padding:3px 6px;font-size:10px;}
+  .overview-stats{grid-template-columns:repeat(2,1fr);}
+  .overview-stat .val{font-size:18px;}
+  .overview-quick-actions .btn{min-width:0;flex:1 1 calc(50% - 4px);}
+  .alliance-dist-row{flex-wrap:wrap;gap:6px;}
+  .alliance-dist-row .bar{flex-basis:100%;order:10;}
+  .alliance-dist-row .name{min-width:0;flex:1 1 100%;}
+  .ally-table .drag-handle{width:24px;font-size:14px;}
+  .distance-result{padding:10px;font-size:11px;}
+  .distance-result .dist-path{gap:3px;}
+  .distance-result .dist-node{font-size:10px;padding:1px 6px;}
   .inline-icon-input{flex:0 0 34px;font-size:14px;}
   .inline-name-input{font-size:11px;}
   .inline-num-input,.inline-power-input{font-size:11px;}
   .inline-side-select{font-size:10px;}
 }
+
 @media (max-width:480px){
   .main-container{padding:8px}.card{padding:10px}.form-row{gap:6px}
   .top-nav button{padding:6px 11px;font-size:11px}.modal-lg{padding:12px}
@@ -1666,4 +1713,114 @@ tr.inline-editing .col-name{
   .deploy-list-container .list-table .col-type{display:none;}
   .input-with-unit .unit{padding:0 8px;font-size:10px;}
   .icon-quick{width:28px;height:28px;font-size:14px;}
+  .sync-text{display:none;}
+}
+
+/* ============================================================
+   v8.6.6：網路中斷遮罩
+   ============================================================ */
+.network-overlay{
+  display:none;
+  position:fixed;top:0;left:0;right:0;bottom:0;z-index:100000;
+  background:radial-gradient(circle at 50% 40%, #1a2a4a 0%, #0a0e17 70%);
+  align-items:center;justify-content:center;
+  padding:20px;overflow-y:auto;
+  animation:networkFadeIn .3s ease-out;
+}
+.network-overlay.show{display:flex;}
+@keyframes networkFadeIn{from{opacity:0;}to{opacity:1;}}
+.network-box{
+  text-align:center;
+  background:rgba(26,35,50,.96);
+  border:1px solid var(--neon-red);
+  border-radius:14px;
+  padding:36px 32px 30px;
+  max-width:380px;
+  width:100%;
+  box-shadow:0 20px 60px rgba(0,0,0,.6), 0 0 40px rgba(255,68,102,.25);
+  backdrop-filter:blur(12px);
+}
+.network-icon{
+  font-size:56px;
+  margin-bottom:18px;
+  animation:networkPulse 1.6s ease-in-out infinite;
+}
+@keyframes networkPulse{
+  0%,100%{transform:scale(1);opacity:1;}
+  50%{transform:scale(1.08);opacity:.7;}
+}
+.network-title{
+  font-size:20px;
+  font-weight:700;
+  color:var(--neon-red);
+  margin-bottom:12px;
+  letter-spacing:1px;
+}
+.network-desc{
+  font-size:13px;
+  color:var(--text-secondary);
+  line-height:1.7;
+  margin-bottom:24px;
+}
+.network-spinner{
+  width:28px;height:28px;margin:0 auto;
+  border:3px solid rgba(255,68,102,.2);
+  border-top-color:var(--neon-red);
+  border-radius:50%;
+  animation:entrySpin 1s linear infinite;
+}
+
+/* ============================================================
+   v8.6.7：雲端歷史版本 Modal
+   ============================================================ */
+.history-list{
+  display:flex;flex-direction:column;gap:6px;
+  max-height:55vh;overflow-y:auto;
+  padding:4px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:#060a10;
+}
+.history-list::-webkit-scrollbar{width:6px;}
+.history-list::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:3px;}
+.history-item{
+  display:flex;align-items:center;gap:12px;
+  padding:10px 12px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  transition:all .15s;
+}
+.history-item:hover{
+  border-color:var(--neon-blue);
+  background:rgba(68,170,255,.05);
+}
+.history-item .history-time{
+  flex:0 0 auto;
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:11px;
+  color:var(--neon-yellow);
+  font-weight:600;
+  min-width:130px;
+}
+.history-item .history-info{
+  flex:1;
+  font-size:11px;
+  color:var(--text-secondary);
+}
+.history-item .history-info b{
+  color:var(--text-primary);
+  font-family:"SF Mono","Consolas",monospace;
+}
+.history-item .history-actions{
+  flex:0 0 auto;
+  display:flex;
+  gap:6px;
+}
+.history-empty{
+  padding:30px 20px;
+  text-align:center;
+  color:var(--text-dim);
+  font-style:italic;
+  font-size:12px;
 }

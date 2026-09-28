@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.4</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.7</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -12,16 +12,26 @@
 </head>
 <body>
 
+<!-- ============ v8.6.6：網路中斷遮罩 ============ -->
+<div class="network-overlay" id="networkOverlay">
+  <div class="network-box">
+    <div class="network-icon">📡</div>
+    <div class="network-title">網路連線中斷</div>
+    <div class="network-desc">請檢查您的網路連線<br>恢復後將自動繼續</div>
+    <div class="network-spinner"></div>
+  </div>
+</div>
+
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.4</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.7</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.4</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.7</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -74,7 +84,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.6.4</span>
+      <span class="sidebar-version">v8.6.7</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -118,8 +128,14 @@
       <span class="mobile-title">🏰 城戰沙盤</span>
     </header>
 
+    <!-- ============ v8.6.7：模式狀態條（含同步狀態） ============ -->
     <div class="mode-bar local" id="modeBar">
       <div class="mode-bar-inner">
+        <button class="sync-status" id="syncStatus" title="點擊查看雲端歷史版本">
+          <span class="sync-dot" id="syncDot">⚪</span>
+          <span class="sync-text" id="syncText">未登入</span>
+        </button>
+        <span class="mode-divider">│</span>
         <span class="mode-indicator" id="modeIndicator">🖥️ 本機模式</span>
         <span class="mode-detail" id="modeDetail">尚未進入房間</span>
         <button class="btn btn-sm btn-mode" id="btnSwitchMode">進入房間</button>
@@ -184,6 +200,44 @@
 
     <!-- ============ 參數設定 ============ -->
     <section id="tab-params" class="tab-content">
+      <!-- v8.6.7：雲端同步區塊 -->
+      <div class="card sync-params-card">
+        <div class="card-title">☁️ 雲端同步</div>
+        <div class="param-section">
+          <div class="param-grid">
+            <div class="param-item">
+              <label>自動上傳間隔（分鐘）</label>
+              <input type="number" id="syncIntervalMin" value="5" min="1" max="60" step="1">
+              <div class="param-hint">從上次成功上傳起算。設為 0 可停用定時上傳。</div>
+            </div>
+          </div>
+        </div>
+        <div class="param-section">
+          <div class="param-section-title">⚡ 觸發時機</div>
+          <div class="sync-toggle-list">
+            <label class="sync-toggle-item">
+              <input type="checkbox" id="syncImportantImmediate" checked>
+              <span class="sync-toggle-label">重要操作立即上傳</span>
+              <span class="sync-toggle-hint">地圖路線、城池基本資料變更時</span>
+            </label>
+            <label class="sync-toggle-item">
+              <input type="checkbox" id="syncVisibility" checked>
+              <span class="sync-toggle-label">切換分頁 / 最小化時上傳</span>
+              <span class="sync-toggle-hint">頁面隱藏時若有未上傳變更，立即上傳</span>
+            </label>
+            <label class="sync-toggle-item">
+              <input type="checkbox" id="syncBeforeUnload" checked>
+              <span class="sync-toggle-label">關閉頁面時上傳</span>
+              <span class="sync-toggle-hint">關閉前阻止並強制上傳，完成後提示</span>
+            </label>
+          </div>
+        </div>
+        <div class="flex-row mt-8">
+          <button class="btn btn-primary btn-sm" id="btnSaveSyncPrefs">💾 儲存同步設定</button>
+          <button class="btn btn-success btn-sm" id="btnManualSyncNow">☁️ 立即上傳</button>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-title">⚙️ 戰鬥參數</div>
         <div class="param-section">
@@ -882,6 +936,10 @@
             <div class="sandbox-me-time" id="sandboxMeTime">—</div>
           </div>
           <div class="sandbox-me-stats" id="sandboxMeStats">—</div>
+          <div class="flex-row mt-8" style="gap:6px;">
+            <button class="btn btn-ghost btn-sm" id="btnSandboxHistory">📜 雲端歷史版本</button>
+            <button class="btn btn-ghost btn-sm" id="btnSandboxForceSync">☁️ 立即上傳</button>
+          </div>
         </div>
       </div>
 
@@ -1031,7 +1089,7 @@
     <!-- ============ 戰鬥規則 ============ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.6.4）</div>
+        <div class="card-title">📖 城戰計算規則（v8.6.7）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1124,17 +1182,37 @@
           </ul>
           <h2>十四、協作模式</h2>
           <ul>
-            <li><b>個人雲端沙盤</b>：每個帳號一份，即時自動同步。</li>
-            <li><b>房間雲端沙盤</b>：房主/幹部+手動上載。</li>
+            <li><b>個人雲端沙盤（v8.6.7 定時上傳）</b>：<br>
+              ・登入時無條件下載雲端沙盤（覆蓋本機）<br>
+              ・雲端空、本機有 → 自動上傳本機<br>
+              ・定時自動上傳（預設 5 分鐘）<br>
+              ・重要操作立即上傳<br>
+              ・切換分頁 / 最小化時上傳<br>
+              ・關閉頁面時上傳<br>
+              ・雲端保留最近 20 筆歷史版本，可還原
+            </li>
+            <li><b>房間雲端沙盤</b>：房主/幹部+手動上載（與個人沙盤獨立）。</li>
           </ul>
-          <h2>十五、帳號與權限</h2>
+          <h2>十五、網路中斷保護（v8.6.6）</h2>
+          <ul>
+            <li>偵測到離線 → 全螢幕遮罩，暫停操作。</li>
+            <li>恢復連線 → 自動解除遮罩，繼續操作。</li>
+          </ul>
+          <h2>十六、雲端同步狀態（v8.6.7）</h2>
+          <ul>
+            <li><b>狀態指示</b>：模式欄左側顯示同步狀態。</li>
+            <li><b>狀態種類</b>：⚪ 未登入 / 🟢 已同步 / 🟡 待上傳 / ⏳ 同步中 / 🔴 失敗。</li>
+            <li><b>點擊狀態</b>：開啟雲端歷史版本 Modal。</li>
+            <li><b>上傳觸發</b>：定時 / 重要操作 / 切換分頁 / 關閉頁面 / 手動。</li>
+          </ul>
+          <h2>十七、帳號與權限</h2>
           <ul>
             <li><b>超級管理員</b>：最高權限。</li>
             <li><b>管理員</b>：可停用帳號、修改 extraPerms。</li>
             <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
             <li><b>成員</b>：本機推演、加入房間、管理自己帳號。</li>
           </ul>
-          <h2>十六、快取策略</h2>
+          <h2>十八、快取策略</h2>
           <ul>
             <li>由 <code>_headers</code> 控制，改版不用手動換戳記。</li>
             <li><b>HTML</b>：<code>max-age=0, must-revalidate</code>（每次驗證 ETag）。</li>
@@ -1156,6 +1234,38 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="modalCancel">取消</button>
       <button class="btn btn-danger" id="modalConfirm">確認執行</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ v8.6.7：登出確認對話框（簡化） ============ -->
+<div class="modal-overlay" id="logoutConfirmModal">
+  <div class="modal-box" style="max-width:400px;">
+    <h3>🚪 登出帳號</h3>
+    <p style="margin-bottom:16px;">
+      登出前會自動將資料上傳到雲端。<br>
+      本機資料將保留，下次登入會從雲端下載最新版本。
+    </p>
+    <div class="modal-actions" style="justify-content:center;gap:10px;">
+      <button class="btn btn-ghost" id="logoutCancel">取消</button>
+      <button class="btn btn-danger" id="logoutConfirm">確認登出</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ v8.6.6：雲端歷史版本 Modal ============ -->
+<div class="modal-overlay" id="historyModal">
+  <div class="modal-box modal-lg">
+    <h3>📜 雲端歷史版本</h3>
+    <div class="text-dim" style="margin-bottom:10px;">
+      ＊每次上傳前會自動備份前一版，最多保留 20 筆。<br>
+      ＊點「↩️ 還原」可將指定版本載入到本機。
+    </div>
+    <div class="history-list" id="historyList">
+      <div class="text-dim" style="padding:20px;text-align:center;">載入中...</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="historyClose">關閉</button>
     </div>
   </div>
 </div>
