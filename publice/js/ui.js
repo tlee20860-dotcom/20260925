@@ -1,10 +1,6 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.6.2：宣戰手動新增（WarManager 在第 2/2 部分）
- *
- * ⚠️ 此檔案分為 2 部分交付；實際部署時合併為單一 js/ui.js。
- *    第 1/2 部分：viz / R / DYN / DEPLOY
- *    第 2/2 部分：CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 距離工具 / 暴露
+ * v8.6.3：戰區名稱編輯 + 城池批次修改戰區
  * ========================================================================== */
 (function(){
 'use strict';
@@ -751,7 +747,7 @@ const R = (() => {
     const el = document.getElementById('zoneList');
     if(!el) return;
     el.innerHTML = state.zones.map(z =>
-      `<span class="chip">${esc(z.name)} <button class="btn btn-danger btn-sm" style="padding:0 4px;margin-left:4px;" data-action="del-zone" data-id="${z.id}">✕</button></span>`
+      `<span class="chip">${esc(z.name)} <button class="btn btn-primary btn-sm" style="padding:0 4px;margin-left:4px;" data-action="edit-zone" data-id="${z.id}" title="編輯名稱">✏️</button><button class="btn btn-danger btn-sm" style="padding:0 4px;margin-left:2px;" data-action="del-zone" data-id="${z.id}" title="刪除">✕</button></span>`
     ).join('') || '<span class="text-dim">尚無戰區</span>';
 
     const sim = document.getElementById('simZoneSelect');
@@ -763,7 +759,7 @@ const R = (() => {
     }
     if(hasTogglePerm() && Auth()){
       const canEdit = window.SLG.isInRoom() ? window.SLG.canEditRoomData() : Auth().canEditData();
-      document.querySelectorAll('[data-action="del-zone"]').forEach(b => {
+      document.querySelectorAll('[data-action="del-zone"],[data-action="edit-zone"]').forEach(b => {
         window.SLG.togglePerm(b, canEdit, '需要編輯資料權限');
       });
     }
@@ -1519,9 +1515,8 @@ const DEPLOY = (() => {
   return { init, render, populateZoneFilter };
 })();
 
-/* ⚠️ 第 1/2 部分結束——下方接續第 2/2 部分（CityManager / WarManager / DeployInstr / RouteManager / GameMap / 概覽 / 距離工具 / 暴露） */
 /* ============================================================
-   CityManager — 城池清單表格 + 批次操作
+   CityManager — 城池清單表格 + 批次操作（v8.6.3：加戰區）
    ============================================================ */
 const CityManager = (() => {
   let currentView = 'table';
@@ -1555,6 +1550,18 @@ const CityManager = (() => {
           cb.checked = this.checked;
         });
         updateBatchBar();
+      });
+    }
+
+    /* v8.6.3：批次套用戰區 */
+    const btnApplyZone = document.getElementById('btnCityBatchApplyZone');
+    if(btnApplyZone){
+      btnApplyZone.addEventListener('click', () => {
+        const raw = document.getElementById('cityBatchZone').value;
+        if(!raw){ alert('請選擇戰區'); return; }
+        /* '__CLEAR__' 代表清除戰區（設為空字串）*/
+        const zoneId = (raw === '__CLEAR__') ? '' : raw;
+        applyBatch('zoneId', zoneId);
       });
     }
 
@@ -1629,6 +1636,14 @@ const CityManager = (() => {
     if(window.SLG.flushPatches) window.SLG.flushPatches();
     if(window.SLG.saveState) window.SLG.saveState();
     render();
+    /* v8.6.3：批次修改戰區 → 更新地圖下拉 */
+    if(field === 'zoneId' && window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
+      window.SLG.GameMap.refreshZoneSelector();
+    }
+    /* 同步重繪地圖、卡片檢視、概覽 */
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
     logSystem(`✅ 已批次修改 ${ids.length} 座城池`);
   }
 
@@ -1649,6 +1664,7 @@ const CityManager = (() => {
 
   function render(){
     populateFilters();
+    populateBatchZoneOptions();
     populateBatchAllianceOptions();
 
     const list = getFilteredCities();
@@ -1725,6 +1741,21 @@ const CityManager = (() => {
       aSel.innerHTML = '<option value="all">全部</option>' +
         state.alliances.map(a => `<option value="${a.id}">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</option>`).join('');
       aSel.value = cur && state.alliances.find(a => a.id === cur) ? cur : 'all';
+    }
+  }
+
+  /* v8.6.3：批次戰區下拉 */
+  function populateBatchZoneOptions(){
+    const sel = document.getElementById('cityBatchZone');
+    if(!sel) return;
+    const cur = sel.value;
+    let html = '<option value="">更改戰區...</option>';
+    html += '<option value="__CLEAR__">（清除戰區 / 未分配）</option>';
+    html += state.zones.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('');
+    sel.innerHTML = html;
+    if(cur){
+      const valid = (cur === '__CLEAR__') || state.zones.find(z => z.id === cur);
+      if(valid) sel.value = cur;
     }
   }
 
@@ -1854,7 +1885,7 @@ const WarManager = (() => {
     return false;
   }
 
-  /* v8.6.2：跨戰區判定（同戰區回傳 true；跨戰區依 settings） */
+  /* v8.6.2：跨戰區判定 */
   function isSameZoneAsSource(srcCity, tgtCity){
     if(state.settings.crossZoneWarAllowed) return true;
     const srcZone = srcCity.zoneId || '';
@@ -1871,7 +1902,6 @@ const WarManager = (() => {
       let targets = state.cities.filter(c => {
         if(c.id === srcCityId) return false;
         if(!allowedSides.includes(c.side)) return false;
-        /* v8.6.2：跨戰區限制 */
         if(!isSameZoneAsSource(src, c)) return false;
         return true;
       });
@@ -1890,7 +1920,6 @@ const WarManager = (() => {
         if((c.allianceId || '') !== srcAllianceId) return false;
         const alliance = state.alliances.find(a => a.id === srcAllianceId);
         if(alliance && alliance.name === 'NPC') return false;
-        /* v8.6.2：跨戰區限制 */
         if(!isSameZoneAsSource(src, c)) return false;
         if(!window.SLG.findRoute(srcCityId, c.id)) return false;
         return true;
@@ -2066,9 +2095,6 @@ const WarManager = (() => {
     logSystem(`✅ 已新增宣戰：${src.name} → ${tgt.name}（${isAttack ? '進攻' : '協防'}）`);
   }
 
-  /* ============================================================
-     渲染清單
-     ============================================================ */
   function computeEndTime(startTime, limitMin){
     if(!startTime) return '待設定';
     const m = hhmmToMinutes(startTime);
@@ -2969,7 +2995,6 @@ const GameMap = (() => {
 
   let highlight = null;
 
-  /* v8.6.2：戰區過濾狀態 */
   let currentZoneFilter = 'all';
 
   let pinchStartDist = 0;
@@ -2993,7 +3018,6 @@ const GameMap = (() => {
     canvas.style.width = CANVAS_W + 'px';
     canvas.style.height = CANVAS_H + 'px';
 
-    /* v8.6.2：載入戰區過濾記憶 */
     loadZoneFilter();
 
     containerEl.addEventListener('wheel', onWheel, { passive: false });
@@ -3040,7 +3064,6 @@ const GameMap = (() => {
       });
     }
 
-    /* v8.6.2：戰區選擇器綁定（保險） */
     const mapZoneSel = document.getElementById('mapZoneSelect');
     if(mapZoneSel && !mapZoneSel.dataset.bound){
       mapZoneSel.dataset.bound = '1';
@@ -3049,7 +3072,6 @@ const GameMap = (() => {
       });
     }
 
-    /* 訂閱距離高亮事件 */
     if(window.SLG.EVT && window.SLG.on){
       window.SLG.on(window.SLG.EVT.DISTANCE_HIGHLIGHT, (h) => {
         highlight = h;
@@ -3065,13 +3087,10 @@ const GameMap = (() => {
       if(containerEl) render();
     });
 
-    /* 首次渲染下拉 */
     refreshZoneSelector();
   }
 
-  /* ============================================================
-     v8.6.2：戰區過濾
-     ============================================================ */
+  /* v8.6.2：戰區過濾 */
   function loadZoneFilter(){
     try{
       const saved = localStorage.getItem(LS_MAP_ZONE_KEY);
@@ -3092,7 +3111,6 @@ const GameMap = (() => {
     saveZoneFilter();
     const sel = document.getElementById('mapZoneSelect');
     if(sel && sel.value !== currentZoneFilter) sel.value = currentZoneFilter;
-    /* 重新適配視窗，因為可見內容改變 */
     fitView();
     applyView();
     render();
@@ -3102,7 +3120,6 @@ const GameMap = (() => {
     const sel = document.getElementById('mapZoneSelect');
     if(!sel) return;
 
-    /* 統計各戰區城池數 */
     const zoneCounts = new Map();
     for(const c of state.cities){
       const zid = c.zoneId || '__none__';
@@ -3120,7 +3137,6 @@ const GameMap = (() => {
     }
     sel.innerHTML = html;
 
-    /* 還原選擇（若失效則回 all） */
     const validValues = ['all', '__none__'].concat(state.zones.map(z => z.id));
     if(!validValues.includes(currentZoneFilter)){
       currentZoneFilter = 'all';
@@ -3129,7 +3145,6 @@ const GameMap = (() => {
     sel.value = currentZoneFilter;
   }
 
-  /* 取得可見矩形（canvas 世界座標） */
   function getVisibleRect(){
     if(!containerEl) return null;
     const sc = view.scale || 1;
@@ -3140,7 +3155,6 @@ const GameMap = (() => {
     return { left, top, right: left + width, bottom: top + height };
   }
 
-  /* 射線與可見矩形邊界交點 */
   function rayToRectEdge(sx, sy, ux, uy, rect){
     let minT = Infinity;
     if(ux > 0.0001) minT = Math.min(minT, (rect.right - sx) / ux);
@@ -3158,9 +3172,6 @@ const GameMap = (() => {
            y >= rect.top - buf && y <= rect.bottom + buf;
   }
 
-  /* ============================================================
-     事件
-     ============================================================ */
   function applyCursor(){
     if(!canvas) return;
     canvas.style.cursor = editRouteMode ? 'crosshair' : 'grab';
@@ -3295,7 +3306,6 @@ const GameMap = (() => {
   function pickCity(worldPos){
     let closest = null, minDist = 40;
     for(const c of state.cities){
-      /* v8.6.2：只拾取當前戰區可見的城池 */
       if(!isCityVisibleInCurrentZone(c)) continue;
       const p = nodePositions.get(c.id);
       if(!p) continue;
@@ -3380,9 +3390,6 @@ const GameMap = (() => {
     if(dragging){ dragging = false; applyCursor(); }
   }
 
-  /* ============================================================
-     佈局
-     ============================================================ */
   function computeLayout(){
     const cities = state.cities;
     if(cities.length === 0){ nodePositions.clear(); return; }
@@ -3456,7 +3463,6 @@ const GameMap = (() => {
 
   function fitView(){
     if(nodePositions.size === 0){ view = { x: 0, y: 0, scale: 1 }; return; }
-    /* v8.6.2：若為單戰區模式，只 fit 該戰區 */
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     let any = false;
     for(const c of state.cities){
@@ -3468,7 +3474,6 @@ const GameMap = (() => {
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
     if(!any){
-      /* 空戰區：不特別 fit */
       return;
     }
     const contentW = Math.max(maxX - minX, 1);
@@ -3493,9 +3498,6 @@ const GameMap = (() => {
     }
   }
 
-  /* ============================================================
-     跨戰區半截線 / 半截箭頭繪製
-     ============================================================ */
   function drawCrossZoneEdge(fromPos, toPos, visRect, color, dashed){
     if(!visRect) return;
     const dx = toPos.x - fromPos.x;
@@ -3534,7 +3536,6 @@ const GameMap = (() => {
     const startX = fromPos.x + ux * 36;
     const startY = fromPos.y + uy * 36;
 
-    /* 虛線 */
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.setLineDash([7, 5]);
@@ -3544,7 +3545,6 @@ const GameMap = (() => {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    /* 箭頭 */
     const angle = Math.atan2(uy, ux);
     ctx.beginPath();
     ctx.moveTo(hit.x, hit.y);
@@ -3554,7 +3554,6 @@ const GameMap = (() => {
     ctx.fillStyle = color;
     ctx.fill();
 
-    /* 標籤：往 from 方向內縮一點放，避免壓在邊緣 */
     const labelText = `→ ${targetName}`;
     ctx.font = 'bold 12px sans-serif';
     const textW = ctx.measureText(labelText).width;
@@ -3562,16 +3561,13 @@ const GameMap = (() => {
     const bw = textW + padX * 2;
     const bh = 20;
 
-    /* 內縮 24px 放在線旁 */
     const offset = 28;
     const lx = hit.x - ux * offset;
     const ly = hit.y - uy * offset;
 
-    /* 限制在可見矩形內 */
     const clampedLx = Math.max(visRect.left + bw/2 + 4, Math.min(visRect.right - bw/2 - 4, lx));
     const clampedLy = Math.max(visRect.top + bh/2 + 4, Math.min(visRect.bottom - bh/2 - 4, ly));
 
-    /* 背景 */
     ctx.fillStyle = 'rgba(10,14,23,0.92)';
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
@@ -3591,7 +3587,6 @@ const GameMap = (() => {
     ctx.fillText(labelText, clampedLx, clampedLy);
   }
 
-  /* 一般路線繪製 */
   function drawNormalRoute(a, b, isHi){
     if(isHi){
       ctx.strokeStyle = 'rgba(34,255,136,0.9)';
@@ -3607,9 +3602,6 @@ const GameMap = (() => {
     ctx.stroke();
   }
 
-  /* ============================================================
-     主渲染
-     ============================================================ */
   function render(){
     if(!canvas || !ctx) return;
     computeLayout();
@@ -3620,7 +3612,6 @@ const GameMap = (() => {
 
     const isAllView = (currentZoneFilter === 'all');
 
-    /* 戰區框（只在全部模式畫） */
     if(isAllView){
       const zoneCities = new Map();
       for(const c of state.cities){
@@ -3663,7 +3654,6 @@ const GameMap = (() => {
         }
       }
     } else {
-      /* v8.6.2：空戰區提示 */
       const zoneCities = state.cities.filter(c => (c.zoneId || '__none__') === currentZoneFilter);
       if(zoneCities.length === 0){
         ctx.font = 'bold 26px sans-serif';
@@ -3705,7 +3695,6 @@ const GameMap = (() => {
         const key = [r.cityAId, r.cityBId].sort().join('|');
         drawNormalRoute(a, b, highlightedRoutes.has(key));
       } else {
-        /* 跨戰區：只畫「本戰區端」到可見邊緣的半截線 */
         const fromPos = aInZone ? a : b;
         const toPos = aInZone ? b : a;
         drawCrossZoneEdge(fromPos, toPos, visRect, 'rgba(160,160,160,0.5)', true);
@@ -3727,7 +3716,7 @@ const GameMap = (() => {
       }
     }
 
-    /* ── 宣戰半截箭頭（只在單戰區模式） ── */
+    /* ── 宣戰半截箭頭 ── */
     if(!isAllView){
       for(const src of state.cities){
         const srcZone = src.zoneId || '__none__';
@@ -3745,7 +3734,7 @@ const GameMap = (() => {
           const tgt = state.cities.find(c => c.id === t.cityId);
           if(!tgt) continue;
           const tgtZone = tgt.zoneId || '__none__';
-          if(tgtZone === currentZoneFilter) continue; /* 同戰區由節點與路線表達 */
+          if(tgtZone === currentZoneFilter) continue;
 
           const tp = nodePositions.get(tgt.id);
           if(!tp) continue;
@@ -3820,7 +3809,6 @@ const GameMap = (() => {
 
   function activate(){
     if(!containerEl) return;
-    /* v8.6.2：先重繪下拉 */
     refreshZoneSelector();
     if(state.cities.length > 0){
       computeLayout();
@@ -3852,7 +3840,6 @@ const GameMap = (() => {
 
   return {
     init, render, activate, reset, fitView, setHighlight,
-    /* v8.6.2 */
     getZoneFilter, setZoneFilter, refreshZoneSelector,
   };
 })();
@@ -4032,7 +4019,6 @@ const DistanceTool = (() => {
     }
   }
 
-  /* v8.6.2：跨戰區檢查 */
   function getCrossZoneWarning(path){
     if(!path || path.length < 2) return '';
     const zoneIds = new Set();
@@ -4052,7 +4038,6 @@ const DistanceTool = (() => {
       🏁 ${srcInfo} → 🎯 ${tgtInfo}
     </div>`;
 
-    /* v8.6.2：跨戰區警告 */
     if(r.passable.found){
       html += getCrossZoneWarning(r.passable.path);
     }
@@ -4581,5 +4566,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.6.2）
+ * ui.js 結束（v8.6.3）
  * ========================================================================== */

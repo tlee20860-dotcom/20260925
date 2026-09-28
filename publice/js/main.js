@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.6.2：跨戰區宣戰參數 + 地圖戰區選擇器
+ * v8.6.3：戰區名稱編輯 + 城池批次修改戰區
  * ========================================================================== */
 (function(){
 'use strict';
@@ -148,6 +148,18 @@ function applyPermissions(){
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
 
+  /* v8.6.3：城池批次操作 */
+  const cityBatchZoneEl = document.getElementById('cityBatchZone');
+  if(cityBatchZoneEl) cityBatchZoneEl.disabled = !canEditData;
+  const cityBatchAllianceEl = document.getElementById('cityBatchAlliance');
+  if(cityBatchAllianceEl) cityBatchAllianceEl.disabled = !canEditData;
+  const cityBatchSideEl = document.getElementById('cityBatchSide');
+  if(cityBatchSideEl) cityBatchSideEl.disabled = !canEditData;
+  togglePerm(document.getElementById('btnCityBatchApplyZone'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnCityBatchApplyAlliance'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnCityBatchApplySide'), canEditData, '需要編輯資料權限');
+  togglePerm(document.getElementById('btnCityBatchDelete'), canEditData, '需要編輯資料權限');
+
   togglePerm(document.getElementById('btnAddRouteLine'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnQuickAddRoute'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnExpandAllRouteGroups'), true, '');
@@ -181,7 +193,7 @@ function applyPermissions(){
   document.querySelectorAll(
     '[data-action="edit-city"],[data-action="del-city"],' +
     '[data-action="edit-alliance"],[data-action="del-alliance"],' +
-    '[data-action="del-zone"],[data-deploy-edit]'
+    '[data-action="edit-zone"],[data-action="del-zone"],[data-deploy-edit]'
   ).forEach(b => {
     togglePerm(b, canEditData, '需要編輯資料權限');
   });
@@ -982,7 +994,6 @@ function bindUI(){
     if(R().renderMatrix) R().renderMatrix();
     if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
-    /* v8.6.2：更新地圖戰區下拉（城池數不變，但邏輯保持一致） */
     if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
       window.SLG.GameMap.refreshZoneSelector();
     }
@@ -1136,7 +1147,6 @@ function bindUI(){
     if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
     if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
-    /* v8.6.2：戰區變更 → 更新地圖下拉 */
     if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
       window.SLG.GameMap.refreshZoneSelector();
     }
@@ -1145,16 +1155,52 @@ function bindUI(){
 
   const zoneListEl = document.getElementById('zoneList');
   if(zoneListEl) zoneListEl.addEventListener('click', e => {
+    /* v8.6.3：編輯戰區名稱 */
+    const editBtn = e.target.closest('[data-action="edit-zone"]');
+    if(editBtn){
+      if(!requirePerm(() => effectiveCanEditData(), '編輯戰區名稱')) return;
+      const zone = state.zones.find(z => z.id === editBtn.dataset.id);
+      if(!zone) return;
+      const newName = prompt('編輯戰區名稱：', zone.name);
+      if(newName === null) return;  /* 使用者取消 */
+      const trimmed = String(newName).trim();
+      if(!trimmed){ alert('戰區名稱不能為空'); return; }
+      if(trimmed.length > 20){ alert('戰區名稱最多 20 字'); return; }
+      if(trimmed === zone.name) return;  /* 未變更 */
+      if(state.zones.some(z => z.name === trimmed && z.id !== zone.id)){
+        alert('已有同名戰區，請改用其他名稱');
+        return;
+      }
+      const oldName = zone.name;
+      zone.name = trimmed;
+      window.SLG.upsertEntity('zone', zone);
+      R().renderZones();
+      R().renderCities();
+      if(window.SLG.CityManager) window.SLG.CityManager.render();
+      if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
+      if(R().renderCityMatrix) R().renderCityMatrix();
+      if(window.SLG.renderOverview) window.SLG.renderOverview();
+      if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
+        window.SLG.GameMap.refreshZoneSelector();
+      }
+      /* 城池卡片可能顯示戰區名稱，重繪卡片檢視 */
+      if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
+      saveState();
+      logSystem(`✏️ 戰區已更名：${oldName} → ${trimmed}`);
+      return;
+    }
+
+    /* 刪除戰區 */
     const btn = e.target.closest('[data-action="del-zone"]');
     if(!btn) return;
     if(!requirePerm(() => effectiveCanEditData(), '刪除戰區')) return;
     showConfirm('刪除戰區', '確定刪除？', () => {
       window.SLG.deleteEntity('zone', btn.dataset.id);
       R().renderZones(); R().renderCities();
+      if(window.SLG.CityManager) window.SLG.CityManager.render();
       if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
       if(R().renderCityMatrix) R().renderCityMatrix();
       if(window.SLG.renderOverview) window.SLG.renderOverview();
-      /* v8.6.2：戰區變更 → 更新地圖下拉 */
       if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
         window.SLG.GameMap.refreshZoneSelector();
       }
@@ -1478,7 +1524,6 @@ function bindEvents(){
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.GameMap){
       window.SLG.GameMap.reset();
-      /* v8.6.2：更新戰區下拉 */
       if(window.SLG.GameMap.refreshZoneSelector){
         window.SLG.GameMap.refreshZoneSelector();
       }
@@ -1507,7 +1552,6 @@ function bindEvents(){
     if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
     const garr = document.getElementById('globalAttackRequireRoute');
     if(garr) garr.checked = !!state.settings.attackRequireRoute;
-    /* v8.6.2 */
     const gczwEv = document.getElementById('globalCrossZoneWar');
     if(gczwEv) gczwEv.checked = !!state.settings.crossZoneWarAllowed;
 
@@ -1614,7 +1658,6 @@ function boot(){
   if(gmn) gmn.value = Math.round(state.settings.minLossRatio * 100);
   const garr = document.getElementById('globalAttackRequireRoute');
   if(garr) garr.checked = !!state.settings.attackRequireRoute;
-  /* v8.6.2 */
   const gczw = document.getElementById('globalCrossZoneWar');
   if(gczw) gczw.checked = !!state.settings.crossZoneWarAllowed;
   syncAIParamsToUI();
@@ -1678,7 +1721,6 @@ function boot(){
   if(R().renderCityMatrix) R().renderCityMatrix();
   if(window.SLG.DistanceTool) window.SLG.DistanceTool.render();
   if(window.SLG.renderOverview) window.SLG.renderOverview();
-  /* v8.6.2：初始化地圖戰區下拉 */
   if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
     window.SLG.GameMap.refreshZoneSelector();
   }
@@ -1719,7 +1761,7 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.6.2] 跨戰區宣戰 + 地圖戰區過濾（就緒）', 'color:#aa66ff;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.6.3] 戰區名稱編輯 + 城池批次修改戰區（就緒）', 'color:#ffaa44;font-weight:bold;font-size:14px');
 }
 
 /* ============================================================
