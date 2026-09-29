@@ -580,7 +580,14 @@ const EntryGate = (() => {
     if(main) main.style.display = 'none';
   }
 
-  function showForm(){
+    function showForm(){
+    /* v8.8.0 修復：確保 entryGate 遮罩本身顯示 */
+    const gate = document.getElementById('entryGate');
+    if(gate){
+      gate.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+
     const loading = document.getElementById('entryLoading');
     const main = document.getElementById('entryMain');
     if(loading) loading.style.display = 'none';
