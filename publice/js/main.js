@@ -1949,15 +1949,17 @@ function boot(){
       if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
       if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
       applyPermissions();
-    }
+  })();
 
+  
+  /* v8.9.0：診斷資訊 */
   console.log('%c[沙盤 v8.9.0] 地圖庫 + 菱形偵測 + 智慧命名就緒', 'color:#22ff88;font-weight:bold;font-size:14px');
   console.log('%c  · Cloudinary 上傳：' + (typeof window.SLG.uploadMapImageToCloudinary === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
   console.log('%c  · 菱形偵測：' + (typeof window.SLG.detectFromImage === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
   console.log('%c  · 節點校準：' + (typeof window.SLG.NodeCalibration === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
   console.log('%c  · 模糊匹配：' + (typeof window.SLG.FuzzyMatch === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-}           
-   
+}
+
 /* v8.8.0：初次載入地圖庫索引 */
 async function refreshMapLibraryIndex(){
   if(!state.auth.signedIn) return;
