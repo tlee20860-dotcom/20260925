@@ -1609,22 +1609,7 @@ function matchCityToMapNode(input, nodes, opts){
 
   if(!input || !nodes) return result;
   const nodeEntries = Object.entries(nodes);
-
-  /* 1. 編號精確匹配 */
-  const code = (input.code || '').trim();
-  if(code){
-    for(const [nid, n] of nodeEntries){
-      if((n.code || '') === code){
-        result.nodeId = nid;
-        result.node = n;
-        result.score = 1;
-        result.method = 'exact-code';
-        result.autoAccepted = true;
-        return result;
-      }
-    }
-  }
-
+  
   /* 2. 名稱精確匹配 */
   const name = (input.name || '').trim();
   if(name){
