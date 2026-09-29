@@ -275,8 +275,16 @@ function parseCitiesTable(rows){
       return v !== '' ? v : def;
     };
 
-    /* v8.8.0：城池編號 */
-    const code = (idx.code >= 0) ? String(r[idx.code] || '').trim() : '';
+    /* v8.8.0：城池編號 + v8.8.1：從名稱自動拆分編號 */
+    let code = (idx.code >= 0) ? String(r[idx.code] || '').trim() : '';
+    let cleanName = name;
+    /* 只匹配「(英文開頭的編號)」→ (L98)、(M28)、(N2) 等
+       不會拆「(待確認)」這種中文內容 */
+    const nameM = name.match(/^(.+?)\s*[（(]\s*([A-Za-z][A-Za-z0-9_\-]*)\s*[)）]\s*$/);
+    if(nameM){
+      cleanName = nameM[1].trim();
+      if(!code) code = nameM[2].trim();
+    }
 
     const zoneName = get('zone', '未分配');
     const allianceName = get('alliance', '');
@@ -317,7 +325,9 @@ function parseCitiesTable(rows){
     }
 
     cities.push({
-      name, code, zoneName, allianceName, side,
+      name: cleanName,   /* ★ 改用拆分後的乾淨名稱 */
+      code,
+      zoneName, allianceName, side,
       level, memberCount, totalPower, totalTeams,
       cooldownMin, wallMin, isCapital,
       tierCounts,
