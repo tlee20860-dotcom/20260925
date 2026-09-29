@@ -1,6 +1,6 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.7.0：城池分級渲染 + 表格懸停明細 + 分級 Inline 編輯
+ * v8.7.1：路線圖節點改為「城池名(盟徽)」+ 字體加大 + PDF 匯出
  * ========================================================================== */
 (function(){
 'use strict';
@@ -30,7 +30,7 @@ const hasTogglePerm = () => typeof window.SLG.togglePerm === 'function';
 
 let editingAllianceRowId = null;
 let editingCityRowId = null;
-let editingCityTierId = null;  /* v8.7.0：分級編輯中的城池 ID */
+let editingCityTierId = null;
 
 /* ============================================================
    v8.6.7 / v8.6.9：同步狀態渲染（含上次時間）
@@ -96,7 +96,6 @@ function renderSyncStatus(){
     return;
   }
 
-  /* 已同步：v8.6.9 顯示「上次時間」 */
   dotEl.textContent = '🟢';
   if(s.lastUploadAt){
     const ago = timeAgo(s.lastUploadAt);
@@ -1645,20 +1644,16 @@ const CityManager = (() => {
       });
     }
 
-    /* ★ 事件委託（v8.6.8 + v8.7.0）*/
     const tbody = document.getElementById('cityTableBody');
     if(tbody && !tbody.dataset.bound){
       tbody.dataset.bound = '1';
 
-      /* ── click ── */
       tbody.addEventListener('click', (e) => {
-        /* v8.7.0：分級面板按鈕優先處理 */
         const tierSaveBtn = e.target.closest('[data-action="save-tier"]');
         if(tierSaveBtn){ e.preventDefault(); e.stopPropagation(); saveTierEdit(tierSaveBtn.dataset.id); return; }
         const tierCancelBtn = e.target.closest('[data-action="cancel-tier"]');
         if(tierCancelBtn){ e.preventDefault(); e.stopPropagation(); cancelTierEdit(); return; }
 
-        /* v8.7.0：人數欄位 → 展開分級編輯 */
         const memberCell = e.target.closest('.city-member-cell');
         if(memberCell){
           if(memberCell.classList.contains('disabled-cell')) return;
@@ -1670,7 +1665,6 @@ const CityManager = (() => {
           return;
         }
 
-        /* 原有行內編輯按鈕 */
         const saveBtn = e.target.closest('[data-action="save-city-inline"]');
         if(saveBtn){ e.preventDefault(); saveInlineEditCity(saveBtn.dataset.id); return; }
         const cancelBtn = e.target.closest('[data-action="cancel-city-inline"]');
@@ -1695,12 +1689,10 @@ const CityManager = (() => {
         }
       });
 
-      /* ── change ── */
       tbody.addEventListener('change', e => {
         if(e.target.classList.contains('city-cb')) updateBatchBar();
       });
 
-      /* ── input（v8.7.0：分級輸入即時預覽）── */
       tbody.addEventListener('input', (e) => {
         if(!e.target.matches('[data-tier-field]')) return;
         const tr = e.target.closest('tr.tier-edit-row');
@@ -1708,9 +1700,7 @@ const CityManager = (() => {
         updateTierEditPreview(tr);
       });
 
-      /* ── keydown ── */
       tbody.addEventListener('keydown', (e) => {
-        /* v8.7.0：分級面板 Enter/Esc */
         const tierRow = e.target.closest('tr.tier-edit-row');
         if(tierRow){
           const parentId = tierRow.dataset.parentId;
@@ -1724,7 +1714,6 @@ const CityManager = (() => {
           return;
         }
 
-        /* 原有行內編輯 Enter/Esc */
         if(!e.target.matches('input, select')) return;
         const tr = e.target.closest('tr.inline-editing');
         if(!tr) return;
@@ -1787,9 +1776,6 @@ const CityManager = (() => {
     });
   }
 
-  /* ============================================================
-     v8.7.0：人數欄位渲染（可點擊）
-     ============================================================ */
   function renderMemberCell(c, isEditingInline){
     if(isEditingInline){
       return `<td class="col-num">—</td>`;
@@ -1819,9 +1805,6 @@ const CityManager = (() => {
     </td>`;
   }
 
-  /* ============================================================
-     v8.7.0：分級展開列渲染
-     ============================================================ */
   function renderTierEditRow(c){
     const tiers = state.troopTiers.tiers;
     const tc = c.tierCounts || { tier1: 0, tier2: 0, tier3: 0, tier4: 0 };
@@ -1877,9 +1860,6 @@ const CityManager = (() => {
     </tr>`;
   }
 
-  /* ============================================================
-     v8.7.0：更新分級即時預覽
-     ============================================================ */
   function updateTierEditPreview(tr){
     if(!tr) return;
     const tiers = state.troopTiers.tiers;
@@ -1903,9 +1883,6 @@ const CityManager = (() => {
     setText('[data-tier-total="teams"]', calc.totalTeams);
   }
 
-  /* ============================================================
-     v8.7.0：開啟 / 取消 / 儲存 分級編輯
-     ============================================================ */
   function startTierEdit(cityId){
     if(editingCityTierId === cityId) return;
     if(editingCityRowId){ editingCityRowId = null; }
@@ -1971,9 +1948,6 @@ const CityManager = (() => {
     return true;
   }
 
-  /* ============================================================
-     主渲染
-     ============================================================ */
   function render(){
     populateFilters();
     populateBatchZoneOptions();
@@ -3188,7 +3162,7 @@ const RouteManager = (() => {
 })();
 
 /* ============================================================
-   GameMap — 地圖
+   GameMap — 地圖（v8.7.1：節點顯示城池名(盟徽) + 匯出 PDF）
    ============================================================ */
 const GameMap = (() => {
   let canvas, ctx, containerEl;
@@ -3257,6 +3231,12 @@ const GameMap = (() => {
     if(btnClearHighlight) btnClearHighlight.addEventListener('click', () => {
       if(window.SLG.clearDistanceHighlight) window.SLG.clearDistanceHighlight();
     });
+    /* v8.7.1：綁定 PDF 匯出按鈕 */
+    const btnExportPDF = document.getElementById('btnMapExportPDF');
+    if(btnExportPDF && !btnExportPDF.dataset.bound){
+      btnExportPDF.dataset.bound = '1';
+      btnExportPDF.addEventListener('click', exportAsPDF);
+    }
     const mapZoneSel = document.getElementById('mapZoneSelect');
     if(mapZoneSel && !mapZoneSel.dataset.bound){
       mapZoneSel.dataset.bound = '1';
@@ -3845,10 +3825,17 @@ const GameMap = (() => {
       ctx.font = 'bold 11px sans-serif';
       ctx.fillStyle = '#000';
       ctx.fillText(level, p.x + 22, p.y - 22);
-      ctx.font = 'bold 13px sans-serif';
-      ctx.fillStyle = '#e2e8f0';
+      /* v8.7.1：節點名稱改為「城池名 (盟徽)」，字體加大到 18px + 深色描邊 */
+      const label = `${c.name} (${icon})`;
+      ctx.font = 'bold 18px "Noto Sans TC","Microsoft JhengHei",-apple-system,BlinkMacSystemFont,sans-serif';
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(c.name, p.x, p.y + 38);
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#0a0e17';
+      ctx.lineWidth = 5;
+      ctx.strokeText(label, p.x, p.y + 40);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, p.x, p.y + 40);
       if(c.isCapital){
         ctx.font = '16px sans-serif';
         ctx.fillText('👑', p.x - 28, p.y - 32);
@@ -3875,9 +3862,104 @@ const GameMap = (() => {
     refreshZoneSelector();
   }
   function setHighlight(h){ highlight = h; render(); }
+
+  /* ============================================================
+     v8.7.1：匯出 PDF
+     ============================================================ */
+  async function exportAsPDF(){
+    if(typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF){
+      alert('❌ PDF 函式庫尚未載入，請檢查網路連線後重新整理頁面');
+      return;
+    }
+    if(state.cities.length === 0){
+      alert('⚠️ 沒有城池可以匯出');
+      return;
+    }
+    if(!canvas){
+      alert('⚠️ 畫布尚未初始化');
+      return;
+    }
+
+    try{
+      logSystem('📄 開始匯出 PDF...');
+
+      /* 計算可見節點範圍 */
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let any = false;
+      for(const c of state.cities){
+        if(!isCityVisibleInCurrentZone(c)) continue;
+        const p = nodePositions.get(c.id);
+        if(!p) continue;
+        any = true;
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+      }
+      if(!any){
+        alert('⚠️ 沒有可匯出的城池');
+        return;
+      }
+
+      const padding = 200;
+      minX = Math.max(0, minX - padding);
+      minY = Math.max(0, minY - padding);
+      maxX = Math.min(CANVAS_W, maxX + padding);
+      maxY = Math.min(CANVAS_H, maxY + padding);
+
+      const w = Math.ceil(maxX - minX);
+      const h = Math.ceil(maxY - minY);
+
+      /* 建立離屏 canvas（複製主 canvas 的該區域）*/
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = w;
+      tempCanvas.height = h;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      /* 深色底 */
+      tempCtx.fillStyle = '#0a0e17';
+      tempCtx.fillRect(0, 0, w, h);
+
+      /* 複製主 canvas 內容 */
+      tempCtx.drawImage(canvas, minX, minY, w, h, 0, 0, w, h);
+
+      /* 轉為 PNG data */
+      const imgData = tempCanvas.toDataURL('image/png');
+
+      /* 建立 jsPDF */
+      const { jsPDF } = window.jspdf;
+      const orientation = w >= h ? 'landscape' : 'portrait';
+      const pdf = new jsPDF({
+        orientation: orientation,
+        unit: 'px',
+        format: [w, h],
+        hotfixes: ['px_scaling'],
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, w, h);
+
+      /* 檔名 */
+      let zoneName = '全部';
+      if(currentZoneFilter === '__none__'){ zoneName = '未分配'; }
+      else if(currentZoneFilter !== 'all'){
+        const z = state.zones.find(x => x.id === currentZoneFilter);
+        if(z) zoneName = z.name;
+      }
+      const safeZoneName = String(zoneName).replace(/[\\/:*?"<>|]/g, '_');
+      const date = new Date().toISOString().slice(0,10);
+      pdf.save(`路線圖_${safeZoneName}_${date}.pdf`);
+
+      logSystem(`📄 已匯出 PDF（${w}×${h}）`);
+    }catch(e){
+      console.error('PDF 匯出失敗', e);
+      alert('❌ PDF 匯出失敗：' + (e.message || e));
+    }
+  }
+
   return {
     init, render, activate, reset, fitView, setHighlight,
     getZoneFilter, setZoneFilter, refreshZoneSelector,
+    exportAsPDF,
   };
 })();
 
@@ -4611,5 +4693,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.7.0）
+ * ui.js 結束（v8.7.1）
  * ========================================================================== */
