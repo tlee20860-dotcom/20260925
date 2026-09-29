@@ -1317,32 +1317,90 @@
   </div>
 </div>
 
-<!-- 節點校準 Modal -->
+<!-- 節點校準 Modal（v8.9.0：菱形偵測 + 智慧命名） -->
 <div class="modal-overlay" id="nodeCalibrationModal">
-  <div class="modal-box modal-lg" style="max-width:1100px;max-height:95vh;">
-    <h3>🎯 節點校準：<span id="nc_mapName">—</span></h3>
-    <div class="nc-layout">
-      <!-- 左側：城池清單 -->
-      <div class="nc-sidebar">
-        <div class="nc-progress">
-          <div class="nc-progress-text">進度：<b id="nc_doneCount">0</b> / <b id="nc_totalCount">0</b></div>
-          <div class="nc-progress-bar"><div class="nc-progress-fill" id="nc_progressFill"></div></div>
+  <div class="modal-box modal-lg" style="max-width:1200px;max-height:95vh;">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <span>🎯 節點校準：<span id="nc_mapName">—</span></span>
+      <span class="nc-mode-badge" id="nc_modeBadge">準備中...</span>
+    </h3>
+    <div class="nc-layout-v2">
+      <!-- 左側：偵測候選 + 進度 -->
+      <div class="nc-sidebar-v2">
+        <!-- 掃描進度 -->
+        <div class="nc-scan-panel" id="nc_scanPanel">
+          <div class="nc-scan-title">🔍 自動偵測中...</div>
+          <div class="nc-scan-progress">
+            <div class="nc-scan-progress-bar" id="nc_scanProgressBar"></div>
+          </div>
+          <div class="nc-scan-hint" id="nc_scanHint">正在分析圖片像素...</div>
         </div>
-        <div class="nc-search">
-          <input type="text" id="nc_search" placeholder="🔍 搜尋城池...">
+
+        <!-- 統計資訊 -->
+        <div class="nc-stats-panel" id="nc_statsPanel" style="display:none;">
+          <div class="nc-stat-row">
+            <span class="nc-stat-label">🎯 偵測候選</span>
+            <span class="nc-stat-value" id="nc_statTotal">0</span>
+          </div>
+          <div class="nc-stat-row">
+            <span class="nc-stat-label">✅ 已命名</span>
+            <span class="nc-stat-value nc-stat-ok" id="nc_statNamed">0</span>
+          </div>
+          <div class="nc-stat-row">
+            <span class="nc-stat-label">🔴 待命名</span>
+            <span class="nc-stat-value nc-stat-warn" id="nc_statPending">0</span>
+          </div>
+          <div class="nc-stat-row">
+            <span class="nc-stat-label">➕ 手動補點</span>
+            <span class="nc-stat-value nc-stat-manual" id="nc_statManual">0</span>
+          </div>
         </div>
-        <div class="nc-city-list" id="nc_cityList">
+
+        <!-- 篩選 + 操作 -->
+        <div class="nc-filter-bar" id="nc_filterBar" style="display:none;">
+          <button class="nc-filter-btn active" data-nc-filter="all">🌐 全部</button>
+          <button class="nc-filter-btn" data-nc-filter="pending">🔴 待命名</button>
+          <button class="nc-filter-btn" data-nc-filter="named">✅ 已命名</button>
+          <button class="nc-filter-btn" data-nc-filter="manual">➕ 手動補點</button>
+        </div>
+
+        <!-- 候選清單 -->
+        <div class="nc-candidate-list" id="nc_candidateList" style="display:none;">
           <!-- 動態生成 -->
         </div>
-        <div class="nc-actions">
+
+        <!-- 操作按鈕 -->
+        <div class="nc-actions-v2">
+          <button class="btn btn-ghost btn-sm" id="nc_btnRescan" title="重新掃描">🔄 重掃</button>
+          <button class="btn btn-warning btn-sm" id="nc_btnManualAdd" title="手動新增候選">➕ 補點</button>
           <button class="btn btn-ghost btn-sm" id="nc_cancel">取消</button>
-          <button class="btn btn-primary btn-sm" id="nc_save">💾 儲存校準</button>
+          <button class="btn btn-primary btn-sm" id="nc_save">💾 儲存</button>
         </div>
       </div>
-      <!-- 右側：底圖點擊區 -->
-      <div class="nc-canvas-wrap" id="nc_canvasWrap">
+
+      <!-- 右側：底圖 + 標記 -->
+      <div class="nc-canvas-wrap-v2" id="nc_canvasWrap">
         <canvas id="nc_canvas"></canvas>
-        <div class="nc-canvas-hint" id="nc_canvasHint">請從左側選擇城池，然後點擊圖上位置</div>
+        <div class="nc-canvas-hint-v2" id="nc_canvasHint">
+          請點選紅框進行命名
+        </div>
+        <!-- 命名小面板（點紅框後彈出） -->
+        <div class="nc-naming-popup hidden" id="nc_namingPopup">
+          <div class="nc-naming-header">
+            <span id="nc_namingTitle">選擇城池</span>
+            <button class="nc-naming-close" id="nc_namingClose">✕</button>
+          </div>
+          <div class="nc-naming-body">
+            <input type="text" id="nc_namingSearch" placeholder="🔍 搜尋城池名稱 / 編號..." maxlength="20">
+            <div class="nc-naming-list" id="nc_namingList">
+              <!-- 動態生成城池選項 -->
+            </div>
+          </div>
+          <div class="nc-naming-footer">
+            <button class="btn btn-ghost btn-sm" id="nc_namingSkip">跳過</button>
+            <button class="btn btn-danger btn-sm" id="nc_namingDelete">🗑️ 刪除此候選</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
