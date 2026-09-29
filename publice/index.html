@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.7</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.8</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -12,7 +12,6 @@
 </head>
 <body>
 
-<!-- ============ v8.6.6：網路中斷遮罩 ============ -->
 <div class="network-overlay" id="networkOverlay">
   <div class="network-box">
     <div class="network-icon">📡</div>
@@ -25,13 +24,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.7</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.8</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.7</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.8</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -84,7 +83,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.6.7</span>
+      <span class="sidebar-version">v8.6.8</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -128,7 +127,6 @@
       <span class="mobile-title">🏰 城戰沙盤</span>
     </header>
 
-    <!-- ============ v8.6.7：模式狀態條（含同步狀態） ============ -->
     <div class="mode-bar local" id="modeBar">
       <div class="mode-bar-inner">
         <button class="sync-status" id="syncStatus" title="點擊查看雲端歷史版本">
@@ -144,7 +142,6 @@
 
     <div class="main-container">
 
-    <!-- ============ 房間連線 ============ -->
     <section id="tab-room" class="tab-content active">
       <div class="card">
         <div class="card-title" style="color:var(--neon-green);">📊 Excel 協作</div>
@@ -198,16 +195,14 @@
       </div>
     </section>
 
-    <!-- ============ 參數設定 ============ -->
     <section id="tab-params" class="tab-content">
-      <!-- v8.6.7：雲端同步區塊 -->
       <div class="card sync-params-card">
         <div class="card-title">☁️ 雲端同步</div>
         <div class="param-section">
           <div class="param-grid">
             <div class="param-item">
               <label>自動上傳間隔（分鐘）</label>
-              <input type="number" id="syncIntervalMin" value="5" min="1" max="60" step="1">
+              <input type="number" id="syncIntervalMin" value="5" min="0" max="60" step="1">
               <div class="param-hint">從上次成功上傳起算。設為 0 可停用定時上傳。</div>
             </div>
           </div>
@@ -340,7 +335,6 @@
       </div>
     </section>
 
-    <!-- ============ 參戰盟 ============ -->
     <section id="tab-alliances" class="tab-content">
       <div class="card">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -411,7 +405,6 @@
       </div>
     </section>
 
-    <!-- ============ 城池數據 ============ -->
     <section id="tab-cities" class="tab-content">
 
       <div class="card sim-launch-card">
@@ -434,7 +427,6 @@
         <button class="city-subtab" data-city-view="routes">🛣️ 路線</button>
       </div>
 
-      <!-- ── 📊 概覽 ── -->
       <div class="city-subpanel active" id="cityPanel-overview">
         <div class="card">
           <div class="card-title">📊 沙盤統計</div>
@@ -469,7 +461,6 @@
         </div>
       </div>
 
-      <!-- ── 🗺️ 戰區 ── -->
       <div class="city-subpanel" id="cityPanel-zones">
         <div class="card">
           <div class="card-title">🗺️ 戰區管理</div>
@@ -485,7 +476,6 @@
         </div>
       </div>
 
-      <!-- ── 🏰 城池 ── -->
       <div class="city-subpanel" id="cityPanel-cities">
         <div class="card">
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -584,7 +574,6 @@
         </div>
       </div>
 
-      <!-- ── ⚔️ 宣戰 ── -->
       <div class="city-subpanel" id="cityPanel-war">
         <div class="card">
           <div class="card-title">⚔️ 宣戰清單</div>
@@ -648,7 +637,6 @@
         </div>
       </div>
 
-      <!-- ── 🎯 出兵 ── -->
       <div class="city-subpanel" id="cityPanel-deploy">
         <div class="card">
           <div class="card-title">🎯 出兵清單</div>
@@ -680,7 +668,6 @@
         </div>
       </div>
 
-      <!-- ── 🛣️ 路線 ── -->
       <div class="city-subpanel" id="cityPanel-routes">
 
         <div class="card distance-tool-card">
@@ -744,7 +731,6 @@
 
     </section>
 
-    <!-- ============ 佈兵總覽 ============ -->
     <section id="tab-deploy" class="tab-content">
       <div class="card">
         <div class="card-title">📋 佈兵總覽</div>
@@ -780,7 +766,6 @@
       </div>
     </section>
 
-    <!-- ============ 推演總結 ============ -->
     <section id="tab-summary" class="tab-content">
       <div id="summaryEmpty" class="card">
         <div class="empty-hint" style="padding:40px 20px;">
@@ -822,7 +807,6 @@
       </div>
     </section>
 
-    <!-- ============ 地圖 ============ -->
     <section id="tab-map" class="tab-content">
       <div class="card">
         <div class="card-title">🗺️ 地圖</div>
@@ -864,7 +848,6 @@
       </div>
     </section>
 
-    <!-- ============ 動態戰報 ============ -->
     <section id="tab-dyn" class="tab-content">
       <div class="card">
         <div class="card-title">📈 動態戰報表（路線級）</div>
@@ -896,7 +879,6 @@
       </div>
     </section>
 
-    <!-- ============ 戰報敘事 ============ -->
     <section id="tab-narrative" class="tab-content">
       <div class="card">
         <div class="card-title">📜 文字戰報</div>
@@ -904,7 +886,6 @@
       </div>
     </section>
 
-    <!-- ============ 作戰聊天室 ============ -->
     <section id="tab-chat" class="tab-content">
       <div class="card">
         <div class="flex-row" style="justify-content:space-between;">
@@ -926,7 +907,6 @@
       </div>
     </section>
 
-    <!-- ============ 沙盤數據 ============ -->
     <section id="tab-sandbox" class="tab-content">
       <div class="card">
         <div class="card-title">👤 我的沙盤</div>
@@ -987,7 +967,6 @@
       </div>
     </section>
 
-    <!-- ============ 帳號 ============ -->
     <section id="tab-account" class="tab-content">
       <div id="authGuestPanel" style="display:none;">
         <div class="card">
@@ -1040,7 +1019,6 @@
       </div>
     </section>
 
-    <!-- ============ 帳號管理 ============ -->
     <section id="tab-accounts" class="tab-content">
       <div class="card">
         <div class="card-title">👥 帳號管理</div>
@@ -1086,10 +1064,9 @@
       </div>
     </section>
 
-    <!-- ============ 戰鬥規則 ============ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.6.7）</div>
+        <div class="card-title">📖 城戰計算規則（v8.6.8）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1104,129 +1081,83 @@
             <b>顯示單位</b>：<br>
             ・盟 / 城總戰力：億（2 位小數，如 <code>2.00 億</code>）<br>
             ・平均戰力：萬（無小數，如 <code>150 萬</code>）<br>
-            <b>儲存</b>：完整數字（億 × 10⁸）<br>
-            <b>舊資料</b>：值 &lt; 10⁶ 視為舊資料，載入時自動 × 10⁸。
+            <b>儲存</b>：完整數字（億 × 10⁸）
           </div>
           <h2>三、對戰節奏</h2>
           <div class="rule-card ok">
             <b>每 30 秒結算一次對撞</b>，每分鐘抽取一次消耗值。<br>
-            <b>消耗抽取</b>：每條路線獨立，在 <code>[最小, 最大]</code> 之間抽取。<br>
-            <b>機率偏向</b>：戰力越接近 → 越易抽到最小值；戰力差距越大 → 越易抽到最大值。
+            <b>消耗抽取</b>：每條路線獨立，在 <code>[最小, 最大]</code> 之間抽取。
           </div>
           <h2>四、城池輸入</h2>
           <ul>
             <li>城池名稱：必填</li>
             <li>所屬戰區：可留空</li>
             <li>所屬盟：預設 NPC</li>
-            <li>所屬陣營：預設本方</li>
-            <li>等級：1~10（可留空，預設 1）</li>
-            <li>人數 / 總戰力（億）/ 總隊數：可留空</li>
-            <li><b>防守開始時間：由宣戰推算（不再手動輸入）</b></li>
+            <li>等級：1~10</li>
+            <li><b>防守開始時間：由宣戰推算</b></li>
           </ul>
           <h2>五、行軍模型</h2>
           <ul>
             <li>戰敗後行軍回母城，抵達時才開始冷卻。</li>
-            <li>冷卻結束後，再行軍至目標城參戰。</li>
             <li>防守方原地留守，不受行軍影響。</li>
           </ul>
           <h2>六、城牆與淪陷</h2>
           <ul>
-            <li>城牆每 30 秒結算一次，由「未分配到守方兵力的攻方兵力」造成傷害。</li>
-            <li>城牆歸零 → 城池淪陷，所有相關路線立刻終止。</li>
+            <li>城牆每 30 秒結算一次。</li>
+            <li>城牆歸零 → 城池淪陷。</li>
           </ul>
           <h2>七、地圖路線</h2>
           <ul>
             <li><b>定義</b>：兩城之間是否有「接觸」，無向圖。</li>
-            <li><b>建立方式</b>：快速新增 / 就地編輯 / Modal 編輯 / 地圖拖曳 / Excel 匯入。</li>
             <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
           </ul>
           <h2>八、宣戰清單</h2>
           <ul>
-            <li><b>進攻</b>：不需路線接觸（可用參數開啟）。需指定「開始時間」= 目標城防守開始時間。</li>
+            <li><b>進攻</b>：需指定「開始時間」= 目標城防守開始時間。</li>
             <li><b>協防</b>：需與出兵城同一盟、且路線上必須有接觸。</li>
-            <li><b>去重</b>：每個方向（A→B）只能一種宣戰類型。</li>
-            <li><b>新增方式</b>：手動（選出兵城 / 類型 / 目標城）或自動（找下一個未建立組合）。</li>
-            <li><b>防守開始時間推算</b>：以所有進攻該城的宣戰中，最早的「開始時間」為準。</li>
-            <li><b>v8.6.2 跨戰區限制</b>：預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟）。開啟後可跨戰區。</li>
+            <li><b>v8.6.2 跨戰區限制</b>：預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟）。</li>
           </ul>
-          <h2>九、出兵清單</h2>
-          <ul>
-            <li>由宣戰衍生，設定各路線的戰前% / 復活% / 順序。</li>
-          </ul>
-          <h2>十、距離計算</h2>
+          <h2>九、距離計算</h2>
           <ul>
             <li><b>可通行規則</b>：起點盟的城 + NPC 城（NPC 需佔領才能通過）。</li>
             <li><b>演算法</b>：BFS 最短路徑。</li>
-            <li><b>顯示模式</b>：距離 / 路徑 / 地圖高亮。</li>
-            <li><b>v8.6.2</b>：路徑若跨戰區，會顯示跨戰區警告。</li>
           </ul>
-          <h2>十一、地圖戰區過濾（v8.6.2）</h2>
+          <h2>十、Excel 匯入模式（v8.6.8 新增）</h2>
+          <div class="rule-card title">
+            <b>🔄 合併</b>：同名的更新、新的加入、其他保留。<br>
+            <b>➕ 新增</b>：同名的跳過、新的加入、其他保留。<br>
+            <b>💥 覆蓋</b>：清空後重建。<br>
+            <b>同名判斷</b>：<br>
+            ・盟 → 盟名稱<br>
+            ・城池 → 城池名稱（合併時保留宣戰關係）<br>
+            ・路線 → (A,B) 無序對<br>
+            ・宣戰 → (出兵城, 目標城, 類型)
+          </div>
+          <h2>十一、協作模式</h2>
           <ul>
-            <li>地圖工具列可選擇要顯示的戰區。</li>
-            <li>單戰區模式：只顯示該戰區城池，不畫戰區框。</li>
-            <li>跨戰區宣戰：以半截虛線箭頭指向可見邊緣，末端標註「→ 目標城名」。</li>
-            <li>選擇記憶於 localStorage。</li>
-          </ul>
-          <h2>十二、戰區管理（v8.6.4）</h2>
-          <ul>
-            <li><b>編輯名稱</b>：戰區列表 → 點 ✏️ → 輸入新名稱。</li>
-            <li><b>名稱限制</b>：不可為空、最多 20 字、不可與其他戰區重複。</li>
-            <li><b>更名不影響關聯</b>：城池的 <code>zoneId</code> 指向戰區 ID，更名不影響任何連結。</li>
-            <li><b>批次修改戰區</b>：城池清單勾選多座 → 選擇新戰區 → 套用。</li>
-            <li>可將城池設為「（清除戰區 / 未分配）」。</li>
-          </ul>
-          <h2>十三、消耗比例矩陣</h2>
-          <ul>
-            <li><b>盟對盟</b>：單元格 = (對手盟均戰 / (我方盟 + 對手盟均戰)) × 每分鐘總消耗隊數。</li>
-            <li><b>城對城</b>：單元格 = (對手城均戰 / (我方城 + 對手城均戰)) × 每分鐘總消耗隊數。</li>
-          </ul>
-          <h2>十四、協作模式</h2>
-          <ul>
-            <li><b>個人雲端沙盤（v8.6.7 定時上傳）</b>：<br>
-              ・登入時無條件下載雲端沙盤（覆蓋本機）<br>
-              ・雲端空、本機有 → 自動上傳本機<br>
-              ・定時自動上傳（預設 5 分鐘）<br>
-              ・重要操作立即上傳<br>
-              ・切換分頁 / 最小化時上傳<br>
-              ・關閉頁面時上傳<br>
-              ・雲端保留最近 20 筆歷史版本，可還原
+            <li><b>個人雲端沙盤（v8.6.7 定時上傳）</b>：
+              ・登入時無條件下載雲端沙盤
+              ・定時自動上傳（預設 5 分鐘）
+              ・重要操作立即上傳
+              ・雲端保留最近 20 筆歷史版本
             </li>
-            <li><b>房間雲端沙盤</b>：房主/幹部+手動上載（與個人沙盤獨立）。</li>
+            <li><b>房間雲端沙盤</b>：房主/幹部+手動上載。</li>
           </ul>
-          <h2>十五、網路中斷保護（v8.6.6）</h2>
-          <ul>
-            <li>偵測到離線 → 全螢幕遮罩，暫停操作。</li>
-            <li>恢復連線 → 自動解除遮罩，繼續操作。</li>
-          </ul>
-          <h2>十六、雲端同步狀態（v8.6.7）</h2>
-          <ul>
-            <li><b>狀態指示</b>：模式欄左側顯示同步狀態。</li>
-            <li><b>狀態種類</b>：⚪ 未登入 / 🟢 已同步 / 🟡 待上傳 / ⏳ 同步中 / 🔴 失敗。</li>
-            <li><b>點擊狀態</b>：開啟雲端歷史版本 Modal。</li>
-            <li><b>上傳觸發</b>：定時 / 重要操作 / 切換分頁 / 關閉頁面 / 手動。</li>
-          </ul>
-          <h2>十七、帳號與權限</h2>
+          <h2>十二、帳號與權限</h2>
           <ul>
             <li><b>超級管理員</b>：最高權限。</li>
             <li><b>管理員</b>：可停用帳號、修改 extraPerms。</li>
             <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
             <li><b>成員</b>：本機推演、加入房間、管理自己帳號。</li>
           </ul>
-          <h2>十八、快取策略</h2>
-          <ul>
-            <li>由 <code>_headers</code> 控制，改版不用手動換戳記。</li>
-            <li><b>HTML</b>：<code>max-age=0, must-revalidate</code>（每次驗證 ETag）。</li>
-            <li><b>CSS / JS</b>：<code>max-age=60</code>（最長快取 60 秒）。</li>
-          </ul>
         </div>
       </div>
     </section>
 
-    </div><!-- /.main-container -->
-  </main><!-- /.main-content -->
-</div><!-- /.app-layout -->
+    </div>
+  </main>
+</div>
 
-<!-- ============ 確認對話框 ============ -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box">
     <h3 id="modalTitle">⚠️ 確認操作</h3>
@@ -1238,7 +1169,6 @@
   </div>
 </div>
 
-<!-- ============ v8.6.7：登出確認對話框（簡化） ============ -->
 <div class="modal-overlay" id="logoutConfirmModal">
   <div class="modal-box" style="max-width:400px;">
     <h3>🚪 登出帳號</h3>
@@ -1253,7 +1183,6 @@
   </div>
 </div>
 
-<!-- ============ v8.6.6：雲端歷史版本 Modal ============ -->
 <div class="modal-overlay" id="historyModal">
   <div class="modal-box modal-lg">
     <h3>📜 雲端歷史版本</h3>
@@ -1270,7 +1199,6 @@
   </div>
 </div>
 
-<!-- ============ 退出房間對話框 ============ -->
 <div class="modal-overlay" id="exitRoomModal">
   <div class="modal-box" style="max-width:420px;">
     <h3>🚪 離開房間</h3>
@@ -1297,7 +1225,6 @@
   </div>
 </div>
 
-<!-- ============ 編輯權限申請審核對話框 ============ -->
 <div class="modal-overlay" id="editRequestReviewModal">
   <div class="modal-box modal-lg">
     <h3>📝 編輯權限申請審核</h3>
@@ -1309,7 +1236,6 @@
   </div>
 </div>
 
-<!-- ============ 房間空沙盤提示 Modal ============ -->
 <div class="modal-overlay" id="roomEmptyPromptModal">
   <div class="modal-box" style="max-width:460px;">
     <h3>📡 房間尚無沙盤</h3>
@@ -1343,7 +1269,6 @@
   </div>
 </div>
 
-<!-- ============ 沙盤清單選擇 Modal ============ -->
 <div class="modal-overlay" id="sandboxPickerModal">
   <div class="modal-box modal-lg">
     <h3>📁 選擇要上載到房間的沙盤</h3>
@@ -1364,7 +1289,6 @@
   </div>
 </div>
 
-<!-- ============ 路線編輯 Modal ============ -->
 <div class="modal-overlay" id="routeEditModal">
   <div class="modal-box" style="max-width:420px;">
     <h3 id="routeEditTitle">🛣️ 編輯路線</h3>
@@ -1381,53 +1305,77 @@
   </div>
 </div>
 
-<!-- ============ Excel 匯入對話框 ============ -->
+<!-- ============ Excel 匯入對話框（v8.6.8：每區塊加模式選單） ============ -->
 <div class="modal-overlay" id="excelImportModal">
   <div class="modal-box modal-lg">
     <h3>📊 匯入資料</h3>
     <div class="modal-scroll">
       <div class="text-dim" style="margin-bottom:10px;">
-        ＊每個區塊獨立匯入，匯入前會確認是否覆蓋。<br>
+        ＊每個區塊獨立匯入，匯入前可選「合併 / 新增 / 覆蓋」模式。<br>
         ＊支援 CSV 檔案或直接從 Excel 複製貼上。<br>
         ＊第一列為表頭，欄位順序不拘。<br>
         ＊<b>總戰力單位：億</b>（例：輸入 <code>2</code> 代表 2 億）。
       </div>
 
+      <!-- ① 盟名單 -->
       <div class="section-label" style="color:var(--neon-purple);">① 🤝 盟名單</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="alliances">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="alliances">🗑️ 清空</button>
+        <select id="excelAlliancesMode" class="excel-mode-select" title="匯入模式">
+          <option value="merge">🔄 合併</option>
+          <option value="append">➕ 新增</option>
+          <option value="overwrite">💥 覆蓋</option>
+        </select>
         <button class="btn btn-primary btn-sm" id="excelImportAlliancesBtn">📥 匯入盟名單</button>
         <span class="text-dim" id="excelAlliancesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelAlliancesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelAlliancesText" class="excel-textarea" placeholder="順序,盟名稱,盟徽,人數,總戰力（億）,陣營&#10;0,帝盟,⚔️,100,2.00,敵方&#10;1,秦盟,🏹,90,1.80,敵方&#10;2,鼎盟,🛡️,80,1.60,敵方"></textarea>
 
+      <!-- ② 城池表 -->
       <div class="section-label" style="color:var(--neon-blue);">② 🏰 城池表</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="cities">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="cities">🗑️ 清空</button>
+        <select id="excelCitiesMode" class="excel-mode-select" title="匯入模式">
+          <option value="merge">🔄 合併</option>
+          <option value="append">➕ 新增</option>
+          <option value="overwrite">💥 覆蓋</option>
+        </select>
         <button class="btn btn-primary btn-sm" id="excelImportCitiesBtn">📥 匯入城池表</button>
         <span class="text-dim" id="excelCitiesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelCitiesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都&#10;洛陽,司隸,鼎盟,敵方,10,100,10.00,100,5,30,是&#10;函谷關,司隸,秦盟,敵方,9,80,8.00,80,5,20,"></textarea>
 
+      <!-- ③ 地圖路線表 -->
       <div class="section-label" style="color:var(--neon-yellow);">③ 🛣️ 地圖路線表</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="mapRoutes">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="mapRoutes">🗑️ 清空</button>
+        <select id="excelMapRoutesMode" class="excel-mode-select" title="匯入模式">
+          <option value="merge">🔄 合併</option>
+          <option value="append">➕ 新增</option>
+          <option value="overwrite">💥 覆蓋</option>
+        </select>
         <button class="btn btn-primary btn-sm" id="excelImportMapRoutesBtn">📥 匯入地圖路線</button>
         <span class="text-dim" id="excelMapRoutesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelMapRoutesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelMapRoutesText" class="excel-textarea" placeholder="洛陽-函谷關&#10;洛陽-洛陽北&#10;洛陽北-洛陽西"></textarea>
 
+      <!-- ④ 宣戰表 -->
       <div class="section-label" style="color:var(--neon-red);">④ ⚔️ 宣戰表</div>
       <div class="text-dim" style="margin:4px 0;font-size:10px;">＊「開始時間」= 目標城防守開始時間（HH:MM）。協防可留空。跨戰區預設略過（可於參數設定開啟）。</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="routes">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="routes">🗑️ 清空</button>
+        <select id="excelRoutesMode" class="excel-mode-select" title="匯入模式">
+          <option value="merge">🔄 合併</option>
+          <option value="append">➕ 新增</option>
+          <option value="overwrite">💥 覆蓋</option>
+        </select>
         <button class="btn btn-primary btn-sm" id="excelImportRoutesBtn">📥 匯入宣戰表</button>
         <span class="text-dim" id="excelRoutesStatus">尚未填入</span>
       </div>
@@ -1444,7 +1392,6 @@
   </div>
 </div>
 
-<!-- ============ 城池編輯 Modal ============ -->
 <div class="modal-overlay" id="cityModal">
   <div class="modal-box modal-lg">
     <h3 id="cityModalTitle">🏰 新增城池</h3>
@@ -1509,7 +1456,6 @@
   </div>
 </div>
 
-<!-- ============ 帳號編輯對話框 ============ -->
 <div class="modal-overlay" id="accountEditModal">
   <div class="modal-box modal-lg">
     <h3 id="accountEditTitle">✏️ 編輯帳號</h3>

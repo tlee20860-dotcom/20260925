@@ -1745,6 +1745,23 @@ tr.inline-editing .col-name{
   margin-bottom:18px;
   animation:networkPulse 1.6s ease-in-out infinite;
 }
+/* v8.6.8：匯入模式選單 */
+.excel-mode-select{
+  width:auto;
+  font-size:11px;
+  padding:5px 22px 5px 8px;
+  min-width:90px;
+  max-width:110px;
+  background-color:var(--bg-input);
+  border:1px solid rgba(68,170,255,.4);
+  border-radius:var(--radius-sm);
+  color:var(--neon-blue);
+  font-weight:700;
+  cursor:pointer;
+}
+.excel-mode-select:hover{border-color:var(--neon-blue);}
+.excel-mode-select:focus{outline:none;border-color:var(--neon-blue);box-shadow:0 0 0 2px rgba(68,170,255,.18);}
+
 @keyframes networkPulse{
   0%,100%{transform:scale(1);opacity:1;}
   50%{transform:scale(1.08);opacity:.7;}
