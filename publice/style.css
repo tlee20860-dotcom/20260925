@@ -2054,6 +2054,132 @@ tr.inline-editing .col-name{
   border-top-color:var(--neon-blue);
 }
 
+/* ============================================================
+   v8.7.0：人數分級 Inline 編輯
+   ============================================================ */
+.city-member-cell{
+  cursor:pointer;
+  transition:background .15s;
+  user-select:none;
+  position:relative;
+}
+.city-member-cell:hover{
+  background:rgba(68,170,255,.08);
+}
+.city-member-cell.tier-editing{
+  background:rgba(68,170,255,.15) !important;
+  box-shadow:inset 0 0 0 2px var(--neon-blue);
+}
+.city-member-cell.disabled-cell{
+  cursor:not-allowed;
+  opacity:.6;
+}
+.city-member-cell.disabled-cell:hover{
+  background:transparent;
+}
+
+/* 展開列 */
+tr.tier-edit-row td{
+  padding:0 !important;
+  background:#0a101a;
+  border-bottom:2px solid var(--neon-blue) !important;
+}
+.tier-edit-panel{
+  padding:12px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  background:linear-gradient(180deg, rgba(68,170,255,.06), transparent);
+  border-left:3px solid var(--neon-blue);
+}
+.tier-edit-panel-header{
+  font-size:12px;
+  font-weight:700;
+  color:var(--neon-blue);
+  margin-bottom:2px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.tier-edit-panel-rows{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.tier-edit-panel-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:6px 12px;
+  font-size:11px;
+}
+.tier-edit-panel-row .tier-name{
+  color:var(--text-secondary);
+  font-weight:600;
+  min-width:64px;
+}
+.tier-edit-panel-row input{
+  width:64px;
+  padding:4px 8px;
+  text-align:right;
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:13px;
+  background:var(--bg-deep);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--neon-yellow);
+  font-weight:700;
+}
+.tier-edit-panel-row input:focus{
+  outline:none;
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+}
+.tier-edit-panel-row .tier-calc{
+  color:var(--text-dim);
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;
+  min-width:72px;
+}
+.tier-edit-panel-row .tier-calc b{
+  color:var(--neon-green);
+  font-size:12px;
+}
+
+.tier-edit-panel-total{
+  display:flex;
+  gap:24px;
+  padding:8px 12px;
+  background:rgba(34,255,136,.06);
+  border:1px solid rgba(34,255,136,.25);
+  border-radius:var(--radius-sm);
+  font-size:12px;
+  font-weight:600;
+  color:var(--text-primary);
+}
+.tier-edit-panel-total b{
+  color:var(--neon-green);
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:14px;
+  margin-left:4px;
+}
+
+.tier-edit-panel-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:2px;
+}
+
+@media (max-width:600px){
+  .tier-edit-panel-rows{flex-direction:column;gap:6px;}
+  .tier-edit-panel-row{width:100%;justify-content:space-between;}
+  .tier-edit-panel-total{flex-direction:column;gap:4px;}
+}
+
 @keyframes networkPulse{
   0%,100%{transform:scale(1);opacity:1;}
   50%{transform:scale(1.08);opacity:.7;}
