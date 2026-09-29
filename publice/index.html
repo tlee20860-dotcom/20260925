@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.9</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.7.1</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- ============ 網路中斷遮罩 ============ -->
 <div class="network-overlay" id="networkOverlay">
   <div class="network-box">
     <div class="network-icon">📡</div>
@@ -22,7 +22,6 @@
   </div>
 </div>
 
-<!-- ============ v8.6.9：關閉頁面同步遮罩 ============ -->
 <div class="network-overlay" id="syncOverlay">
   <div class="network-box" style="border-color:var(--neon-blue);">
     <div class="network-icon">⏳</div>
@@ -35,13 +34,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.9</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.7.1</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.9</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.7.1</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -94,7 +93,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.6.9</span>
+      <span class="sidebar-version">v8.7.1</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -138,7 +137,6 @@
       <span class="mobile-title">🏰 城戰沙盤</span>
     </header>
 
-    <!-- ============ v8.6.9：模式狀態條（含登入按鈕） ============ -->
     <div class="mode-bar local" id="modeBar">
       <div class="mode-bar-inner">
         <button class="sync-status" id="syncStatus" title="點擊查看雲端歷史版本">
@@ -271,7 +269,6 @@
         </div>
       </div>
 
-      <!-- ============ v8.6.9：隊數分級計算 ============ -->
       <div class="card troop-tier-card">
         <div class="card-title">⚔️ 隊數分級計算（v8.6.9）</div>
         <div class="text-dim" style="margin-bottom:10px;">
@@ -910,6 +907,7 @@
             <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
             <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
             <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
+            <button class="btn btn-ghost btn-sm" id="btnMapExportPDF">📄 匯出 PDF</button>
             <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點、編輯模式下拖曳城池連線</span>
           </div>
           <div class="game-map-container" id="gameMapContainer">
@@ -1151,7 +1149,7 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.6.9）</div>
+        <div class="card-title">📖 城戰計算規則（v8.7.1）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1181,7 +1179,7 @@
             <li>等級：1~10</li>
             <li><b>防守開始時間：由宣戰推算</b></li>
           </ul>
-          <h2>五、v8.6.9 隊數分級（新）</h2>
+          <h2>五、v8.6.9 隊數分級</h2>
           <div class="rule-card title">
             <b>城池「總隊數」可由分級人數自動計算。</b><br>
             預設分級：<br>
@@ -1206,6 +1204,8 @@
           <ul>
             <li><b>定義</b>：兩城之間是否有「接觸」，無向圖。</li>
             <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
+            <li><b>v8.7.1：節點顯示「城池名 (盟徽)」</b></li>
+            <li><b>v8.7.1：支援匯出 PDF 圖檔</b></li>
           </ul>
           <h2>九、宣戰清單</h2>
           <ul>
@@ -1500,7 +1500,6 @@
         <div><label>等級（1-10）</label><input type="number" id="cm_level" value="1" min="1" max="10" step="1"></div>
       </div>
 
-      <!-- ============ v8.6.9：人數分級 ============ -->
       <div class="section-label">👥 人數分級（自動計算隊數）</div>
       <div class="city-tier-panel">
         <div class="city-tier-row">
