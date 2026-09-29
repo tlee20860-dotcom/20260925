@@ -1762,6 +1762,298 @@ tr.inline-editing .col-name{
 .excel-mode-select:hover{border-color:var(--neon-blue);}
 .excel-mode-select:focus{outline:none;border-color:var(--neon-blue);box-shadow:0 0 0 2px rgba(68,170,255,.18);}
 
+/* ============================================================
+   v8.6.9：置頂欄登入按鈕 + 下拉選單
+   ============================================================ */
+.auth-menu-wrap{
+  position:relative;
+  flex:0 0 auto;
+}
+.auth-btn{
+  padding:4px 12px;
+  font-size:11px;
+  font-weight:700;
+  background:rgba(255,255,255,.06);
+  border:1px solid currentColor;
+  border-radius:14px;
+  color:inherit;
+  cursor:pointer;
+  font-family:inherit;
+  transition:background .15s,transform .1s;
+  white-space:nowrap;
+}
+.auth-btn:hover{background:rgba(255,255,255,.18);}
+.auth-btn:active{transform:scale(.96);}
+.auth-btn.signed-in{
+  color:var(--neon-yellow);
+  border-color:rgba(255,204,0,.5);
+  background:rgba(255,204,0,.08);
+}
+.auth-btn.signed-in:hover{background:rgba(255,204,0,.15);}
+
+.auth-menu{
+  position:absolute;
+  top:calc(100% + 6px);
+  right:0;
+  min-width:220px;
+  background:rgba(26,35,50,.98);
+  border:1px solid var(--border-glow);
+  border-radius:var(--radius);
+  padding:8px 0;
+  box-shadow:0 12px 40px rgba(0,0,0,.6), 0 0 24px rgba(68,170,255,.15);
+  backdrop-filter:blur(12px);
+  z-index:1000;
+  animation:authMenuIn .18s ease-out;
+}
+@keyframes authMenuIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
+.auth-menu.hidden{display:none;}
+
+.auth-menu-header{
+  padding:8px 14px 10px;
+}
+.auth-menu-name{
+  font-size:13px;font-weight:700;color:var(--text-primary);
+  margin-bottom:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.auth-menu-username{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;color:var(--text-dim);margin-bottom:4px;
+}
+.auth-menu-role{
+  font-size:10px;font-weight:700;letter-spacing:.3px;
+  display:inline-block;
+  padding:1px 8px;border-radius:8px;
+  background:var(--bg-input);color:var(--text-secondary);
+}
+.auth-menu-role.role-superadmin{color:#ffcc00;background:rgba(255,204,0,.12);}
+.auth-menu-role.role-admin{color:var(--neon-red);background:rgba(255,68,102,.1);}
+.auth-menu-role.role-officer{color:var(--neon-blue);background:rgba(68,170,255,.1);}
+.auth-menu-role.role-member{color:var(--neon-green);background:rgba(34,255,136,.08);}
+
+.auth-menu-sep{
+  height:1px;background:var(--border);margin:4px 0;
+}
+
+.auth-menu-item{
+  display:flex;align-items:center;gap:10px;
+  width:100%;
+  padding:9px 14px;
+  background:transparent;border:none;
+  color:var(--text-secondary);
+  font-size:12px;font-weight:600;
+  cursor:pointer;font-family:inherit;text-align:left;
+  transition:background .15s,color .15s;
+}
+.auth-menu-item:hover{
+  background:rgba(68,170,255,.08);
+  color:var(--text-primary);
+}
+.auth-menu-item.danger{color:var(--neon-red);}
+.auth-menu-item.danger:hover{background:rgba(255,68,102,.1);}
+.auth-menu-item span:first-child{
+  width:18px;text-align:center;flex:0 0 18px;
+}
+
+/* 手機：下拉選單滿版 */
+@media (max-width:600px){
+  .auth-menu{
+    right:-8px;
+    min-width:200px;
+    max-width:calc(100vw - 20px);
+  }
+  .auth-btn{
+    padding:3px 9px;
+    font-size:10px;
+  }
+}
+
+/* ============================================================
+   v8.6.9：隊數分級參數區
+   ============================================================ */
+.troop-tier-card{
+  background:linear-gradient(135deg,rgba(255,204,0,.08),rgba(255,153,0,.04));
+  border:1px solid rgba(255,204,0,.35);
+}
+.troop-tier-card .card-title{color:var(--neon-yellow);}
+
+.tier-row-list{
+  display:flex;flex-direction:column;gap:8px;
+}
+.tier-row{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:10px 14px;
+  font-size:12px;
+}
+.tier-row .tier-label{
+  flex:1;min-width:180px;
+  color:var(--text-primary);
+  font-weight:600;
+  display:flex;align-items:center;gap:6px;
+}
+.tier-row .tier-teams{
+  flex:0 0 auto;
+  color:var(--text-secondary);
+  font-weight:600;
+  display:flex;align-items:center;gap:6px;
+}
+.tier-max-input,.tier-teams-input{
+  width:60px;
+  padding:4px 6px;
+  text-align:center;
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:12px;
+  background:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--neon-yellow);
+  font-weight:700;
+}
+.tier-max-input:focus,.tier-teams-input:focus{
+  outline:none;
+  border-color:var(--neon-yellow);
+  box-shadow:0 0 0 2px rgba(255,204,0,.18);
+}
+.tier-max-input:disabled,.tier-teams-input:disabled{
+  opacity:.5;cursor:not-allowed;
+}
+
+/* ============================================================
+   v8.6.9：城池 Modal 分級區
+   ============================================================ */
+.city-tier-panel{
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:10px 12px;
+  display:flex;flex-direction:column;gap:6px;
+  margin-bottom:10px;
+}
+.city-tier-row{
+  display:flex;align-items:center;gap:10px;
+  font-size:12px;
+}
+.city-tier-label{
+  flex:0 0 80px;
+  color:var(--text-secondary);
+  font-weight:600;
+  margin:0;
+}
+.city-tier-input{
+  flex:0 0 80px;
+  padding:5px 8px;
+  text-align:right;
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:13px;
+  background:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+  font-weight:600;
+}
+.city-tier-input:focus{
+  outline:none;
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+}
+.city-tier-calc{
+  flex:1;
+  color:var(--text-dim);
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:11px;
+}
+.city-tier-calc b{
+  color:var(--neon-green);
+  font-weight:700;
+  font-size:13px;
+}
+.city-tier-total{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 10px;
+  margin-top:4px;
+  background:rgba(34,255,136,.06);
+  border:1px solid rgba(34,255,136,.3);
+  border-radius:var(--radius-sm);
+  font-size:12px;
+  font-weight:600;
+  color:var(--text-primary);
+}
+.city-tier-total b{
+  color:var(--neon-green);
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:14px;
+  margin-left:2px;
+}
+
+/* ============================================================
+   v8.6.9：城池表格「人數」欄位懸停明細
+   ============================================================ */
+.city-member-cell{
+  position:relative;
+  cursor:help;
+}
+.city-member-cell .member-detail{
+  display:none;
+  position:absolute;
+  top:calc(100% + 4px);
+  left:50%;
+  transform:translateX(-50%);
+  min-width:160px;
+  padding:8px 10px;
+  background:rgba(10,14,23,.98);
+  border:1px solid var(--neon-blue);
+  border-radius:var(--radius-sm);
+  box-shadow:0 8px 24px rgba(0,0,0,.6), 0 0 16px rgba(68,170,255,.2);
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;
+  color:var(--text-secondary);
+  z-index:100;
+  white-space:nowrap;
+  line-height:1.6;
+  pointer-events:none;
+}
+.city-member-cell:hover .member-detail{display:block;}
+.city-member-cell .member-detail .row{
+  display:flex;justify-content:space-between;gap:12px;
+}
+.city-member-cell .member-detail .row b{
+  color:var(--neon-green);
+}
+
+/* 卡片檢視的分級明細 */
+.city-card .city-tier-detail{
+  display:flex;gap:10px;flex-wrap:wrap;
+  padding:6px 8px;
+  margin-top:4px;
+  background:rgba(68,170,255,.05);
+  border:1px dashed rgba(68,170,255,.3);
+  border-radius:var(--radius-sm);
+  font-size:10px;
+  font-family:"SF Mono","Consolas",monospace;
+  color:var(--text-secondary);
+}
+.city-card .city-tier-detail span{
+  display:inline-flex;align-items:center;gap:3px;
+}
+.city-card .city-tier-detail b{
+  color:var(--neon-blue);
+}
+
+/* ============================================================
+   v8.6.9：同步遮罩（關閉頁面時）
+   ============================================================ */
+#syncOverlay .network-box{
+  border-color:var(--neon-blue);
+}
+#syncOverlay .network-title{color:var(--neon-blue);}
+#syncOverlay .network-spinner{
+  border-color:rgba(68,170,255,.2);
+  border-top-color:var(--neon-blue);
+}
+
 @keyframes networkPulse{
   0%,100%{transform:scale(1);opacity:1;}
   50%{transform:scale(1.08);opacity:.7;}

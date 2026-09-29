@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.8</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.6.9</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -12,6 +12,7 @@
 </head>
 <body>
 
+<!-- ============ 網路中斷遮罩 ============ -->
 <div class="network-overlay" id="networkOverlay">
   <div class="network-box">
     <div class="network-icon">📡</div>
@@ -21,16 +22,26 @@
   </div>
 </div>
 
+<!-- ============ v8.6.9：關閉頁面同步遮罩 ============ -->
+<div class="network-overlay" id="syncOverlay">
+  <div class="network-box" style="border-color:var(--neon-blue);">
+    <div class="network-icon">⏳</div>
+    <div class="network-title" style="color:var(--neon-blue);">資料同步中</div>
+    <div class="network-desc">正在將變更上傳到雲端<br>請稍候，不要關閉頁面</div>
+    <div class="network-spinner" style="border-top-color:var(--neon-blue);"></div>
+  </div>
+</div>
+
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.8</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.9</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.8</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.6.9</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -83,7 +94,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.6.8</span>
+      <span class="sidebar-version">v8.6.9</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -127,6 +138,7 @@
       <span class="mobile-title">🏰 城戰沙盤</span>
     </header>
 
+    <!-- ============ v8.6.9：模式狀態條（含登入按鈕） ============ -->
     <div class="mode-bar local" id="modeBar">
       <div class="mode-bar-inner">
         <button class="sync-status" id="syncStatus" title="點擊查看雲端歷史版本">
@@ -137,6 +149,32 @@
         <span class="mode-indicator" id="modeIndicator">🖥️ 本機模式</span>
         <span class="mode-detail" id="modeDetail">尚未進入房間</span>
         <button class="btn btn-sm btn-mode" id="btnSwitchMode">進入房間</button>
+        <div class="auth-menu-wrap">
+          <button class="btn btn-sm auth-btn" id="authBtn">
+            <span id="authBtnText">🔑 登入/註冊</span>
+          </button>
+          <div class="auth-menu hidden" id="authMenu">
+            <div class="auth-menu-header" id="authMenuHeader">
+              <div class="auth-menu-name" id="authMenuName">—</div>
+              <div class="auth-menu-username" id="authMenuUsername">@—</div>
+              <div class="auth-menu-role" id="authMenuRole">—</div>
+            </div>
+            <div class="auth-menu-sep"></div>
+            <button class="auth-menu-item" data-auth-action="account-settings">
+              <span>⚙️</span><span>帳號設定</span>
+            </button>
+            <button class="auth-menu-item" data-auth-action="accounts-manage" id="authMenuAccountsBtn" style="display:none;">
+              <span>👥</span><span>帳號管理</span>
+            </button>
+            <button class="auth-menu-item" data-auth-action="sandbox">
+              <span>📊</span><span>我的沙盤</span>
+            </button>
+            <div class="auth-menu-sep"></div>
+            <button class="auth-menu-item danger" data-auth-action="logout">
+              <span>🚪</span><span>登出</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -230,6 +268,53 @@
         <div class="flex-row mt-8">
           <button class="btn btn-primary btn-sm" id="btnSaveSyncPrefs">💾 儲存同步設定</button>
           <button class="btn btn-success btn-sm" id="btnManualSyncNow">☁️ 立即上傳</button>
+        </div>
+      </div>
+
+      <!-- ============ v8.6.9：隊數分級計算 ============ -->
+      <div class="card troop-tier-card">
+        <div class="card-title">⚔️ 隊數分級計算（v8.6.9）</div>
+        <div class="text-dim" style="margin-bottom:10px;">
+          ＊每城「總隊數」由各級人數自動計算。<br>
+          ＊分級門檻與每人隊數可自訂。
+        </div>
+        <div class="param-section">
+          <div class="param-section-title">📊 分級規則</div>
+          <div class="tier-row-list" id="tierRowList">
+            <div class="tier-row">
+              <span class="tier-label">級別 1（≤ <input type="number" class="tier-max-input" id="tier1Max" value="17" min="1" max="99"> 級）</span>
+              <span class="tier-teams">每人 <input type="number" class="tier-teams-input" id="tier1Teams" value="3" min="1" max="20"> 隊</span>
+            </div>
+            <div class="tier-row">
+              <span class="tier-label">級別 2（≤ <input type="number" class="tier-max-input" id="tier2Max" value="20" min="1" max="99"> 級）</span>
+              <span class="tier-teams">每人 <input type="number" class="tier-teams-input" id="tier2Teams" value="4" min="1" max="20"> 隊</span>
+            </div>
+            <div class="tier-row">
+              <span class="tier-label">級別 3（≤ <input type="number" class="tier-max-input" id="tier3Max" value="24" min="1" max="99"> 級）</span>
+              <span class="tier-teams">每人 <input type="number" class="tier-teams-input" id="tier3Teams" value="5" min="1" max="20"> 隊</span>
+            </div>
+            <div class="tier-row">
+              <span class="tier-label">級別 4（&gt; 級別 3 上限）</span>
+              <span class="tier-teams">每人 <input type="number" class="tier-teams-input" id="tier4Teams" value="6" min="1" max="20"> 隊</span>
+            </div>
+          </div>
+        </div>
+        <div class="param-section">
+          <div class="param-section-title">⚙️ 選項</div>
+          <label class="sync-toggle-item">
+            <input type="checkbox" id="tierAutoCalcOnImport" checked>
+            <span class="sync-toggle-label">匯入時自動計算總隊數</span>
+            <span class="sync-toggle-hint">若 Excel 有分級欄位，自動算總隊數並覆蓋</span>
+          </label>
+          <label class="sync-toggle-item">
+            <input type="checkbox" id="tierPreserveOldTotal">
+            <span class="sync-toggle-label">保留舊資料的「總隊數」不被覆蓋</span>
+            <span class="sync-toggle-hint">勾選後，手動填過的總隊數不會被自動計算覆蓋</span>
+          </label>
+        </div>
+        <div class="flex-row mt-8">
+          <button class="btn btn-primary btn-sm" id="btnSaveTiers">💾 儲存分級設定</button>
+          <button class="btn btn-ghost btn-sm" id="btnResetTiers">🔄 恢復預設</button>
         </div>
       </div>
 
@@ -1066,7 +1151,7 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.6.8）</div>
+        <div class="card-title">📖 城戰計算規則（v8.6.9）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1096,42 +1181,45 @@
             <li>等級：1~10</li>
             <li><b>防守開始時間：由宣戰推算</b></li>
           </ul>
-          <h2>五、行軍模型</h2>
+          <h2>五、v8.6.9 隊數分級（新）</h2>
+          <div class="rule-card title">
+            <b>城池「總隊數」可由分級人數自動計算。</b><br>
+            預設分級：<br>
+            ・≤ 17 級：每人 3 隊<br>
+            ・18~20 級：每人 4 隊<br>
+            ・21~24 級：每人 5 隊<br>
+            ・≥ 25 級：每人 6 隊<br><br>
+            <b>範例</b>：5 人(≤17) + 5 人(≥25) = 5×3 + 5×6 = 45 隊<br>
+            <b>可於 ⚙️ 參數設定自訂門檻與隊數。</b>
+          </div>
+          <h2>六、行軍模型</h2>
           <ul>
             <li>戰敗後行軍回母城，抵達時才開始冷卻。</li>
             <li>防守方原地留守，不受行軍影響。</li>
           </ul>
-          <h2>六、城牆與淪陷</h2>
+          <h2>七、城牆與淪陷</h2>
           <ul>
             <li>城牆每 30 秒結算一次。</li>
             <li>城牆歸零 → 城池淪陷。</li>
           </ul>
-          <h2>七、地圖路線</h2>
+          <h2>八、地圖路線</h2>
           <ul>
             <li><b>定義</b>：兩城之間是否有「接觸」，無向圖。</li>
             <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
           </ul>
-          <h2>八、宣戰清單</h2>
+          <h2>九、宣戰清單</h2>
           <ul>
             <li><b>進攻</b>：需指定「開始時間」= 目標城防守開始時間。</li>
             <li><b>協防</b>：需與出兵城同一盟、且路線上必須有接觸。</li>
-            <li><b>v8.6.2 跨戰區限制</b>：預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟）。</li>
+            <li><b>v8.6.2 跨戰區限制</b>：預設只能同戰區宣戰。</li>
           </ul>
-          <h2>九、距離計算</h2>
-          <ul>
-            <li><b>可通行規則</b>：起點盟的城 + NPC 城（NPC 需佔領才能通過）。</li>
-            <li><b>演算法</b>：BFS 最短路徑。</li>
-          </ul>
-          <h2>十、Excel 匯入模式（v8.6.8 新增）</h2>
+          <h2>十、Excel 匯入模式</h2>
           <div class="rule-card title">
             <b>🔄 合併</b>：同名的更新、新的加入、其他保留。<br>
             <b>➕ 新增</b>：同名的跳過、新的加入、其他保留。<br>
-            <b>💥 覆蓋</b>：清空後重建。<br>
-            <b>同名判斷</b>：<br>
-            ・盟 → 盟名稱<br>
-            ・城池 → 城池名稱（合併時保留宣戰關係）<br>
-            ・路線 → (A,B) 無序對<br>
-            ・宣戰 → (出兵城, 目標城, 類型)
+            <b>💥 覆蓋</b>：清空後重建。<br><br>
+            <b>v8.6.9：城池表支援分級欄位</b>：<br>
+            <code>人≤17 / 人18-20 / 人21-24 / 人≥25</code>
           </div>
           <h2>十一、協作模式</h2>
           <ul>
@@ -1305,7 +1393,6 @@
   </div>
 </div>
 
-<!-- ============ Excel 匯入對話框（v8.6.8：每區塊加模式選單） ============ -->
 <div class="modal-overlay" id="excelImportModal">
   <div class="modal-box modal-lg">
     <h3>📊 匯入資料</h3>
@@ -1317,7 +1404,6 @@
         ＊<b>總戰力單位：億</b>（例：輸入 <code>2</code> 代表 2 億）。
       </div>
 
-      <!-- ① 盟名單 -->
       <div class="section-label" style="color:var(--neon-purple);">① 🤝 盟名單</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="alliances">📁 上傳 CSV</button>
@@ -1333,8 +1419,8 @@
       <input type="file" id="excelAlliancesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelAlliancesText" class="excel-textarea" placeholder="順序,盟名稱,盟徽,人數,總戰力（億）,陣營&#10;0,帝盟,⚔️,100,2.00,敵方&#10;1,秦盟,🏹,90,1.80,敵方&#10;2,鼎盟,🛡️,80,1.60,敵方"></textarea>
 
-      <!-- ② 城池表 -->
       <div class="section-label" style="color:var(--neon-blue);">② 🏰 城池表</div>
+      <div class="text-dim" style="margin:4px 0;font-size:10px;">＊v8.6.9：支援分級欄位（人≤17 / 人18-20 / 人21-24 / 人≥25），將自動計算總隊數。</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="cities">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="cities">🗑️ 清空</button>
@@ -1347,9 +1433,8 @@
         <span class="text-dim" id="excelCitiesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelCitiesFile" accept=".csv,.txt" style="display:none;">
-      <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都&#10;洛陽,司隸,鼎盟,敵方,10,100,10.00,100,5,30,是&#10;函谷關,司隸,秦盟,敵方,9,80,8.00,80,5,20,"></textarea>
+      <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,等級,人≤17,人18-20,人21-24,人≥25,總戰力（億）,冷卻,城牆,首都&#10;洛陽,司隸,鼎盟,敵方,10,50,30,20,10,10.00,5,30,是&#10;函谷關,司隸,秦盟,敵方,9,40,20,10,5,8.00,5,20,&#10;&#10;（或傳統格式）&#10;城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都"></textarea>
 
-      <!-- ③ 地圖路線表 -->
       <div class="section-label" style="color:var(--neon-yellow);">③ 🛣️ 地圖路線表</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="mapRoutes">📁 上傳 CSV</button>
@@ -1365,7 +1450,6 @@
       <input type="file" id="excelMapRoutesFile" accept=".csv,.txt" style="display:none;">
       <textarea id="excelMapRoutesText" class="excel-textarea" placeholder="洛陽-函谷關&#10;洛陽-洛陽北&#10;洛陽北-洛陽西"></textarea>
 
-      <!-- ④ 宣戰表 -->
       <div class="section-label" style="color:var(--neon-red);">④ ⚔️ 宣戰表</div>
       <div class="text-dim" style="margin:4px 0;font-size:10px;">＊「開始時間」= 目標城防守開始時間（HH:MM）。協防可留空。跨戰區預設略過（可於參數設定開啟）。</div>
       <div class="flex-row" style="gap:6px;">
@@ -1416,16 +1500,43 @@
         <div><label>等級（1-10）</label><input type="number" id="cm_level" value="1" min="1" max="10" step="1"></div>
       </div>
 
+      <!-- ============ v8.6.9：人數分級 ============ -->
+      <div class="section-label">👥 人數分級（自動計算隊數）</div>
+      <div class="city-tier-panel">
+        <div class="city-tier-row">
+          <label class="city-tier-label">≤17 級</label>
+          <input type="number" class="city-tier-input" id="cm_tier1" value="0" min="0" step="1" placeholder="0">
+          <span class="city-tier-calc">×3 = <b id="cm_tier1Teams">0</b> 隊</span>
+        </div>
+        <div class="city-tier-row">
+          <label class="city-tier-label">18-20 級</label>
+          <input type="number" class="city-tier-input" id="cm_tier2" value="0" min="0" step="1" placeholder="0">
+          <span class="city-tier-calc">×4 = <b id="cm_tier2Teams">0</b> 隊</span>
+        </div>
+        <div class="city-tier-row">
+          <label class="city-tier-label">21-24 級</label>
+          <input type="number" class="city-tier-input" id="cm_tier3" value="0" min="0" step="1" placeholder="0">
+          <span class="city-tier-calc">×5 = <b id="cm_tier3Teams">0</b> 隊</span>
+        </div>
+        <div class="city-tier-row">
+          <label class="city-tier-label">≥25 級</label>
+          <input type="number" class="city-tier-input" id="cm_tier4" value="0" min="0" step="1" placeholder="0">
+          <span class="city-tier-calc">×6 = <b id="cm_tier4Teams">0</b> 隊</span>
+        </div>
+        <div class="city-tier-total">
+          <span>總人數：<b id="cm_tierTotalMembers">0</b> 人</span>
+          <span>總隊數：<b id="cm_tierTotalTeams">0</b> 隊</span>
+        </div>
+      </div>
+
       <div class="section-label">⚔️ 兵力數據（可留空）</div>
       <div class="form-row">
-        <div><label>人數</label><input type="number" id="cm_memberCount" placeholder="可留空" min="0"></div>
         <div><label>總戰力</label>
           <div class="input-with-unit">
             <input type="number" id="cm_totalPower" placeholder="例：1.50" step="0.01" min="0">
             <span class="unit">億</span>
           </div>
         </div>
-        <div><label>總隊數</label><input type="number" id="cm_totalTeams" placeholder="可留空" min="0"></div>
         <div><label>平均戰力（自動）</label><input type="text" id="cm_avgPower" readonly value="—"></div>
       </div>
 
