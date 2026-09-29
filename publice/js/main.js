@@ -1603,6 +1603,10 @@ function bindUI(){
   window.addEventListener('beforeunload', () => {
     saveState();
     try{ releaseWorker(); }catch(e){}
+    /* v8.9.0：釋放 circleDetect Worker */
+    try{
+      if(typeof window.SLG.releaseCdWorker === 'function') window.SLG.releaseCdWorker();
+    }catch(e){}
   });
 
   DEPLOY().init();
