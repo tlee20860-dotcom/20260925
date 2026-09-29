@@ -1,6 +1,6 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.6.9：城池分級渲染 + 表格懸停明細 + 同步狀態顯示上次時間
+ * v8.7.0：城池分級渲染 + 表格懸停明細 + 分級 Inline 編輯
  * ========================================================================== */
 (function(){
 'use strict';
@@ -30,6 +30,7 @@ const hasTogglePerm = () => typeof window.SLG.togglePerm === 'function';
 
 let editingAllianceRowId = null;
 let editingCityRowId = null;
+let editingCityTierId = null;  /* v8.7.0：分級編輯中的城池 ID */
 
 /* ============================================================
    v8.6.7 / v8.6.9：同步狀態渲染（含上次時間）
@@ -469,7 +470,6 @@ const R = (() => {
     ).join('');
   }
 
-  /* 參戰盟清單 */
   function renderAlliances(){
     const tbody = document.getElementById('allianceTableBody');
     if(!tbody) return;
@@ -779,7 +779,6 @@ const R = (() => {
     }
   }
 
-  /* v8.6.9：卡片檢視（含分級明細） */
   function renderCities(){
     const el = document.getElementById('cityList');
     if(!el) return;
@@ -814,7 +813,6 @@ const R = (() => {
         html += `<div class="flex-row" style="margin-bottom:4px;"><span class="chip time">🕐 防守 ${esc(defStart)} – ${esc(defEnd)}</span></div>`;
         html += `<div class="flex-row" style="font-size:11px;color:var(--text-secondary);gap:12px;"><span>戰力 ${formatPower(c.totalPower)}</span><span>隊數 ${c.totalTeams}</span><span>均戰 ${formatAvgPower(c.avgPower)}</span></div>`;
 
-        /* v8.6.9：卡片分級明細 */
         if(c.tierCounts){
           const tiers = state.troopTiers.tiers;
           const breakdown = [];
@@ -1570,7 +1568,7 @@ const DEPLOY = (() => {
   return { init, render, populateZoneFilter };
 })();
 
-   /* ============================================================
+/* ============================================================
    CityManager — 城池清單表格 + 批次操作 + 行內編輯 + 分級 Inline（v8.7.0）
    ============================================================ */
 const CityManager = (() => {
@@ -1794,7 +1792,6 @@ const CityManager = (() => {
      ============================================================ */
   function renderMemberCell(c, isEditingInline){
     if(isEditingInline){
-      /* 完整行內編輯中：人數欄位顯示「—」（由分級輸入替代） */
       return `<td class="col-num">—</td>`;
     }
     const isTierEditing = (editingCityTierId === c.id);
@@ -1808,7 +1805,6 @@ const CityManager = (() => {
       return `<td class="${cls}" data-city-id="${c.id}" title="${title}">${c.memberCount || 0}</td>`;
     }
 
-    /* 有分級 → 顯示 hover 明細 */
     const tiers = state.troopTiers.tiers;
     const tc = c.tierCounts;
     const detailRows = [];
@@ -1912,11 +1908,9 @@ const CityManager = (() => {
      ============================================================ */
   function startTierEdit(cityId){
     if(editingCityTierId === cityId) return;
-    /* 與完整行內編輯互斥 */
     if(editingCityRowId){ editingCityRowId = null; }
     editingCityTierId = cityId;
     render();
-    /* 聚焦第一個輸入框 */
     setTimeout(() => {
       const tr = document.querySelector(`tr.tier-edit-row[data-parent-id="${cityId}"]`);
       if(tr){
@@ -2054,7 +2048,6 @@ const CityManager = (() => {
             </tr>`;
           }
 
-          /* v8.7.0：若該城展開分級編輯，追加一行 */
           if(isTierEditing){
             rowHtml += renderTierEditRow(c);
           }
@@ -2064,7 +2057,6 @@ const CityManager = (() => {
       }
     }
 
-    /* 行內編輯即時預覽 */
     if(tbody){
       tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
         const teamsEl = tr.querySelector('[data-inline-field="totalTeams"]');
@@ -2155,10 +2147,8 @@ const CityManager = (() => {
     }).join('');
   }
 
-  /* 完整行內編輯（✏️）*/
   function startInlineEditCity(id){
     if(editingCityRowId === id) return;
-    /* 與分級編輯互斥 */
     if(editingCityTierId){ editingCityTierId = null; }
     editingCityRowId = id;
     render();
@@ -2196,7 +2186,6 @@ const CityManager = (() => {
 
     const avgPower = totalTeams > 0 ? Math.floor(totalPower / totalTeams) : 0;
     const updated = { ...city, name, zoneId, allianceId, side, level, memberCount, totalPower, totalTeams, avgPower };
-    /* v8.7.0：手動改了總人數/總隊數 → 移除分級明細（避免不一致）*/
     delete updated.tierCounts;
 
     window.SLG.upsertEntity('city', updated);
@@ -4392,13 +4381,12 @@ function startEditAlliance(id){
 }
 
 /* ============================================================
-   v8.6.9：城池 Modal 分級輸入
+   城池 Modal 分級輸入
    ============================================================ */
 let editingCityId = null;
 let cityModalTierInited = false;
 
 function updateAutoCalcFields(){
-  /* v8.6.9：計算平均戰力（從分級算出的總隊數）*/
   const t = updateCityModalTierPreview();
   const pInput = document.getElementById('cm_totalPower').value;
   const p = (() => {
@@ -4412,7 +4400,6 @@ function updateAutoCalcFields(){
   else { el.value = '—'; }
 }
 
-/* v8.6.9：分級即時預覽 */
 function updateCityModalTierPreview(){
   const t1 = parseFloat(document.getElementById('cm_tier1')?.value) || 0;
   const t2 = parseFloat(document.getElementById('cm_tier2')?.value) || 0;
@@ -4422,7 +4409,6 @@ function updateCityModalTierPreview(){
   const tiers = state.troopTiers.tiers;
   const calc = calcTeamsFromTiers(tierCounts);
 
-  /* 更新每級隊數顯示 */
   const setText = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
   setText('cm_tier1Teams', Math.floor(t1 * (tiers[0].teamsPerPlayer || 0)));
   setText('cm_tier2Teams', Math.floor(t2 * (tiers[1].teamsPerPlayer || 0)));
@@ -4476,7 +4462,6 @@ function openCityModal(cityId){
     document.getElementById('cm_wallMin').value = 30;
     document.getElementById('cm_isCapital').checked = false;
     if(state.zones.length > 0) zoneSel.value = state.zones[0].id;
-    /* v8.6.9：清空分級 */
     document.getElementById('cm_tier1').value = 0;
     document.getElementById('cm_tier2').value = 0;
     document.getElementById('cm_tier3').value = 0;
@@ -4492,7 +4477,6 @@ function openCityModal(cityId){
     document.getElementById('cm_cooldownMin').value = city.cooldownMin;
     document.getElementById('cm_wallMin').value = city.wallMin;
     document.getElementById('cm_isCapital').checked = !!city.isCapital;
-    /* v8.6.9：填入分級 */
     const tc = city.tierCounts || { tier1: 0, tier2: 0, tier3: 0, tier4: 0 };
     document.getElementById('cm_tier1').value = tc.tier1 || 0;
     document.getElementById('cm_tier2').value = tc.tier2 || 0;
@@ -4531,7 +4515,6 @@ function saveCityFromModal(){
   const wallMin = parseFloat(document.getElementById('cm_wallMin').value) || 0;
   const isCapital = document.getElementById('cm_isCapital').checked;
 
-  /* v8.6.9：分級計算 */
   const t1 = parseFloat(document.getElementById('cm_tier1').value) || 0;
   const t2 = parseFloat(document.getElementById('cm_tier2').value) || 0;
   const t3 = parseFloat(document.getElementById('cm_tier3').value) || 0;
@@ -4565,7 +4548,6 @@ function saveCityFromModal(){
     cooldownMin, wallMin, defStartTime, isCapital,
     attackTargets, defendTargets
   };
-  /* v8.6.9：有分級才存 tierCounts */
   if(hasAnyTier) entity.tierCounts = tierCounts;
 
   window.SLG.upsertEntity('city', entity);
@@ -4629,5 +4611,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.6.9）
+ * ui.js 結束（v8.7.0）
  * ========================================================================== */
