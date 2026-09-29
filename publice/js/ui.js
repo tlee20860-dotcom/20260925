@@ -4279,6 +4279,7 @@ const MapLibrary = (() => {
   function openUploadModal(){
     if(!window.SLG.canEditMapLibrary()){ alert('🔒 您沒有地圖庫編輯權限'); return; }
     if(!state.auth.signedIn){ alert('請先登入'); return; }
+    uploading = false;   /* ★ v8.8.0 修復：重置上傳鎖，避免卡死 */
     const modal = document.getElementById('mapUploadModal');
     if(!modal) return;
     document.getElementById('mu_name').value = '';
@@ -4301,8 +4302,11 @@ const MapLibrary = (() => {
     if(modal) modal.classList.remove('show');
   }
 
-  async function doUpload(){
-    if(uploading) return;
+async function doUpload(){
+  if(uploading){
+    console.warn('[MapUpload] 已有上傳進行中，忽略此次點擊');
+    return;
+  }
     const name = (document.getElementById('mu_name').value || '').trim();
     const fileEl = document.getElementById('mu_file');
     const file = fileEl && fileEl.files ? fileEl.files[0] : null;
