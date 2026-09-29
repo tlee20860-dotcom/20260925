@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.8.0</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.0</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -34,13 +34,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.8.0</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.0</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.8.0</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.0</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -93,7 +93,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.8.0</span>
+      <span class="sidebar-version">v8.9.0</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -270,7 +270,7 @@
       </div>
 
       <div class="card troop-tier-card">
-        <div class="card-title">⚔️ 隊數分級計算（v8.6.9）</div>
+        <div class="card-title">⚔️ 隊數分級計算</div>
         <div class="text-dim" style="margin-bottom:10px;">
           ＊每城「總隊數」由各級人數自動計算。<br>
           ＊分級門檻與每人隊數可自訂。
@@ -374,7 +374,7 @@
           <div class="param-item">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
               <input type="checkbox" id="globalCrossZoneWar" style="width:auto;accent-color:#aa66ff;transform:scale(1.2);">
-              <span>允許跨戰區宣戰（v8.6.2）</span>
+              <span>允許跨戰區宣戰</span>
             </label>
             <div class="param-hint">勾選後，宣戰可跨越戰區邊界（出兵城與目標城可在不同戰區）。預設不勾選（只能同戰區宣戰）。既有跨戰區宣戰不受影響。</div>
           </div>
@@ -663,7 +663,7 @@
             ＊定義「誰打誰」與「誰協防誰」。<br>
             ＊進攻：需要指定「開始時間」= 目標城的防守開始時間。<br>
             ＊協防：目標城需與出兵城同一盟、且路線上必須有接觸。<br>
-            ＊<span style="color:var(--neon-purple);">v8.6.2：預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟跨戰區）。</span>
+            ＊<span style="color:var(--neon-purple);">預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟跨戰區）。</span>
           </div>
 
           <div class="list-toolbar">
@@ -899,7 +899,6 @@
         </div>
 
         <div id="mapRouteWrap">
-          <!-- v8.8.0：地圖庫控制列 -->
           <div class="map-library-toolbar">
             <div class="map-lib-item">
               <label>檢視模式</label>
@@ -921,7 +920,6 @@
             </div>
           </div>
 
-          <!-- 單張地圖檢視區 -->
           <div id="mapSingleView">
             <div class="map-toolbar">
               <select id="mapZoneSelect" class="map-zone-select" title="選擇要顯示的戰區">
@@ -939,7 +937,6 @@
             </div>
           </div>
 
-          <!-- v8.8.0：並排畫廊檢視區 -->
           <div id="mapGalleryView" style="display:none;">
             <div class="map-gallery-grid" id="mapGalleryGrid">
               <!-- 動態生成地圖卡片 -->
@@ -1181,7 +1178,7 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.8.0）</div>
+        <div class="card-title">📖 城戰計算規則（v8.9.0）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1206,12 +1203,13 @@
           <h2>四、城池輸入</h2>
           <ul>
             <li>城池名稱：必填</li>
+            <li>城池編號：選填（如 L98、M28）</li>
             <li>所屬戰區：可留空</li>
             <li>所屬盟：預設 NPC</li>
             <li>等級：1~10</li>
             <li><b>防守開始時間：由宣戰推算</b></li>
           </ul>
-          <h2>五、v8.6.9 隊數分級</h2>
+          <h2>五、隊數分級</h2>
           <div class="rule-card title">
             <b>城池「總隊數」可由分級人數自動計算。</b><br>
             預設分級：<br>
@@ -1219,7 +1217,6 @@
             ・18~20 級：每人 4 隊<br>
             ・21~24 級：每人 5 隊<br>
             ・≥ 25 級：每人 6 隊<br><br>
-            <b>範例</b>：5 人(≤17) + 5 人(≥25) = 5×3 + 5×6 = 45 隊<br>
             <b>可於 ⚙️ 參數設定自訂門檻與隊數。</b>
           </div>
           <h2>六、行軍模型</h2>
@@ -1236,40 +1233,48 @@
           <ul>
             <li><b>定義</b>：兩城之間是否有「接觸」，無向圖。</li>
             <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
-            <li><b>v8.7.1：節點顯示「城池名 (盟徽)」</b></li>
-            <li><b>v8.7.1：支援匯出 PDF 圖檔</b></li>
-            <li><b>v8.8.0：支援地圖庫（上傳底圖、節點校準、模糊匹配）</b></li>
+            <li><b>節點顯示「城池名 (編號)」</b></li>
+            <li><b>支援匯出 PDF 圖檔</b></li>
           </ul>
-          <h2>九、宣戰清單</h2>
+          <h2>九、地圖庫（v8.8.0）</h2>
+          <ul>
+            <li><b>雲端儲存</b>：底圖存 Cloudinary，座標存 Firebase</li>
+            <li><b>支援多張地圖</b>：可上傳、切換、刪除</li>
+            <li><b>節點校準</b>：手動標記城池位置</li>
+            <li><b>模糊匹配</b>：匯入城池時自動匹配節點</li>
+          </ul>
+          <h2>十、節點校準（v8.9.0）</h2>
+          <div class="rule-card title">
+            <b>自動偵測</b>：上傳地圖後，系統自動找出「彩色菱形/圓形」<br>
+            <b>智慧命名</b>：點紅框 → 選城池（按距離排序）<br>
+            <b>手動補點</b>：漏偵測時可手動新增候選<br>
+            <b>篩選</b>：全部 / 待命名 / 已命名 / 手動補點
+          </div>
+          <h2>十一、宣戰清單</h2>
           <ul>
             <li><b>進攻</b>：需指定「開始時間」= 目標城防守開始時間。</li>
             <li><b>協防</b>：需與出兵城同一盟、且路線上必須有接觸。</li>
-            <li><b>v8.6.2 跨戰區限制</b>：預設只能同戰區宣戰。</li>
+            <li><b>跨戰區限制</b>：預設只能同戰區宣戰。</li>
           </ul>
-          <h2>十、Excel 匯入模式</h2>
+          <h2>十二、Excel 匯入模式</h2>
           <div class="rule-card title">
             <b>🔄 合併</b>：同名的更新、新的加入、其他保留。<br>
             <b>➕ 新增</b>：同名的跳過、新的加入、其他保留。<br>
             <b>💥 覆蓋</b>：清空後重建。<br><br>
-            <b>v8.6.9：城池表支援分級欄位</b>：<br>
+            <b>城池表支援分級欄位</b>：<br>
             <code>人≤17 / 人18-20 / 人21-24 / 人≥25</code>
           </div>
-          <h2>十一、協作模式</h2>
+          <h2>十三、協作模式</h2>
           <ul>
-            <li><b>個人雲端沙盤（v8.6.7 定時上傳）</b>：
-              ・登入時無條件下載雲端沙盤
-              ・定時自動上傳（預設 5 分鐘）
-              ・重要操作立即上傳
-              ・雲端保留最近 20 筆歷史版本
-            </li>
-            <li><b>房間雲端沙盤</b>：房主/幹部+手動上載。</li>
+            <li><b>個人雲端沙盤</b>：登入時下載、定時上傳、重要操作立即上傳、保留 20 筆歷史</li>
+            <li><b>房間雲端沙盤</b>：房主/幹部手動上載</li>
           </ul>
-          <h2>十二、帳號與權限</h2>
+          <h2>十四、帳號與權限</h2>
           <ul>
-            <li><b>超級管理員</b>：最高權限。</li>
-            <li><b>管理員</b>：可停用帳號、修改 extraPerms。</li>
-            <li><b>幹部</b>：可創建房間、執行推演、上載沙盤。</li>
-            <li><b>成員</b>：本機推演、加入房間、管理自己帳號。</li>
+            <li><b>超級管理員</b>：最高權限，可刪除地圖</li>
+            <li><b>管理員</b>：可停用帳號、修改 extraPerms</li>
+            <li><b>幹部</b>：可創建房間、執行推演、上載沙盤、編輯地圖庫（需授權）</li>
+            <li><b>成員</b>：本機推演、加入房間、管理自己帳號</li>
           </ul>
         </div>
       </div>
@@ -1280,7 +1285,7 @@
 </div>
 
 <!-- ============================================================
-     v8.8.0：地圖庫相關 Modal
+     v8.9.0：地圖庫相關 Modal
      ============================================================ -->
 
 <!-- 上傳地圖 Modal -->
@@ -1295,7 +1300,7 @@
       <div class="param-item">
         <label>底圖檔案 <span style="color:var(--neon-red);">*</span></label>
         <input type="file" id="mu_file" accept="image/png,image/jpeg,image/webp">
-        <div class="param-hint">支援 PNG / JPG / WebP，建議 4K 以內。上傳至 Cloudinary。</div>
+        <div class="param-hint">支援 PNG / JPG / WebP。上傳至 Cloudinary。</div>
       </div>
       <div class="param-item">
         <label>圖片尺寸（自動填入）</label>
@@ -1325,9 +1330,7 @@
       <span class="nc-mode-badge" id="nc_modeBadge">準備中...</span>
     </h3>
     <div class="nc-layout-v2">
-      <!-- 左側：偵測候選 + 進度 -->
       <div class="nc-sidebar-v2">
-        <!-- 掃描進度 -->
         <div class="nc-scan-panel" id="nc_scanPanel">
           <div class="nc-scan-title">🔍 自動偵測中...</div>
           <div class="nc-scan-progress">
@@ -1336,7 +1339,6 @@
           <div class="nc-scan-hint" id="nc_scanHint">正在分析圖片像素...</div>
         </div>
 
-        <!-- 統計資訊 -->
         <div class="nc-stats-panel" id="nc_statsPanel" style="display:none;">
           <div class="nc-stat-row">
             <span class="nc-stat-label">🎯 偵測候選</span>
@@ -1356,7 +1358,6 @@
           </div>
         </div>
 
-        <!-- 篩選 + 操作 -->
         <div class="nc-filter-bar" id="nc_filterBar" style="display:none;">
           <button class="nc-filter-btn active" data-nc-filter="all">🌐 全部</button>
           <button class="nc-filter-btn" data-nc-filter="pending">🔴 待命名</button>
@@ -1364,12 +1365,10 @@
           <button class="nc-filter-btn" data-nc-filter="manual">➕ 手動補點</button>
         </div>
 
-        <!-- 候選清單 -->
         <div class="nc-candidate-list" id="nc_candidateList" style="display:none;">
           <!-- 動態生成 -->
         </div>
 
-        <!-- 操作按鈕 -->
         <div class="nc-actions-v2">
           <button class="btn btn-ghost btn-sm" id="nc_btnRescan" title="重新掃描">🔄 重掃</button>
           <button class="btn btn-warning btn-sm" id="nc_btnManualAdd" title="手動新增候選">➕ 補點</button>
@@ -1378,13 +1377,11 @@
         </div>
       </div>
 
-      <!-- 右側：底圖 + 標記 -->
       <div class="nc-canvas-wrap-v2" id="nc_canvasWrap">
         <canvas id="nc_canvas"></canvas>
         <div class="nc-canvas-hint-v2" id="nc_canvasHint">
           請點選紅框進行命名
         </div>
-        <!-- 命名小面板（點紅框後彈出） -->
         <div class="nc-naming-popup hidden" id="nc_namingPopup">
           <div class="nc-naming-header">
             <span id="nc_namingTitle">選擇城池</span>
@@ -1425,7 +1422,7 @@
   </div>
 </div>
 
-<!-- 原有 Modal 保留 -->
+<!-- 其他 Modal -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box">
     <h3 id="modalTitle">⚠️ 確認操作</h3>
@@ -1600,7 +1597,7 @@
       <textarea id="excelAlliancesText" class="excel-textarea" placeholder="順序,盟名稱,盟徽,人數,總戰力（億）,陣營&#10;0,帝盟,⚔️,100,2.00,敵方&#10;1,秦盟,🏹,90,1.80,敵方&#10;2,鼎盟,🛡️,80,1.60,敵方"></textarea>
 
       <div class="section-label" style="color:var(--neon-blue);">② 🏰 城池表</div>
-      <div class="text-dim" style="margin:4px 0;font-size:10px;">＊v8.6.9：支援分級欄位（人≤17 / 人18-20 / 人21-24 / 人≥25），將自動計算總隊數。</div>
+      <div class="text-dim" style="margin:4px 0;font-size:10px;">＊支援分級欄位（人≤17 / 人18-20 / 人21-24 / 人≥25），將自動計算總隊數。＊支援「城池編號」欄位。</div>
       <div class="flex-row" style="gap:6px;">
         <button class="btn btn-ghost btn-sm" data-excel-upload="cities">📁 上傳 CSV</button>
         <button class="btn btn-ghost btn-sm" data-excel-clear="cities">🗑️ 清空</button>
@@ -1613,7 +1610,7 @@
         <span class="text-dim" id="excelCitiesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelCitiesFile" accept=".csv,.txt" style="display:none;">
-      <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,戰區,同盟,陣營,等級,人≤17,人18-20,人21-24,人≥25,總戰力（億）,冷卻,城牆,首都&#10;洛陽,司隸,鼎盟,敵方,10,50,30,20,10,10.00,5,30,是&#10;函谷關,司隸,秦盟,敵方,9,40,20,10,5,8.00,5,20,&#10;&#10;（或傳統格式）&#10;城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都"></textarea>
+      <textarea id="excelCitiesText" class="excel-textarea" placeholder="城池名稱,城池編號,戰區,同盟,陣營,等級,人≤17,人18-20,人21-24,人≥25,總戰力（億）,冷卻,城牆,首都&#10;南秦,L98,南中,帝盟,敵方,10,50,30,20,10,10.00,5,30,是&#10;句町,L75,南中,秦盟,敵方,9,40,20,10,5,8.00,5,20,&#10;&#10;（或傳統格式）&#10;城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都"></textarea>
 
       <div class="section-label" style="color:var(--neon-yellow);">③ 🛣️ 地圖路線表</div>
       <div class="flex-row" style="gap:6px;">
@@ -1628,7 +1625,7 @@
         <span class="text-dim" id="excelMapRoutesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelMapRoutesFile" accept=".csv,.txt" style="display:none;">
-      <textarea id="excelMapRoutesText" class="excel-textarea" placeholder="洛陽-函谷關&#10;洛陽-洛陽北&#10;洛陽北-洛陽西"></textarea>
+      <textarea id="excelMapRoutesText" class="excel-textarea" placeholder="南秦-句町&#10;南秦-南秦西&#10;南秦西-南廣北"></textarea>
 
       <div class="section-label" style="color:var(--neon-red);">④ ⚔️ 宣戰表</div>
       <div class="text-dim" style="margin:4px 0;font-size:10px;">＊「開始時間」= 目標城防守開始時間（HH:MM）。協防可留空。跨戰區預設略過（可於參數設定開啟）。</div>
@@ -1644,7 +1641,7 @@
         <span class="text-dim" id="excelRoutesStatus">尚未填入</span>
       </div>
       <input type="file" id="excelRoutesFile" accept=".csv,.txt" style="display:none;">
-      <textarea id="excelRoutesText" class="excel-textarea" placeholder="出兵城,目標城,類型,戰前%,復活%,順序,開始時間&#10;洛陽,函谷關,進攻,50,50,1,19:00&#10;洛陽北,洛陽,協防,30,30,1,"></textarea>
+      <textarea id="excelRoutesText" class="excel-textarea" placeholder="出兵城,目標城,類型,戰前%,復活%,順序,開始時間&#10;南秦,句町,進攻,50,50,1,19:00&#10;南秦西,南秦,協防,30,30,1,"></textarea>
 
       <div class="excel-preview" id="excelPreview">
         <span class="text-dim">請在任一區塊填入資料</span>
@@ -1773,7 +1770,6 @@
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canRunSim"><span>可執行推演</span></label>
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canKick"><span>可踢人</span></label>
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditSettings"><span>可修改戰鬥參數</span></label>
-        <!-- v8.8.0：地圖庫編輯權 -->
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditMapLibrary"><span>可編輯地圖庫</span></label>
       </div>
       <div class="section-label">🔑 修改密碼</div>
@@ -1788,6 +1784,7 @@
   </div>
 </div>
 
+<script src="js/circleDetect.js"></script>
 <script src="js/simulation.js"></script>
 <script src="js/core.js"></script>
 <script src="js/firebase.js"></script>
