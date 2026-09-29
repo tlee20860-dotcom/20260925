@@ -1591,7 +1591,9 @@ const DEPLOY = (() => {
 })();
 
 /* ============================================================
+   /* ============================================================
    CityManager — 城池清單表格 + 批次操作 + 行內編輯
+   v8.6.8：改用事件委託，修復編輯/儲存/取消按鈕
    ============================================================ */
 const CityManager = (() => {
   let currentView = 'table';
@@ -1609,10 +1611,12 @@ const CityManager = (() => {
         render();
       });
     }
+
     ['cityFilterZone','cityFilterAlliance','cityFilterSide','citySearchInput'].forEach(id => {
       const el = document.getElementById(id);
       if(el){ el.addEventListener('input', render); el.addEventListener('change', render); }
     });
+
     const selAll = document.getElementById('citySelectAll');
     if(selAll){
       selAll.addEventListener('change', function(){
@@ -1620,6 +1624,7 @@ const CityManager = (() => {
         updateBatchBar();
       });
     }
+
     const btnApplyZone = document.getElementById('btnCityBatchApplyZone');
     if(btnApplyZone){
       btnApplyZone.addEventListener('click', () => {
@@ -1629,6 +1634,7 @@ const CityManager = (() => {
         applyBatch('zoneId', zoneId);
       });
     }
+
     const btnApplyAlliance = document.getElementById('btnCityBatchApplyAlliance');
     if(btnApplyAlliance){
       btnApplyAlliance.addEventListener('click', () => {
@@ -1637,6 +1643,7 @@ const CityManager = (() => {
         applyBatch('allianceId', aid);
       });
     }
+
     const btnApplySide = document.getElementById('btnCityBatchApplySide');
     if(btnApplySide){
       btnApplySide.addEventListener('click', () => {
@@ -1645,6 +1652,7 @@ const CityManager = (() => {
         applyBatch('side', side);
       });
     }
+
     const btnBatchDel = document.getElementById('btnCityBatchDelete');
     if(btnBatchDel){
       btnBatchDel.addEventListener('click', () => {
@@ -1660,10 +1668,73 @@ const CityManager = (() => {
         }
       });
     }
+
+    /* ★ v8.6.8 修復核心：表格事件委託（只綁一次） */
     const tbody = document.getElementById('cityTableBody');
-    if(tbody){
+    if(tbody && !tbody.dataset.bound){
+      tbody.dataset.bound = '1';
+
+      /* click 委託 */
+      tbody.addEventListener('click', (e) => {
+        /* 儲存 */
+        const saveBtn = e.target.closest('[data-action="save-city-inline"]');
+        if(saveBtn){
+          e.preventDefault();
+          saveInlineEditCity(saveBtn.dataset.id);
+          return;
+        }
+        /* 取消 */
+        const cancelBtn = e.target.closest('[data-action="cancel-city-inline"]');
+        if(cancelBtn){
+          e.preventDefault();
+          cancelInlineEditCity();
+          return;
+        }
+        /* 編輯 */
+        const editBtn = e.target.closest('[data-action="edit-city"]');
+        if(editBtn){
+          e.preventDefault();
+          startInlineEditCity(editBtn.dataset.id);
+          return;
+        }
+        /* 刪除 */
+        const delBtn = e.target.closest('[data-action="del-city"]');
+        if(delBtn){
+          e.preventDefault();
+          const id = delBtn.dataset.id;
+          const c = state.cities.find(x => x.id === id);
+          if(!c) return;
+          if(typeof window.SLG.showConfirm === 'function'){
+            window.SLG.showConfirm('刪除城池', `確定刪除「${c.name}」？`, () => {
+              window.SLG.deleteEntity('city', id);
+              if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+              render();
+              if(window.SLG.saveState) window.SLG.saveState('important');
+            });
+          }
+          return;
+        }
+      });
+
+      /* checkbox 委託 */
       tbody.addEventListener('change', e => {
         if(e.target.classList.contains('city-cb')) updateBatchBar();
+      });
+
+      /* Enter / Esc 快捷鍵委託 */
+      tbody.addEventListener('keydown', (e) => {
+        if(!e.target.matches('input, select')) return;
+        const tr = e.target.closest('tr.inline-editing');
+        if(!tr) return;
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          const saveBtn = tr.querySelector('[data-action="save-city-inline"]');
+          if(saveBtn) saveBtn.click();
+        } else if(e.key === 'Escape'){
+          e.preventDefault();
+          const cancelBtn = tr.querySelector('[data-action="cancel-city-inline"]');
+          if(cancelBtn) cancelBtn.click();
+        }
       });
     }
   }
@@ -1791,63 +1862,32 @@ const CityManager = (() => {
       }
     }
 
+    /* 行內編輯即時預覽（只針對當前編輯行，仍需個別綁 input） */
     if(tbody){
-      tbody.querySelectorAll('[data-action="edit-city"]').forEach(b => {
-        b.addEventListener('click', function(){ startInlineEditCity(this.dataset.id); });
+      tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
+        const teamsEl = tr.querySelector('[data-inline-field="totalTeams"]');
+        const powerEl = tr.querySelector('[data-inline-field="totalPowerYi"]');
+        const preview = tr.querySelector('[data-inline-preview="avgPower"]');
+        const updatePreview = () => {
+          const teams = parseFloat(teamsEl?.value) || 0;
+          const yi = parseFloat(powerEl?.value) || 0;
+          const total = Math.round(yi * 1e8);
+          const avg = teams > 0 ? Math.floor(total / teams) : 0;
+          if(preview) preview.textContent = avg > 0 ? formatAvgPower(avg) : '—';
+        };
+        if(teamsEl) teamsEl.addEventListener('input', updatePreview);
+        if(powerEl) powerEl.addEventListener('input', updatePreview);
+        updatePreview();
       });
-      tbody.querySelectorAll('[data-action="del-city"]').forEach(b => {
-        b.addEventListener('click', function(){
-          const id = this.dataset.id;
-          const c = state.cities.find(x => x.id === id);
-          if(!c) return;
-          if(typeof window.SLG.showConfirm === 'function'){
-            window.SLG.showConfirm('刪除城池', `確定刪除「${c.name}」？`, () => {
-              window.SLG.deleteEntity('city', id);
-              if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-              render();
-              if(window.SLG.saveState) window.SLG.saveState('important');
-            });
-          }
-        });
-      });
-      bindCityInlineEdit(tbody);
     }
 
     updateBatchBar();
     renderDistSummary();
-  }
 
-  function bindCityInlineEdit(tbody){
-    tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
-      const teamsEl = tr.querySelector('[data-inline-field="totalTeams"]');
-      const powerEl = tr.querySelector('[data-inline-field="totalPowerYi"]');
-      const preview = tr.querySelector('[data-inline-preview="avgPower"]');
-      const updatePreview = () => {
-        const teams = parseFloat(teamsEl?.value) || 0;
-        const yi = parseFloat(powerEl?.value) || 0;
-        const total = Math.round(yi * 1e8);
-        const avg = teams > 0 ? Math.floor(total / teams) : 0;
-        if(preview) preview.textContent = avg > 0 ? formatAvgPower(avg) : '—';
-      };
-      if(teamsEl) teamsEl.addEventListener('input', updatePreview);
-      if(powerEl) powerEl.addEventListener('input', updatePreview);
-      updatePreview();
-    });
-    tbody.querySelectorAll('tr.inline-editing input, tr.inline-editing select').forEach(el => {
-      el.addEventListener('keydown', (e) => {
-        if(e.key === 'Enter'){
-          e.preventDefault();
-          const tr = el.closest('tr');
-          const saveBtn = tr?.querySelector('[data-action="save-city-inline"]');
-          if(saveBtn) saveBtn.click();
-        } else if(e.key === 'Escape'){
-          e.preventDefault();
-          const tr = el.closest('tr');
-          const cancelBtn = tr?.querySelector('[data-action="cancel-city-inline"]');
-          if(cancelBtn) cancelBtn.click();
-        }
-      });
-    });
+    /* v8.6.8：重繪後重新套用權限標記 */
+    if(typeof window.SLG.applyPermissions === 'function'){
+      window.SLG.applyPermissions();
+    }
   }
 
   function populateFilters(){
@@ -1929,7 +1969,11 @@ const CityManager = (() => {
       }
     }, 0);
   }
-  function cancelInlineEditCity(){ editingCityRowId = null; render(); }
+
+  function cancelInlineEditCity(){
+    editingCityRowId = null;
+    render();
+  }
 
   function saveInlineEditCity(id){
     const tr = document.querySelector(`tr[data-city-id="${id}"]`);
@@ -1969,7 +2013,6 @@ const CityManager = (() => {
 
   return { init, render, startInlineEditCity, cancelInlineEditCity, saveInlineEditCity };
 })();
-
 /* ============================================================
    WarManager — 宣戰清單
    ============================================================ */
