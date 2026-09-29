@@ -1,6 +1,6 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.6.7：新增 renderSyncStatus（模式欄同步狀態）
+ * v8.6.9：城池分級渲染 + 表格懸停明細 + 同步狀態顯示上次時間
  * ========================================================================== */
 (function(){
 'use strict';
@@ -22,6 +22,7 @@ const {
   getAlliancesSorted, reorderAlliances, resetAllianceOrder,
   getAvailableAllianceIcons, isAllianceIconUsed, getAllianceIcons,
   computeCityDistance, setDistanceHighlight, clearDistanceHighlight, isNpcCity,
+  calcTeamsFromTiers,
 } = window.SLG;
 
 const Auth = () => window.SLG.Auth;
@@ -31,7 +32,7 @@ let editingAllianceRowId = null;
 let editingCityRowId = null;
 
 /* ============================================================
-   v8.6.7：同步狀態渲染
+   v8.6.7 / v8.6.9：同步狀態渲染（含上次時間）
    ============================================================ */
 let syncCountdownInterval = null;
 
@@ -41,7 +42,6 @@ function renderSyncStatus(){
   const textEl = document.getElementById('syncText');
   if(!el || !dotEl || !textEl) return;
 
-  /* 清掉舊的倒數計時 */
   if(syncCountdownInterval){ clearInterval(syncCountdownInterval); syncCountdownInterval = null; }
 
   const s = state.sync;
@@ -49,7 +49,6 @@ function renderSyncStatus(){
 
   el.classList.remove('state-idle','state-synced','state-pending','state-uploading','state-error');
 
-  /* 未登入 */
   if(!auth.signedIn){
     dotEl.textContent = '⚪';
     textEl.textContent = '未登入';
@@ -58,16 +57,14 @@ function renderSyncStatus(){
     return;
   }
 
-  /* 上傳中 */
   if(s.uploading){
     dotEl.textContent = '⏳';
     textEl.textContent = '同步中...';
     el.classList.add('state-uploading');
-    el.title = '正在上傳至雲端';
+    el.title = '正在上傳至雲端' + (s.lastUploadReason ? `（${s.lastUploadReason}）` : '');
     return;
   }
 
-  /* 錯誤 */
   if(s.lastError){
     dotEl.textContent = '🔴';
     textEl.textContent = '同步失敗';
@@ -76,7 +73,6 @@ function renderSyncStatus(){
     return;
   }
 
-  /* 待上傳 */
   if(s.dirty){
     el.classList.add('state-pending');
     dotEl.textContent = '🟡';
@@ -99,13 +95,19 @@ function renderSyncStatus(){
     return;
   }
 
-  /* 已同步 */
+  /* 已同步：v8.6.9 顯示「上次時間」 */
   dotEl.textContent = '🟢';
-  textEl.textContent = '已同步';
+  if(s.lastUploadAt){
+    const ago = timeAgo(s.lastUploadAt);
+    textEl.textContent = `已同步 · ${ago}`;
+    el.title = `上次同步：${new Date(s.lastUploadAt).toLocaleString()}\n` +
+      (s.lastUploadReason ? `原因：${s.lastUploadReason}\n` : '') +
+      `點擊查看雲端歷史版本`;
+  } else {
+    textEl.textContent = '已同步';
+    el.title = '已同步\n點擊查看雲端歷史版本';
+  }
   el.classList.add('state-synced');
-  el.title = s.lastUploadAt
-    ? '最後同步：' + timeAgo(s.lastUploadAt) + '\n點擊查看雲端歷史版本'
-    : '已同步\n點擊查看雲端歷史版本';
 }
 
 /* ============================================================
@@ -143,14 +145,12 @@ const viz = (() => {
       if(!containerEl.clientWidth) return;
       computeLayout(); resizeCanvases(); renderStatic(); renderLive(currentSec);
     });
-
     containerEl.addEventListener('touchstart', (e) => {
       if(e.touches.length === 2){
         vizPinchStartDist = touchDist(e.touches[0], e.touches[1]);
         vizPinchStartScale = vizScale;
       }
     }, { passive: true });
-
     containerEl.addEventListener('touchmove', (e) => {
       if(e.touches.length === 2 && vizPinchStartDist > 0){
         e.preventDefault();
@@ -159,11 +159,9 @@ const viz = (() => {
         if(Math.abs(newScale - vizScale) > 0.02){ vizScale = newScale; applyVizScale(); }
       }
     }, { passive: false });
-
     containerEl.addEventListener('touchend', (e) => {
       if(e.touches.length < 2){ vizPinchStartDist = 0; }
     }, { passive: true });
-
     on(EVT.DATA, () => { computeLayout(); resizeCanvases(); renderStatic(); renderLive(currentSec); });
     on(EVT.VIZ_SNAPSHOTS, ({snapshots:s, secs}) => {
       snapshots = s; snapshotSecs = secs;
@@ -186,10 +184,7 @@ const viz = (() => {
       if(panel) panel.innerHTML = '<div class="text-dim">尚未推演</div>';
     });
   }
-
-  function touchDist(t1, t2){
-    return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-  }
+  function touchDist(t1, t2){ return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY); }
   function applyVizScale(){
     if(!cvStatic || !cvLive) return;
     cvStatic.style.width = (baseCanvasW * vizScale) + 'px';
@@ -221,7 +216,6 @@ const viz = (() => {
   function getAllSnapshots(){
     return { snapEntries:[...snapshots.entries()], secs:snapshotSecs, baseMin: state.simBaseMin };
   }
-
   function computeLayout(){
     layout.nodes.clear(); layout.zones = [];
     const zonesById = new Map(state.zones.map(z => [z.id, z]));
@@ -251,7 +245,6 @@ const viz = (() => {
     layout.bounds.w = cols * cellW;
     layout.bounds.h = Math.ceil(groupArr.length / cols) * cellH;
   }
-
   function resizeCanvases(){
     if(!containerEl) return;
     const w = containerEl.clientWidth;
@@ -272,7 +265,6 @@ const viz = (() => {
     ctxStatic.setTransform(scale, 0, 0, scale, 0, 0);
     ctxLive.setTransform(scale, 0, 0, scale, 0, 0);
   }
-
   function renderStatic(){
     if(!ctxStatic) return;
     ctxStatic.clearRect(0, 0, cvStatic.width, cvStatic.height);
@@ -304,7 +296,6 @@ const viz = (() => {
       drawNode(ctxStatic, p, c.side, false);
     }
   }
-
   function drawNode(ctx, p, side, fallen){
     const color = side==='self' ? '#3b82f6' : side==='ally' ? '#10b981'
                 : side==='enemy' ? '#ef4444' : side==='common_enemy' ? '#f59e0b'
@@ -325,7 +316,6 @@ const viz = (() => {
     const label = p.name.length > 6 ? p.name.slice(0,6)+'…' : p.name;
     ctx.fillText(label, p.x, p.y + NODE_RADIUS + 12);
   }
-
   function drawArrow(ctx, from, to, color, pct){
     const dx = to.x - from.x, dy = to.y - from.y;
     const dist = Math.hypot(dx, dy);
@@ -346,7 +336,6 @@ const viz = (() => {
     ctx.lineTo(ex - Math.cos(ang+0.4)*8, ey - Math.sin(ang+0.4)*8);
     ctx.closePath(); ctx.fillStyle = color; ctx.fill();
   }
-
   function renderLive(sec){
     if(!ctxLive) return;
     ctxLive.clearRect(0, 0, cvLive.width, cvLive.height);
@@ -392,7 +381,6 @@ const viz = (() => {
       }
     }
   }
-
   function lookupSnapshot(sec){
     if(snapshotSecs.length === 0) return null;
     if(snapshots.has(sec)) return snapshots.get(sec);
@@ -404,7 +392,6 @@ const viz = (() => {
     }
     return snapshots.get(best);
   }
-
   function renderClearPanel(sec){
     const panel = document.getElementById('clearPanel');
     if(!panel) return;
@@ -431,7 +418,6 @@ const viz = (() => {
     }
     panel.innerHTML = html;
   }
-
   return {
     init, activate, getSchedule, ingestSnapshot, finalize, reset,
     getAllSnapshots, renderLive, renderClearPanel
@@ -442,7 +428,6 @@ const viz = (() => {
    R — 渲染模組
    ============================================================ */
 const R = (() => {
-
   function renderHealth(){
     const dot = document.getElementById('healthDot');
     const text = document.getElementById('healthText');
@@ -459,12 +444,10 @@ const R = (() => {
     const crd = document.getElementById('chatRoomDisplay');
     if(crd) crd.textContent = state.roomCode ? `房間 ${state.roomCode}` : '';
   }
-
   function renderHost(){
     const el = document.getElementById('hostDisplay');
     if(el) el.textContent = state.hostName ? `房主：${state.hostName}${state.isHost ? '（你）' : ''}` : '';
   }
-
   function renderDebug({msg, err} = {}){
     const el = document.getElementById('debugLog');
     if(!el || !msg) return;
@@ -476,7 +459,6 @@ const R = (() => {
     while(el.children.length > 6) el.removeChild(el.firstChild);
     el.scrollTop = el.scrollHeight;
   }
-
   function renderMembers(){
     const el = document.getElementById('onlineMembers');
     if(!el) return;
@@ -487,6 +469,7 @@ const R = (() => {
     ).join('');
   }
 
+  /* 參戰盟清單 */
   function renderAlliances(){
     const tbody = document.getElementById('allianceTableBody');
     if(!tbody) return;
@@ -557,7 +540,6 @@ const R = (() => {
         window.SLG.togglePerm(b, canEdit, '需要編輯資料權限');
       });
     }
-
     renderIconQuickRow();
   }
 
@@ -713,7 +695,6 @@ const R = (() => {
 
     let cities = state.cities.slice();
     if(zoneId !== 'all'){ cities = cities.filter(c => c.zoneId === zoneId); }
-
     if(filter === 'warOnly'){
       const citySet = new Set();
       for(const c of state.cities){
@@ -727,18 +708,15 @@ const R = (() => {
       }
       cities = cities.filter(c => citySet.has(c.id));
     }
-
     if(cities.length < 2){
       wrap.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;">' +
         (cities.length === 0 ? '無符合條件的城池' : '至少需要 2 座城池才能生成矩陣') + '</div>';
       return;
     }
-
     cities.sort((a, b) => {
       if(a.zoneId !== b.zoneId) return (a.zoneId || '').localeCompare(b.zoneId || '');
       return a.name.localeCompare(b.name, 'zh-Hant');
     });
-
     const consume = (state.settings.consumeMinPerMin + state.settings.consumeMaxPerMin) / 2;
     let html = '<table class="matrix-table"><thead><tr>';
     html += '<th>發起城 ↓ / 對手 →</th>';
@@ -801,6 +779,7 @@ const R = (() => {
     }
   }
 
+  /* v8.6.9：卡片檢視（含分級明細） */
   function renderCities(){
     const el = document.getElementById('cityList');
     if(!el) return;
@@ -834,6 +813,20 @@ const R = (() => {
         }
         html += `<div class="flex-row" style="margin-bottom:4px;"><span class="chip time">🕐 防守 ${esc(defStart)} – ${esc(defEnd)}</span></div>`;
         html += `<div class="flex-row" style="font-size:11px;color:var(--text-secondary);gap:12px;"><span>戰力 ${formatPower(c.totalPower)}</span><span>隊數 ${c.totalTeams}</span><span>均戰 ${formatAvgPower(c.avgPower)}</span></div>`;
+
+        /* v8.6.9：卡片分級明細 */
+        if(c.tierCounts){
+          const tiers = state.troopTiers.tiers;
+          const breakdown = [];
+          if(c.tierCounts.tier1 > 0) breakdown.push(`≤${tiers[0].maxLevel}級: <b>${c.tierCounts.tier1}</b>人`);
+          if(c.tierCounts.tier2 > 0) breakdown.push(`≤${tiers[1].maxLevel}級: <b>${c.tierCounts.tier2}</b>人`);
+          if(c.tierCounts.tier3 > 0) breakdown.push(`≤${tiers[2].maxLevel}級: <b>${c.tierCounts.tier3}</b>人`);
+          if(c.tierCounts.tier4 > 0) breakdown.push(`≥25級: <b>${c.tierCounts.tier4}</b>人`);
+          if(breakdown.length > 0){
+            html += `<div class="city-tier-detail">${breakdown.map(b => `<span>${b}</span>`).join('')}</div>`;
+          }
+        }
+
         if(alloc.over){
           html += `<div class="flex-row" style="font-size:11px;margin-top:4px;"><span class="text-warn">⚠️ 戰前派兵合計 ${alloc.allocated} 隊 ＞ 總隊數 ${alloc.totalTeams} 隊</span></div>`;
         } else {
@@ -1132,7 +1125,6 @@ const DYN = (() => {
    ============================================================ */
 const DEPLOY = (() => {
   let currentView = 'attack';
-
   function init(){
     document.querySelectorAll('.deploy-tab').forEach(tab => {
       tab.addEventListener('click', function(){
@@ -1151,7 +1143,6 @@ const DEPLOY = (() => {
     const exportBtn = document.getElementById('btnDeployExport');
     if (exportBtn) exportBtn.addEventListener('click', exportCSV);
   }
-
   function populateZoneFilter(){
     const sel = document.getElementById('deployZone');
     if (!sel) return;
@@ -1160,7 +1151,6 @@ const DEPLOY = (() => {
       state.zones.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('');
     if (cur && state.zones.find(z => z.id === cur)) sel.value = cur;
   }
-
   function getConflictInfo(){
     const map = new Map();
     for(const c of state.cities){
@@ -1181,7 +1171,6 @@ const DEPLOY = (() => {
     }
     return map;
   }
-
   function getFilteredCities(conflictMap){
     const zoneId = document.getElementById('deployZone').value;
     const side = document.getElementById('deploySide').value;
@@ -1215,12 +1204,10 @@ const DEPLOY = (() => {
     else if (sortBy === 'incoming') cities.sort((a, b) => (conflictMap.get(b.id)?.incoming||0) - (conflictMap.get(a.id)?.incoming||0));
     return cities;
   }
-
   function allianceIconOf(city){
     const a = state.alliances.find(al => al.id === city.allianceId);
     return (a && a.icon) ? a.icon : '';
   }
-
   function renderAttackView(cities, conflictMap){
     let html = `<div class="deploy-table-wrap"><table class="deploy-table">
       <thead><tr>
@@ -1262,7 +1249,6 @@ const DEPLOY = (() => {
     html += `</tbody></table></div>`;
     document.getElementById('deployTableWrap').innerHTML = html;
   }
-
   function renderDefendView(cities, conflictMap){
     let html = `<div class="deploy-table-wrap"><table class="deploy-table">
       <thead><tr>
@@ -1301,7 +1287,6 @@ const DEPLOY = (() => {
     html += `</tbody></table></div>`;
     document.getElementById('deployTableWrap').innerHTML = html;
   }
-
   function renderMatrixView(cities, conflictMap){
     const activeCities = cities.filter(c => {
       const hasOut = (c.attackTargets||[]).some(t => (t.preWarPercent||0)>0 && t.cityId) ||
@@ -1345,7 +1330,6 @@ const DEPLOY = (() => {
     html += '</tbody></table></div>';
     document.getElementById('deployTableWrap').innerHTML = html;
   }
-
   function renderGraphView(cities, conflictMap){
     const wrap = document.getElementById('deployTableWrap');
     const activeCities = cities.filter(c => {
@@ -1478,7 +1462,6 @@ const DEPLOY = (() => {
     gw.appendChild(svg);
     wrap.appendChild(gw);
   }
-
   function renderSummary(cities, conflictMap){
     const totalCities = cities.length;
     const withAtk = cities.filter(c => (c.attackTargets||[]).some(t => (t.preWarPercent||0)>0)).length;
@@ -1496,7 +1479,6 @@ const DEPLOY = (() => {
       總派兵 <b>${totalDeployed}</b> 隊 / 總兵力 <b>${totalTeams}</b> 隊
     `;
   }
-
   function render(){
     const conflictMap = getConflictInfo();
     const cities = getFilteredCities(conflictMap);
@@ -1518,7 +1500,6 @@ const DEPLOY = (() => {
       }
     });
   }
-
   function exportCSV(){
     const conflictMap = getConflictInfo();
     const cities = getFilteredCities(conflictMap);
@@ -1586,14 +1567,11 @@ const DEPLOY = (() => {
     URL.revokeObjectURL(url);
     logSystem('📥 已匯出 CSV');
   }
-
   return { init, render, populateZoneFilter };
 })();
 
 /* ============================================================
-   /* ============================================================
-   CityManager — 城池清單表格 + 批次操作 + 行內編輯
-   v8.6.8：改用事件委託，修復編輯/儲存/取消按鈕
+   CityManager — 城池清單表格（v8.6.9：人數 hover 明細）
    ============================================================ */
 const CityManager = (() => {
   let currentView = 'table';
@@ -1614,7 +1592,10 @@ const CityManager = (() => {
 
     ['cityFilterZone','cityFilterAlliance','cityFilterSide','citySearchInput'].forEach(id => {
       const el = document.getElementById(id);
-      if(el){ el.addEventListener('input', render); el.addEventListener('change', render); }
+      if(el){
+        el.addEventListener('input', render);
+        el.addEventListener('change', render);
+      }
     });
 
     const selAll = document.getElementById('citySelectAll');
@@ -1634,7 +1615,6 @@ const CityManager = (() => {
         applyBatch('zoneId', zoneId);
       });
     }
-
     const btnApplyAlliance = document.getElementById('btnCityBatchApplyAlliance');
     if(btnApplyAlliance){
       btnApplyAlliance.addEventListener('click', () => {
@@ -1643,7 +1623,6 @@ const CityManager = (() => {
         applyBatch('allianceId', aid);
       });
     }
-
     const btnApplySide = document.getElementById('btnCityBatchApplySide');
     if(btnApplySide){
       btnApplySide.addEventListener('click', () => {
@@ -1652,7 +1631,6 @@ const CityManager = (() => {
         applyBatch('side', side);
       });
     }
-
     const btnBatchDel = document.getElementById('btnCityBatchDelete');
     if(btnBatchDel){
       btnBatchDel.addEventListener('click', () => {
@@ -1669,35 +1647,16 @@ const CityManager = (() => {
       });
     }
 
-    /* ★ v8.6.8 修復核心：表格事件委託（只綁一次） */
     const tbody = document.getElementById('cityTableBody');
     if(tbody && !tbody.dataset.bound){
       tbody.dataset.bound = '1';
-
-      /* click 委託 */
       tbody.addEventListener('click', (e) => {
-        /* 儲存 */
         const saveBtn = e.target.closest('[data-action="save-city-inline"]');
-        if(saveBtn){
-          e.preventDefault();
-          saveInlineEditCity(saveBtn.dataset.id);
-          return;
-        }
-        /* 取消 */
+        if(saveBtn){ e.preventDefault(); saveInlineEditCity(saveBtn.dataset.id); return; }
         const cancelBtn = e.target.closest('[data-action="cancel-city-inline"]');
-        if(cancelBtn){
-          e.preventDefault();
-          cancelInlineEditCity();
-          return;
-        }
-        /* 編輯 */
+        if(cancelBtn){ e.preventDefault(); cancelInlineEditCity(); return; }
         const editBtn = e.target.closest('[data-action="edit-city"]');
-        if(editBtn){
-          e.preventDefault();
-          startInlineEditCity(editBtn.dataset.id);
-          return;
-        }
-        /* 刪除 */
+        if(editBtn){ e.preventDefault(); startInlineEditCity(editBtn.dataset.id); return; }
         const delBtn = e.target.closest('[data-action="del-city"]');
         if(delBtn){
           e.preventDefault();
@@ -1715,13 +1674,9 @@ const CityManager = (() => {
           return;
         }
       });
-
-      /* checkbox 委託 */
       tbody.addEventListener('change', e => {
         if(e.target.classList.contains('city-cb')) updateBatchBar();
       });
-
-      /* Enter / Esc 快捷鍵委託 */
       tbody.addEventListener('keydown', (e) => {
         if(!e.target.matches('input, select')) return;
         const tr = e.target.closest('tr.inline-editing');
@@ -1742,7 +1697,6 @@ const CityManager = (() => {
   function getCheckedIds(){
     return [...document.querySelectorAll('.city-table .city-cb:checked')].map(cb => cb.dataset.id);
   }
-
   function updateBatchBar(){
     const ids = getCheckedIds();
     const bar = document.getElementById('cityBatchBar');
@@ -1750,7 +1704,6 @@ const CityManager = (() => {
     if(bar) bar.style.display = ids.length > 0 ? '' : 'none';
     if(cnt) cnt.textContent = ids.length;
   }
-
   function applyBatch(field, value){
     const ids = getCheckedIds();
     if(ids.length === 0){ alert('請先勾選城池'); return; }
@@ -1773,7 +1726,6 @@ const CityManager = (() => {
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     logSystem(`✅ 已批次修改 ${ids.length} 座城池`);
   }
-
   function getFilteredCities(){
     const zoneId = document.getElementById('cityFilterZone')?.value || 'all';
     const allianceId = document.getElementById('cityFilterAlliance')?.value || 'all';
@@ -1786,6 +1738,33 @@ const CityManager = (() => {
       if(search && !c.name.toLowerCase().includes(search)) return false;
       return true;
     });
+  }
+
+  /* v8.6.9：人數欄位渲染（有分級→hover 明細） */
+  function renderMemberCell(c, isEditing){
+    if(isEditing){
+      return `<td class="col-num">—</td>`;  /* 編輯模式由分級輸入替代，這裡留空 */
+    }
+    const hasTiers = c.tierCounts && (c.tierCounts.tier1 || c.tierCounts.tier2 || c.tierCounts.tier3 || c.tierCounts.tier4);
+    if(!hasTiers){
+      return `<td class="col-num">${c.memberCount || '—'}</td>`;
+    }
+    const tiers = state.troopTiers.tiers;
+    const tc = c.tierCounts;
+    const detailRows = [];
+    if(tc.tier1 > 0) detailRows.push(`<div class="row"><span>≤${tiers[0].maxLevel}級</span><b>${tc.tier1} 人</b></div>`);
+    if(tc.tier2 > 0) detailRows.push(`<div class="row"><span>≤${tiers[1].maxLevel}級</span><b>${tc.tier2} 人</b></div>`);
+    if(tc.tier3 > 0) detailRows.push(`<div class="row"><span>≤${tiers[2].maxLevel}級</span><b>${tc.tier3} 人</b></div>`);
+    if(tc.tier4 > 0) detailRows.push(`<div class="row"><span>≥25級</span><b>${tc.tier4} 人</b></div>`);
+    if(detailRows.length === 0){
+      return `<td class="col-num">${c.memberCount || '—'}</td>`;
+    }
+    return `<td class="col-num city-member-cell">
+      ${c.memberCount || 0}
+      <div class="member-detail">
+        ${detailRows.join('')}
+      </div>
+    </td>`;
   }
 
   function render(){
@@ -1849,7 +1828,7 @@ const CityManager = (() => {
             <td>${zone ? esc(zone.name) : '<span class="text-dim">—</span>'}</td>
             <td>${icon}${alliance ? esc(alliance.name) : '<span class="text-dim">NPC</span>'}</td>
             <td><span class="chip ${sideClass(c.side)}" style="font-size:9px;">${sideLabel(c.side)}</span></td>
-            <td class="col-num">${c.memberCount || '—'}</td>
+            ${renderMemberCell(c, false)}
             <td class="col-num">${formatPower(c.totalPower)}</td>
             <td class="col-num">${c.totalTeams || '—'}</td>
             <td class="col-num">${avgDisplay}</td>
@@ -1862,7 +1841,6 @@ const CityManager = (() => {
       }
     }
 
-    /* 行內編輯即時預覽（只針對當前編輯行，仍需個別綁 input） */
     if(tbody){
       tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
         const teamsEl = tr.querySelector('[data-inline-field="totalTeams"]');
@@ -1884,7 +1862,6 @@ const CityManager = (() => {
     updateBatchBar();
     renderDistSummary();
 
-    /* v8.6.8：重繪後重新套用權限標記 */
     if(typeof window.SLG.applyPermissions === 'function'){
       window.SLG.applyPermissions();
     }
@@ -1906,7 +1883,6 @@ const CityManager = (() => {
       aSel.value = cur && state.alliances.find(a => a.id === cur) ? cur : 'all';
     }
   }
-
   function populateBatchZoneOptions(){
     const sel = document.getElementById('cityBatchZone');
     if(!sel) return;
@@ -1920,14 +1896,12 @@ const CityManager = (() => {
       if(valid) sel.value = cur;
     }
   }
-
   function populateBatchAllianceOptions(){
     const sel = document.getElementById('cityBatchAlliance');
     if(!sel) return;
     sel.innerHTML = '<option value="">更改所屬盟...</option>' +
       state.alliances.map(a => `<option value="${a.id}">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</option>`).join('');
   }
-
   function renderDistSummary(){
     const el = document.getElementById('allianceDistSummary');
     if(!el) return;
@@ -1956,7 +1930,6 @@ const CityManager = (() => {
       </div>`;
     }).join('');
   }
-
   function startInlineEditCity(id){
     if(editingCityRowId === id) return;
     editingCityRowId = id;
@@ -1969,12 +1942,7 @@ const CityManager = (() => {
       }
     }, 0);
   }
-
-  function cancelInlineEditCity(){
-    editingCityRowId = null;
-    render();
-  }
-
+  function cancelInlineEditCity(){ editingCityRowId = null; render(); }
   function saveInlineEditCity(id){
     const tr = document.querySelector(`tr[data-city-id="${id}"]`);
     if(!tr) return false;
@@ -2013,6 +1981,7 @@ const CityManager = (() => {
 
   return { init, render, startInlineEditCity, cancelInlineEditCity, saveInlineEditCity };
 })();
+
 /* ============================================================
    WarManager — 宣戰清單
    ============================================================ */
@@ -2056,7 +2025,6 @@ const WarManager = (() => {
       });
     }
   }
-
   function getAllWarLines(){
     const lines = [];
     for(const src of state.cities){
@@ -2073,12 +2041,10 @@ const WarManager = (() => {
     }
     return lines;
   }
-
   function isSameZoneAsSource(srcCity, tgtCity){
     if(state.settings.crossZoneWarAllowed) return true;
     return (srcCity.zoneId || '') === (tgtCity.zoneId || '');
   }
-
   function getTargetsForType(srcCityId, type){
     if(type === 'attack'){
       const src = state.cities.find(c => c.id === srcCityId);
@@ -2112,7 +2078,6 @@ const WarManager = (() => {
     }
     return [];
   }
-
   function findWarLine(srcId, tgtId){
     if(!tgtId) return null;
     const src = state.cities.find(c => c.id === srcId);
@@ -2125,7 +2090,6 @@ const WarManager = (() => {
     }
     return null;
   }
-
   function addLine(){
     if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
     for(const src of state.cities){
@@ -2146,7 +2110,6 @@ const WarManager = (() => {
     }
     alert('已無新的宣戰組合可新增');
   }
-
   function renderAddForm(){
     const srcSel = document.getElementById('warAddSrc');
     if(!srcSel) return;
@@ -2159,7 +2122,6 @@ const WarManager = (() => {
       }).join('');
     updateAddTargetOptions();
   }
-
   function updateAddTargetOptions(){
     const srcSel = document.getElementById('warAddSrc');
     const typeSel = document.getElementById('warAddType');
@@ -2200,7 +2162,6 @@ const WarManager = (() => {
       hintEl.textContent = `＊可選 ${availableTargets.length} 個目標城${zoneHint}`;
     }
   }
-
   function doAddManual(){
     const srcSel = document.getElementById('warAddSrc');
     const typeSel = document.getElementById('warAddType');
@@ -2232,17 +2193,14 @@ const WarManager = (() => {
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
     logSystem(`✅ 已新增宣戰：${src.name} → ${tgt.name}`);
   }
-
   function computeEndTime(startTime, limitMin){
     if(!startTime) return '待設定';
     const m = hhmmToMinutes(startTime);
     if(!m && m !== 0) return '待設定';
     return minutesToHHMM(m + (parseInt(limitMin) || 120));
   }
-
   function getSortPref(){ return state.listPrefs.warSort || DEFAULT_SORT; }
   function getGroupPref(){ return state.listPrefs.warGroup || DEFAULT_GROUP; }
-
   function sortLines(lines, sortBy){
     const copy = lines.slice();
     if(sortBy === 'time'){
@@ -2270,7 +2228,6 @@ const WarManager = (() => {
     }
     return copy;
   }
-
   function groupLines(lines, groupBy){
     if(groupBy === 'none') return [{ key: '__all__', title: '', items: lines }];
     const groups = new Map();
@@ -2292,7 +2249,6 @@ const WarManager = (() => {
     else arr.sort((a, b) => String(a.title).localeCompare(String(b.title), 'zh-Hant'));
     return arr;
   }
-
   function render(){
     const container = document.getElementById('warListContainer');
     if(!container) return;
@@ -2300,7 +2256,6 @@ const WarManager = (() => {
     if(sortSel) sortSel.value = getSortPref();
     const groupSel = document.getElementById('warGroupSelect');
     if(groupSel) groupSel.value = getGroupPref();
-
     const lines = getAllWarLines();
     if(lines.length === 0){
       container.innerHTML = '<div class="list-container-empty">尚無宣戰指示。點下方「➕ 新增」或「⚡ 自動新增」開始。</div>';
@@ -2308,7 +2263,6 @@ const WarManager = (() => {
       const sorted = sortLines(lines, getSortPref());
       const grouped = groupLines(sorted, getGroupPref());
       const limitMin = state.settings.timeLimitMin || 120;
-
       const theadHtml = `<thead><tr>
         <th style="width:80px;">開始時間</th>
         <th style="width:80px;">結束時間</th>
@@ -2317,7 +2271,6 @@ const WarManager = (() => {
         <th>目標城</th>
         <th style="width:50px;">操作</th>
       </tr></thead>`;
-
       const renderRow = (l, idx) => {
         const src = state.cities.find(c => c.id === l.srcId);
         const tgt = state.cities.find(c => c.id === l.tgtId);
@@ -2337,7 +2290,6 @@ const WarManager = (() => {
               incomingTimes.sort();
               return incomingTimes[0];
             })(), limitMin);
-
         const rowPending = !l.tgtId;
         const srcOpts = state.cities.map(c =>
           `<option value="${c.id}" ${c.id === l.srcId ? 'selected' : ''}>${esc(c.name)}</option>`
@@ -2371,7 +2323,6 @@ const WarManager = (() => {
           <select class="inline-select" data-war-src="1" data-idx="${idx}" style="flex:1;">${srcOpts}</select>
         </div>`;
         const tgtCell = `<select class="inline-select" data-war-tgt="1" data-idx="${idx}">${tgtOpts}</select>`;
-
         return `<tr class="${rowPending ? 'row-pending' : ''}" data-war-row="${idx}">
           <td>${timeCell}</td>
           <td>${endCell}</td>
@@ -2381,7 +2332,6 @@ const WarManager = (() => {
           <td class="col-del"><button class="btn btn-danger btn-sm" data-war-del="1" data-idx="${idx}">🗑️</button></td>
         </tr>`;
       };
-
       let html = '';
       if(getGroupPref() === 'none'){
         html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
@@ -2402,7 +2352,6 @@ const WarManager = (() => {
         }).join('');
       }
       container.innerHTML = html;
-
       container.querySelectorAll('.list-group-header').forEach(h => {
         h.addEventListener('click', () => {
           const group = h.closest('.list-group');
@@ -2413,7 +2362,6 @@ const WarManager = (() => {
     }
     renderAddForm();
   }
-
   function bindWarRowEvents(container, sortedLines){
     container.querySelectorAll('[data-war-time]').forEach(inp => {
       inp.addEventListener('change', function(){
@@ -2468,7 +2416,6 @@ const WarManager = (() => {
       });
     });
   }
-
   function updateWarLineTime(line, newTime){
     const src = state.cities.find(c => c.id === line.srcId);
     if(!src) return;
@@ -2481,7 +2428,6 @@ const WarManager = (() => {
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
-
   function changeWarLineAllowEmpty(oldLine, newSrcId, newType, newTime){
     deleteLineSilent(oldLine);
     const src = state.cities.find(c => c.id === newSrcId);
@@ -2500,7 +2446,6 @@ const WarManager = (() => {
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
-
   function changeWarLine(oldLine, newSrcId, newTgtId, newType, newTime){
     const validTargets = getTargetsForType(newSrcId, newType);
     if(!validTargets.find(c => c.id === newTgtId)){
@@ -2530,7 +2475,6 @@ const WarManager = (() => {
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
-
   function deleteWarLine(line){
     deleteLineSilent(line);
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
@@ -2538,7 +2482,6 @@ const WarManager = (() => {
     render();
     if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   }
-
   function deleteLineSilent(line){
     const src = state.cities.find(c => c.id === line.srcId);
     if(!src) return;
@@ -2550,12 +2493,10 @@ const WarManager = (() => {
     state.entityRev.city[src.id] = (state.entityRev.city[src.id] || 0) + 1;
     if(window.SLG.markDirty) window.SLG.markDirty('city', src.id);
   }
-
   function cityName(id){
     const c = state.cities.find(x => x.id === id);
     return c ? c.name : id;
   }
-
   function markDirty(cityId){
     state.entityRev.city[cityId] = (state.entityRev.city[cityId] || 0) + 1;
     if(window.SLG.markDirty) window.SLG.markDirty('city', cityId);
@@ -2563,11 +2504,7 @@ const WarManager = (() => {
     if(window.SLG.flushPatches) window.SLG.flushPatches();
     if(window.SLG.saveState) window.SLG.saveState();
   }
-
-  return {
-    init, render, findWarLine,
-    renderAddForm, updateAddTargetOptions,
-  };
+  return { init, render, findWarLine, renderAddForm, updateAddTargetOptions };
 })();
 
 /* ============================================================
@@ -2601,7 +2538,6 @@ const DeployInstr = (() => {
       });
     }
   }
-
   function getAllDeployLines(){
     const lines = [];
     for(const src of state.cities){
@@ -2620,10 +2556,8 @@ const DeployInstr = (() => {
     }
     return lines;
   }
-
   function getSortPref(){ return state.listPrefs.deploySort || DEFAULT_SORT; }
   function getGroupPref(){ return state.listPrefs.deployGroup || DEFAULT_GROUP; }
-
   function computeEndTime(startTime, limitMin){
     if(!startTime) return '待設定';
     return minutesToHHMM(hhmmToMinutes(startTime) + (parseInt(limitMin) || 120));
@@ -2632,7 +2566,6 @@ const DeployInstr = (() => {
     const city = state.cities.find(c => c.id === cityId);
     return city ? (city.defStartTime || '') : '';
   }
-
   function sortLines(lines, sortBy){
     const copy = lines.slice();
     if(sortBy === 'alliance'){
@@ -2653,7 +2586,6 @@ const DeployInstr = (() => {
     }
     return copy;
   }
-
   function groupLines(lines, groupBy){
     if(groupBy === 'none') return [{ key: '__all__', title: '', items: lines }];
     const groups = new Map();
@@ -2675,7 +2607,6 @@ const DeployInstr = (() => {
     else arr.sort((a, b) => String(a.title).localeCompare(String(b.title), 'zh-Hant'));
     return arr;
   }
-
   function render(){
     const container = document.getElementById('deployListContainer');
     if(!container) return;
@@ -2683,7 +2614,6 @@ const DeployInstr = (() => {
     if(sortSel) sortSel.value = getSortPref();
     const groupSel = document.getElementById('deployGroupSelect');
     if(groupSel) groupSel.value = getGroupPref();
-
     const lines = getAllDeployLines();
     if(lines.length === 0){
       container.innerHTML = '<div class="list-container-empty">尚無出兵指示。請先在「⚔️ 宣戰」建立宣戰路線。</div>';
@@ -2692,7 +2622,6 @@ const DeployInstr = (() => {
     const sorted = sortLines(lines, getSortPref());
     const grouped = groupLines(sorted, getGroupPref());
     const limitMin = state.settings.timeLimitMin || 120;
-
     const theadHtml = `<thead><tr>
       <th style="width:80px;">開始時間</th>
       <th style="width:80px;">結束時間</th>
@@ -2703,7 +2632,6 @@ const DeployInstr = (() => {
       <th style="width:70px;">復活%</th>
       <th style="width:60px;">順序</th>
     </tr></thead>`;
-
     const renderRow = (l, idx) => {
       const src = state.cities.find(c => c.id === l.srcId);
       const tgt = state.cities.find(c => c.id === l.tgtId);
@@ -2742,7 +2670,6 @@ const DeployInstr = (() => {
         <td><input type="number" class="inline-number" data-deploy-field="priority" data-idx="${idx}" value="${l.priority || 1}" min="1" max="99" step="1"></td>
       </tr>`;
     };
-
     let html = '';
     if(getGroupPref() === 'none'){
       html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
@@ -2763,7 +2690,6 @@ const DeployInstr = (() => {
       }).join('');
     }
     container.innerHTML = html;
-
     container.querySelectorAll('.list-group-header').forEach(h => {
       h.addEventListener('click', () => {
         const group = h.closest('.list-group');
@@ -2772,7 +2698,6 @@ const DeployInstr = (() => {
     });
     bindDeployRowEvents(container, sorted);
   }
-
   function bindDeployRowEvents(container, sortedLines){
     container.querySelectorAll('[data-deploy-field]').forEach(inp => {
       inp.addEventListener('change', function(){
@@ -2784,7 +2709,6 @@ const DeployInstr = (() => {
       });
     });
   }
-
   function updateDeployField(line, field, value){
     const src = state.cities.find(c => c.id === line.srcId);
     if(!src) return;
@@ -2799,7 +2723,6 @@ const DeployInstr = (() => {
     if(window.SLG.saveState) window.SLG.saveState();
     render();
   }
-
   return { init, render };
 })();
 
@@ -2808,7 +2731,6 @@ const DeployInstr = (() => {
    ============================================================ */
 const RouteManager = (() => {
   let editingRouteId = null;
-
   function init(){
     const btnQuick = document.getElementById('btnQuickAddRoute');
     if(btnQuick) btnQuick.addEventListener('click', doQuickAdd);
@@ -2882,7 +2804,6 @@ const RouteManager = (() => {
     const mDelete = document.getElementById('routeEditDelete');
     if(mDelete) mDelete.addEventListener('click', deleteRouteFromModal);
   }
-
   function doQuickAdd(){
     const selA = document.getElementById('quickRouteCityA');
     const selB = document.getElementById('quickRouteCityB');
@@ -2900,7 +2821,6 @@ const RouteManager = (() => {
       logSystem('🛣️ 已新增路線');
     }
   }
-
   function addEmptyLine(){
     if(state.cities.length < 2){ alert('至少需要 2 座城池'); return; }
     const cities = state.cities;
@@ -2921,7 +2841,6 @@ const RouteManager = (() => {
     }
     alert('所有城池組合都已有路線');
   }
-
   function getCityZoneName(cityId){
     const city = state.cities.find(c => c.id === cityId);
     if(!city) return '（無效城池）';
@@ -2929,7 +2848,6 @@ const RouteManager = (() => {
     const zone = state.zones.find(z => z.id === city.zoneId);
     return zone ? zone.name : '未分配戰區';
   }
-
   function groupRoutes(){
     const groups = new Map();
     for(const r of (state.routes || [])){
@@ -2945,7 +2863,6 @@ const RouteManager = (() => {
     });
     return arr;
   }
-
   function render(){
     populateQuickSelects();
     const el = document.getElementById('routeGroups');
@@ -2981,7 +2898,6 @@ const RouteManager = (() => {
       </div>`;
     }).join('');
   }
-
   function populateQuickSelects(){
     const selA = document.getElementById('quickRouteCityA');
     const selB = document.getElementById('quickRouteCityB');
@@ -2994,7 +2910,6 @@ const RouteManager = (() => {
     if(curA && state.cities.find(c => c.id === curA)) selA.value = curA;
     if(curB && state.cities.find(c => c.id === curB)) selB.value = curB;
   }
-
   function openRouteEditModal(routeId){
     const r = (state.routes || []).find(x => x.id === routeId);
     if(!r){ alert('找不到此路線'); return; }
@@ -3008,13 +2923,11 @@ const RouteManager = (() => {
     const modal = document.getElementById('routeEditModal');
     if(modal) modal.classList.add('show');
   }
-
   function closeRouteEditModal(){
     editingRouteId = null;
     const modal = document.getElementById('routeEditModal');
     if(modal) modal.classList.remove('show');
   }
-
   function saveRouteEditModal(){
     if(!editingRouteId) return;
     const selA = document.getElementById('re_cityA');
@@ -3036,7 +2949,6 @@ const RouteManager = (() => {
     if(window.SLG.WarManager) window.SLG.WarManager.render();
     logSystem('🛣️ 已更新路線');
   }
-
   function deleteRouteFromModal(){
     if(!editingRouteId) return;
     const r = (state.routes || []).find(x => x.id === editingRouteId);
@@ -3050,7 +2962,6 @@ const RouteManager = (() => {
     if(window.SLG.WarManager) window.SLG.WarManager.render();
     logSystem('🛣️ 已刪除路線');
   }
-
   return { init, render, openRouteEditModal, closeRouteEditModal };
 })();
 
@@ -3076,8 +2987,7 @@ const GameMap = (() => {
   let pinchStartCenter = null;
   let touchPanStart = null;
 
-  const CANVAS_W = 2000;
-  const CANVAS_H = 2000;
+  const CANVAS_W = 2000, CANVAS_H = 2000;
   const LS_MAP_ZONE_KEY = 'slg_map_zone_v862';
 
   function init(){
@@ -3090,7 +3000,6 @@ const GameMap = (() => {
     canvas.height = CANVAS_H;
     canvas.style.width = CANVAS_W + 'px';
     canvas.style.height = CANVAS_H + 'px';
-
     loadZoneFilter();
     containerEl.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('pointerdown', onPointerDown);
@@ -3098,12 +3007,10 @@ const GameMap = (() => {
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('pointerleave', () => { hoveredCityId = null; });
-
     containerEl.addEventListener('touchstart', onTouchStart, { passive: false });
     containerEl.addEventListener('touchmove', onTouchMove, { passive: false });
     containerEl.addEventListener('touchend', onTouchEnd, { passive: false });
     containerEl.addEventListener('touchcancel', onTouchEnd, { passive: false });
-
     const btnEdit = document.getElementById('btnMapEditRoute');
     if(btnEdit){
       btnEdit.addEventListener('click', () => {
@@ -3128,7 +3035,6 @@ const GameMap = (() => {
     if(btnClearHighlight) btnClearHighlight.addEventListener('click', () => {
       if(window.SLG.clearDistanceHighlight) window.SLG.clearDistanceHighlight();
     });
-
     const mapZoneSel = document.getElementById('mapZoneSelect');
     if(mapZoneSel && !mapZoneSel.dataset.bound){
       mapZoneSel.dataset.bound = '1';
@@ -3141,7 +3047,6 @@ const GameMap = (() => {
     window.addEventListener('resize', () => { if(containerEl) render(); });
     refreshZoneSelector();
   }
-
   function loadZoneFilter(){
     try{
       const saved = localStorage.getItem(LS_MAP_ZONE_KEY);
@@ -3152,17 +3057,13 @@ const GameMap = (() => {
     try{ localStorage.setItem(LS_MAP_ZONE_KEY, currentZoneFilter); }catch(e){}
   }
   function getZoneFilter(){ return currentZoneFilter; }
-
   function setZoneFilter(zoneId){
     currentZoneFilter = zoneId || 'all';
     saveZoneFilter();
     const sel = document.getElementById('mapZoneSelect');
     if(sel && sel.value !== currentZoneFilter) sel.value = currentZoneFilter;
-    fitView();
-    applyView();
-    render();
+    fitView(); applyView(); render();
   }
-
   function refreshZoneSelector(){
     const sel = document.getElementById('mapZoneSelect');
     if(!sel) return;
@@ -3180,13 +3081,9 @@ const GameMap = (() => {
     if(noneCount > 0){ html += `<option value="__none__">未分配（${noneCount}）</option>`; }
     sel.innerHTML = html;
     const validValues = ['all', '__none__'].concat(state.zones.map(z => z.id));
-    if(!validValues.includes(currentZoneFilter)){
-      currentZoneFilter = 'all';
-      saveZoneFilter();
-    }
+    if(!validValues.includes(currentZoneFilter)){ currentZoneFilter = 'all'; saveZoneFilter(); }
     sel.value = currentZoneFilter;
   }
-
   function getVisibleRect(){
     if(!containerEl) return null;
     const sc = view.scale || 1;
@@ -3196,7 +3093,6 @@ const GameMap = (() => {
     const height = (containerEl.clientHeight || 400) / sc;
     return { left, top, right: left + width, bottom: top + height };
   }
-
   function rayToRectEdge(sx, sy, ux, uy, rect){
     let minT = Infinity;
     if(ux > 0.0001) minT = Math.min(minT, (rect.right - sx) / ux);
@@ -3206,12 +3102,10 @@ const GameMap = (() => {
     if(!isFinite(minT) || minT <= 0) return null;
     return { x: sx + ux * minT, y: sy + uy * minT };
   }
-
   function applyCursor(){
     if(!canvas) return;
     canvas.style.cursor = editRouteMode ? 'crosshair' : 'grab';
   }
-
   function onWheel(e){
     e.preventDefault();
     const rect = containerEl.getBoundingClientRect();
@@ -3225,10 +3119,8 @@ const GameMap = (() => {
     applyView();
     render();
   }
-
   function touchDist(t1, t2){ return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY); }
   function touchCenter(t1, t2){ return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
-
   function onTouchStart(e){
     if(e.touches.length === 2){
       e.preventDefault();
@@ -3252,7 +3144,6 @@ const GameMap = (() => {
       }
     }
   }
-
   function onTouchMove(e){
     if(e.touches.length === 2 && pinchStartDist > 0){
       e.preventDefault();
@@ -3289,7 +3180,6 @@ const GameMap = (() => {
       }
     }
   }
-
   function onTouchEnd(e){
     if(e.touches.length < 2){ pinchStartDist = 0; pinchStartCenter = null; }
     if(e.touches.length === 0){
@@ -3313,16 +3203,13 @@ const GameMap = (() => {
       applyCursor();
     }
   }
-
   function getWorldPos(e){ return getWorldPosFromClient(e.clientX, e.clientY); }
-
   function getWorldPosFromClient(clientX, clientY){
     const rect = containerEl.getBoundingClientRect();
     const sx = clientX - rect.left + containerEl.scrollLeft;
     const sy = clientY - rect.top + containerEl.scrollTop;
     return { x: sx / view.scale, y: sy / view.scale };
   }
-
   function pickCity(worldPos){
     let closest = null, minDist = 40;
     for(const c of state.cities){
@@ -3334,12 +3221,10 @@ const GameMap = (() => {
     }
     return closest;
   }
-
   function isCityVisibleInCurrentZone(city){
     if(currentZoneFilter === 'all') return true;
     return (city.zoneId || '__none__') === currentZoneFilter;
   }
-
   function onPointerDown(e){
     if(e.pointerType === 'touch') return;
     const worldPos = getWorldPos(e);
@@ -3357,7 +3242,6 @@ const GameMap = (() => {
     dragStart = { x: e.clientX, y: e.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
     canvas.style.cursor = 'grabbing';
   }
-
   function onPointerMove(e){
     if(e.pointerType === 'touch') return;
     const worldPos = getWorldPos(e);
@@ -3377,7 +3261,6 @@ const GameMap = (() => {
     }
     if(state.cities.length > 0) render();
   }
-
   function onPointerUp(e){
     if(e.pointerType === 'touch') return;
     if(nodeDragging){ nodeDragging = null; applyCursor(); return; }
@@ -3398,7 +3281,6 @@ const GameMap = (() => {
     }
     if(dragging){ dragging = false; applyCursor(); }
   }
-
   function computeLayout(){
     const cities = state.cities;
     if(cities.length === 0){ nodePositions.clear(); return; }
@@ -3415,9 +3297,7 @@ const GameMap = (() => {
     });
     const edges = [];
     for(const r of (state.routes || [])){
-      if(nodePositions.has(r.cityAId) && nodePositions.has(r.cityBId)){
-        edges.push([r.cityAId, r.cityBId]);
-      }
+      if(nodePositions.has(r.cityAId) && nodePositions.has(r.cityBId)) edges.push([r.cityAId, r.cityBId]);
     }
     const iterations = N > 60 ? 150 : 300;
     let temp = W / 10;
@@ -3466,7 +3346,6 @@ const GameMap = (() => {
     }
     layoutDirty = false;
   }
-
   function fitView(){
     if(nodePositions.size === 0){ view = { x: 0, y: 0, scale: 1 }; return; }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -3489,7 +3368,6 @@ const GameMap = (() => {
     view.x = minX - 100;
     view.y = minY - 100;
   }
-
   function applyView(){
     if(!canvas) return;
     canvas.style.transform = `scale(${view.scale})`;
@@ -3501,7 +3379,6 @@ const GameMap = (() => {
       containerEl.scrollTop = view.y * view.scale;
     }
   }
-
   function drawCrossZoneEdge(fromPos, toPos, visRect, color, dashed){
     if(!visRect) return;
     const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y;
@@ -3521,7 +3398,6 @@ const GameMap = (() => {
     ctx.stroke();
     if(dashed) ctx.setLineDash([]);
   }
-
   function drawCrossZoneArrow(fromPos, toPos, visRect, isAttack, targetName){
     if(!visRect) return;
     const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y;
@@ -3573,7 +3449,6 @@ const GameMap = (() => {
     ctx.textBaseline = 'middle';
     ctx.fillText(labelText, clampedLx, clampedLy);
   }
-
   function drawNormalRoute(a, b, isHi){
     if(isHi){ ctx.strokeStyle = 'rgba(34,255,136,0.9)'; ctx.lineWidth = 6; }
     else { ctx.strokeStyle = 'rgba(160,160,160,0.45)'; ctx.lineWidth = 3; }
@@ -3583,7 +3458,6 @@ const GameMap = (() => {
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
-
   function render(){
     if(!canvas || !ctx) return;
     computeLayout();
@@ -3591,7 +3465,6 @@ const GameMap = (() => {
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
     ctx.fillStyle = '#0a0e17';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
     const isAllView = (currentZoneFilter === 'all');
     if(isAllView){
       const zoneCities = new Map();
@@ -3644,7 +3517,6 @@ const GameMap = (() => {
         return;
       }
     }
-
     const visRect = getVisibleRect();
     const highlightedRoutes = new Set(highlight ? highlight.routeKeys : []);
     for(const r of (state.routes || [])){
@@ -3673,7 +3545,6 @@ const GameMap = (() => {
         drawCrossZoneEdge(fromPos, toPos, visRect, 'rgba(160,160,160,0.5)', true);
       }
     }
-
     if(routeDragFrom && routeDragEnd){
       const a = nodePositions.get(routeDragFrom.id);
       if(a){
@@ -3687,7 +3558,6 @@ const GameMap = (() => {
         ctx.setLineDash([]);
       }
     }
-
     if(!isAllView){
       for(const src of state.cities){
         const srcZone = src.zoneId || '__none__';
@@ -3710,7 +3580,6 @@ const GameMap = (() => {
         }
       }
     }
-
     const highlightedCities = new Set(highlight ? highlight.cityIds : []);
     for(const c of state.cities){
       if(!isAllView){
@@ -3722,7 +3591,6 @@ const GameMap = (() => {
       const isHovered = (hoveredCityId === c.id);
       const isDragFrom = routeDragFrom && routeDragFrom.id === c.id;
       const isHi = highlightedCities.has(c.id);
-
       if(isHovered || isDragFrom || isHi){
         ctx.beginPath();
         ctx.arc(p.x, p.y, isHi ? 46 : 42, 0, Math.PI * 2);
@@ -3730,7 +3598,6 @@ const GameMap = (() => {
         ctx.lineWidth = isHi ? 4 : (isDragFrom ? 4 : 3);
         ctx.stroke();
       }
-
       const sideColor = c.side === 'self' ? 'rgba(59,130,246,0.25)'
                      : c.side === 'ally' ? 'rgba(16,185,129,0.25)'
                      : (c.side === 'enemy' || c.side === 'common_enemy') ? 'rgba(239,68,68,0.25)'
@@ -3742,14 +3609,12 @@ const GameMap = (() => {
       ctx.strokeStyle = sideColor.replace('0.25', '0.8');
       ctx.lineWidth = 2;
       ctx.stroke();
-
       const alliance = state.alliances.find(a => a.id === c.allianceId);
       const icon = (alliance && alliance.icon) ? alliance.icon : '🏰';
       ctx.font = '28px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(icon, p.x, p.y);
-
       const level = c.level || 1;
       ctx.beginPath();
       ctx.arc(p.x + 22, p.y - 22, 11, 0, Math.PI * 2);
@@ -3758,19 +3623,16 @@ const GameMap = (() => {
       ctx.font = 'bold 11px sans-serif';
       ctx.fillStyle = '#000';
       ctx.fillText(level, p.x + 22, p.y - 22);
-
       ctx.font = 'bold 13px sans-serif';
       ctx.fillStyle = '#e2e8f0';
       ctx.textBaseline = 'top';
       ctx.fillText(c.name, p.x, p.y + 38);
-
       if(c.isCapital){
         ctx.font = '16px sans-serif';
         ctx.fillText('👑', p.x - 28, p.y - 32);
       }
     }
   }
-
   function activate(){
     if(!containerEl) return;
     refreshZoneSelector();
@@ -3782,7 +3644,6 @@ const GameMap = (() => {
     applyCursor();
     render();
   }
-
   function reset(){
     nodePositions.clear();
     layoutDirty = true;
@@ -3791,9 +3652,7 @@ const GameMap = (() => {
     applyView();
     refreshZoneSelector();
   }
-
   function setHighlight(h){ highlight = h; render(); }
-
   return {
     init, render, activate, reset, fitView, setHighlight,
     getZoneFilter, setZoneFilter, refreshZoneSelector,
@@ -3878,7 +3737,6 @@ function renderOverview(){
    ============================================================ */
 const DistanceTool = (() => {
   let currentResult = null;
-
   function init(){
     const btn = document.getElementById('btnCalcDistance');
     if(btn) btn.addEventListener('click', doCalculate);
@@ -3904,7 +3762,6 @@ const DistanceTool = (() => {
       });
     });
   }
-
   function populateSelects(){
     const srcSel = document.getElementById('distSrcCity');
     const tgtSel = document.getElementById('distTgtCity');
@@ -3921,7 +3778,6 @@ const DistanceTool = (() => {
     if(curSrc && state.cities.find(c => c.id === curSrc)) srcSel.value = curSrc;
     if(curTgt && state.cities.find(c => c.id === curTgt)) tgtSel.value = curTgt;
   }
-
   function doCalculate(){
     const srcSel = document.getElementById('distSrcCity');
     const tgtSel = document.getElementById('distTgtCity');
@@ -3935,14 +3791,10 @@ const DistanceTool = (() => {
     if(state.distanceView === 'map'){ setDistanceHighlight(result); }
     renderResult();
   }
-
   function renderResult(){
     const el = document.getElementById('distanceResult');
     if(!el) return;
-    if(!currentResult){
-      el.innerHTML = '<div class="text-dim">請選擇起點與終點後點「計算」</div>';
-      return;
-    }
+    if(!currentResult){ el.innerHTML = '<div class="text-dim">請選擇起點與終點後點「計算」</div>'; return; }
     const r = currentResult;
     const view = state.distanceView || 'number';
     if(view === 'map'){
@@ -3952,7 +3804,6 @@ const DistanceTool = (() => {
     if(view === 'number') el.innerHTML = renderNumberView(r);
     else if(view === 'path') el.innerHTML = renderPathView(r);
   }
-
   function getCrossZoneWarning(path){
     if(!path || path.length < 2) return '';
     const zoneIds = new Set();
@@ -3963,7 +3814,6 @@ const DistanceTool = (() => {
     if(zoneIds.size <= 1) return '';
     return '<div class="dist-crosszone-warn">⚠️ 此路徑跨越其他戰區，請切到「🌐 全部」檢視（地圖工具列）</div>';
   }
-
   function renderNumberView(r){
     const srcInfo = `${esc(r.src.name)}（${esc(r.src.allianceName || r.src.side)}）`;
     const tgtInfo = `${esc(r.tgt.name)}（${esc(r.tgt.allianceName || r.tgt.side)}）`;
@@ -3997,7 +3847,6 @@ const DistanceTool = (() => {
     }
     return html;
   }
-
   function renderPathView(r){
     let html = '';
     if(r.passable.found){
@@ -4030,7 +3879,6 @@ const DistanceTool = (() => {
     }
     return html;
   }
-
   function renderPathNodes(result){
     const nodes = result.nodes;
     const conquerSet = new Set(result.conquerNodes);
@@ -4052,14 +3900,12 @@ const DistanceTool = (() => {
     html += '</div>';
     return html;
   }
-
   function clear(){
     currentResult = null;
     clearDistanceHighlight();
     renderResult();
   }
   function render(){ populateSelects(); renderResult(); }
-
   return { init, render, doCalculate, renderResult, clear };
 })();
 
@@ -4122,7 +3968,6 @@ function updateRoomEditButton(){
     btn.disabled = false;
   }
 }
-
 function updateRoomSandboxActions(){
   const row = document.getElementById('roomSandboxActions');
   const btnUpload = document.getElementById('btnUploadSandboxToRoom');
@@ -4166,8 +4011,7 @@ function renderSandboxData(){
       .filter(sb => {
         const isSelf = sb.uid === state.auth.accountUid;
         if(isSelf) return true;
-        const role = sb.role || 'member';
-        return window.SLG.canViewSandboxOf(sb.uid, role);
+        return window.SLG.canViewSandboxOf(sb.uid, sb.role || 'member');
       })
       .sort((a, b) => {
         if(a.uid === state.auth.accountUid) return -1;
@@ -4198,14 +4042,9 @@ function renderSandboxData(){
     }
   }
   const roomCard = document.getElementById('roomSandboxCard');
-  const roomTbody = document.getElementById('roomSandboxTableBody');
   if(roomCard){
-    if(window.SLG.canViewRoomSandboxes()){
-      roomCard.style.display = '';
-      if(roomTbody && (!state.roomSnapshotsList || state.roomSnapshotsList.length === 0)){
-        roomTbody.innerHTML = '<tr><td colspan="6" class="sandbox-empty">尚無房間沙盤資料</td></tr>';
-      }
-    } else { roomCard.style.display = 'none'; }
+    if(window.SLG.canViewRoomSandboxes()){ roomCard.style.display = ''; }
+    else { roomCard.style.display = 'none'; }
   }
   const rescueCard = document.getElementById('rescueCard');
   if(rescueCard){ rescueCard.style.display = window.SLG.canUseRescueTool() ? '' : 'none'; }
@@ -4287,7 +4126,6 @@ function updateAllianceAvgPowerPreview(){
   const el = document.getElementById('allyAvgPower');
   if(el) el.value = formatAvgPower(avg);
 }
-
 function resetAllianceForm(){
   state.editingAllianceId = null;
   document.getElementById('allyFormTitle').textContent = '➕ 新增參戰盟';
@@ -4302,7 +4140,6 @@ function resetAllianceForm(){
   if(R.renderIconQuickRow) R.renderIconQuickRow();
   R.renderAlliances();
 }
-
 function startEditAlliance(id){
   const a = state.alliances.find(x => x.id === id);
   if(!a) return;
@@ -4322,12 +4159,14 @@ function startEditAlliance(id){
 }
 
 /* ============================================================
-   城池表單
+   v8.6.9：城池 Modal 分級輸入
    ============================================================ */
 let editingCityId = null;
+let cityModalTierInited = false;
 
 function updateAutoCalcFields(){
-  const t = parseFloat(document.getElementById('cm_totalTeams').value)||0;
+  /* v8.6.9：計算平均戰力（從分級算出的總隊數）*/
+  const t = updateCityModalTierPreview();
   const pInput = document.getElementById('cm_totalPower').value;
   const p = (() => {
     const n = parseFloat(pInput);
@@ -4338,6 +4177,40 @@ function updateAutoCalcFields(){
   if(!el) return;
   if(t > 0 && p > 0){ el.value = formatAvgPower(Math.floor(p/t)); }
   else { el.value = '—'; }
+}
+
+/* v8.6.9：分級即時預覽 */
+function updateCityModalTierPreview(){
+  const t1 = parseFloat(document.getElementById('cm_tier1')?.value) || 0;
+  const t2 = parseFloat(document.getElementById('cm_tier2')?.value) || 0;
+  const t3 = parseFloat(document.getElementById('cm_tier3')?.value) || 0;
+  const t4 = parseFloat(document.getElementById('cm_tier4')?.value) || 0;
+  const tierCounts = { tier1: t1, tier2: t2, tier3: t3, tier4: t4 };
+  const tiers = state.troopTiers.tiers;
+  const calc = calcTeamsFromTiers(tierCounts);
+
+  /* 更新每級隊數顯示 */
+  const setText = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+  setText('cm_tier1Teams', Math.floor(t1 * (tiers[0].teamsPerPlayer || 0)));
+  setText('cm_tier2Teams', Math.floor(t2 * (tiers[1].teamsPerPlayer || 0)));
+  setText('cm_tier3Teams', Math.floor(t3 * (tiers[2].teamsPerPlayer || 0)));
+  setText('cm_tier4Teams', Math.floor(t4 * (tiers[3].teamsPerPlayer || 0)));
+  setText('cm_tierTotalMembers', calc.totalMembers);
+  setText('cm_tierTotalTeams', calc.totalTeams);
+
+  return calc.totalTeams;
+}
+
+function bindCityModalTierInputs(){
+  if(cityModalTierInited) return;
+  cityModalTierInited = true;
+  ['cm_tier1','cm_tier2','cm_tier3','cm_tier4'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input', () => {
+      updateCityModalTierPreview();
+      updateAutoCalcFields();
+    });
+  });
 }
 
 function openCityModal(cityId){
@@ -4365,27 +4238,37 @@ function openCityModal(cityId){
     document.getElementById('cm_name').value = '';
     document.getElementById('cm_side').value = 'self';
     document.getElementById('cm_level').value = 1;
-    document.getElementById('cm_memberCount').value = '';
     document.getElementById('cm_totalPower').value = '';
-    document.getElementById('cm_totalTeams').value = '';
     document.getElementById('cm_cooldownMin').value = 5;
     document.getElementById('cm_wallMin').value = 30;
     document.getElementById('cm_isCapital').checked = false;
     if(state.zones.length > 0) zoneSel.value = state.zones[0].id;
+    /* v8.6.9：清空分級 */
+    document.getElementById('cm_tier1').value = 0;
+    document.getElementById('cm_tier2').value = 0;
+    document.getElementById('cm_tier3').value = 0;
+    document.getElementById('cm_tier4').value = 0;
   } else {
     document.getElementById('cm_name').value = city.name;
     document.getElementById('cm_zone').value = city.zoneId || '';
     document.getElementById('cm_alliance').value = city.allianceId || '';
     document.getElementById('cm_side').value = city.side;
     document.getElementById('cm_level').value = city.level || 1;
-    document.getElementById('cm_memberCount').value = city.memberCount || '';
     const yi = (Number(city.totalPower) || 0) / 1e8;
     document.getElementById('cm_totalPower').value = yi > 0 ? yi.toFixed(2) : '';
-    document.getElementById('cm_totalTeams').value = city.totalTeams || '';
     document.getElementById('cm_cooldownMin').value = city.cooldownMin;
     document.getElementById('cm_wallMin').value = city.wallMin;
     document.getElementById('cm_isCapital').checked = !!city.isCapital;
+    /* v8.6.9：填入分級 */
+    const tc = city.tierCounts || { tier1: 0, tier2: 0, tier3: 0, tier4: 0 };
+    document.getElementById('cm_tier1').value = tc.tier1 || 0;
+    document.getElementById('cm_tier2').value = tc.tier2 || 0;
+    document.getElementById('cm_tier3').value = tc.tier3 || 0;
+    document.getElementById('cm_tier4').value = tc.tier4 || 0;
   }
+
+  bindCityModalTierInputs();
+  updateCityModalTierPreview();
   updateAutoCalcFields();
   document.getElementById('cityModal').classList.add('show');
 }
@@ -4409,13 +4292,22 @@ function saveCityFromModal(){
   const allianceId = document.getElementById('cm_alliance').value;
   const side = document.getElementById('cm_side').value;
   const level = parseInt(document.getElementById('cm_level').value) || 1;
-  const memberCount = parseFloat(document.getElementById('cm_memberCount').value) || 0;
   const pInput = parseFloat(document.getElementById('cm_totalPower').value) || 0;
   const totalPower = Math.round(pInput * 1e8);
-  const totalTeams = parseFloat(document.getElementById('cm_totalTeams').value) || 0;
   const cooldownMin = parseFloat(document.getElementById('cm_cooldownMin').value) || 0;
   const wallMin = parseFloat(document.getElementById('cm_wallMin').value) || 0;
   const isCapital = document.getElementById('cm_isCapital').checked;
+
+  /* v8.6.9：分級計算 */
+  const t1 = parseFloat(document.getElementById('cm_tier1').value) || 0;
+  const t2 = parseFloat(document.getElementById('cm_tier2').value) || 0;
+  const t3 = parseFloat(document.getElementById('cm_tier3').value) || 0;
+  const t4 = parseFloat(document.getElementById('cm_tier4').value) || 0;
+  const tierCounts = { tier1: t1, tier2: t2, tier3: t3, tier4: t4 };
+  const hasAnyTier = (t1 + t2 + t3 + t4) > 0;
+  const calc = calcTeamsFromTiers(tierCounts);
+  const memberCount = calc.totalMembers;
+  const totalTeams = calc.totalTeams;
 
   const existingCity = editingCityId ? state.cities.find(c => c.id === editingCityId) : null;
   const attackTargets = existingCity ? (existingCity.attackTargets || []) : [];
@@ -4440,6 +4332,9 @@ function saveCityFromModal(){
     cooldownMin, wallMin, defStartTime, isCapital,
     attackTargets, defendTargets
   };
+  /* v8.6.9：有分級才存 tierCounts */
+  if(hasAnyTier) entity.tierCounts = tierCounts;
+
   window.SLG.upsertEntity('city', entity);
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
   closeCityModal();
@@ -4482,12 +4377,12 @@ Object.assign(window.SLG, {
   switchCityView,
   initCitySubtabs,
 
-  DistanceTool,
-  DYN, DEPLOY, deployRender,
+  DistanceTool, DYN, DEPLOY, deployRender,
   updateAllianceAvgPowerPreview,
   resetAllianceForm,
   startEditAlliance,
   updateAutoCalcFields,
+  updateCityModalTierPreview,
   openCityModal,
   closeCityModal,
   saveCityFromModal,
@@ -4501,5 +4396,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.6.7）
+ * ui.js 結束（v8.6.9）
  * ========================================================================== */

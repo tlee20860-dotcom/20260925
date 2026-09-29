@@ -1,6 +1,6 @@
 /* ============================================================================
- * auth.js — 認證模組 + 帳號管理 + 入口門禁（v8.6.7）
- * v8.6.7：登出流程簡化（移除保留/清空選擇，一律保留本機）
+ * auth.js — 認證模組 + 帳號管理 + 入口門禁 + 置頂欄登入選單（v8.6.9）
+ * v8.6.9：新增置頂欄登入按鈕與下拉選單
  * ========================================================================== */
 (function(){
 'use strict';
@@ -159,10 +159,6 @@ const Auth = (() => {
     emit(EVT.AUTH, state.auth);
   }
 
-  /**
-   * v8.6.7：登出流程（簡化）
-   * 步驟：① 顯示確認對話框 → ② 強制上傳 → ③ 一律保留本機 → ④ 中斷房間 → ⑤ 清 auth
-   */
   async function logout(){
     const modal = document.getElementById('logoutConfirmModal');
     if(modal) modal.classList.add('show');
@@ -173,11 +169,8 @@ const Auth = (() => {
     if(modal) modal.classList.remove('show');
 
     logSystem('🚪 開始登出流程');
-
-    /* ① 先停定時器 */
     if(window.SLG.stopSyncTimer) window.SLG.stopSyncTimer();
 
-    /* ② 強制上傳雲端（最後一次）*/
     if(state.auth.signedIn && isOnline() && state.mySandbox.cloudLoaded){
       logSystem('☁️ 登出前強制上傳...');
       try{
@@ -192,15 +185,12 @@ const Auth = (() => {
       logSystem('⚠️ 離線中，跳過登出前上傳');
     }
 
-    /* ③ v8.6.7：一律保留本機（不再詢問）*/
     logSystem('💾 已保留本機沙盤');
 
-    /* ④ 中斷房間連線 */
     if(window.SLG.isConnected && window.SLG.isConnected()){
       try{ window.SLG.disconnectFirebase(); }catch(e){ console.warn('中斷連線失敗', e); }
     }
 
-    /* ⑤ 清空 state.auth */
     state.auth = {
       signedIn: false, accountUid: '', username: '', displayName: '',
       role: ROLE.GUEST, status: 'active',
@@ -213,9 +203,7 @@ const Auth = (() => {
       loading: false, loaded: false, cloudLoaded: false, updatedAt: 0, saving: false,
     };
 
-    /* 重設同步狀態 */
     if(window.SLG.resetSyncState) window.SLG.resetSyncState();
-
     localStorage.removeItem(window.SLG.ACCOUNT_UID_KEY);
     emit(EVT.AUTH, state.auth);
     logSystem('🚪 已登出');
@@ -347,7 +335,6 @@ const Accounts = (() => {
         : a.status === 'suspended'
           ? '<span class="chip" style="color:var(--neon-red);border-color:rgba(255,68,102,.3);">⏸️ 停用</span>'
           : `<span class="chip">${esc(a.status || '?')}</span>`;
-
       const isSelf = a.uid === state.auth.accountUid;
       const canEdit = isSuper || (!isSelf && Auth.isAdmin() && a.role !== 'superadmin');
       const fmtDate = ts => {
@@ -461,7 +448,6 @@ const Accounts = (() => {
         hintEl.textContent = '🛡️ 管理員：可修改狀態與 extraPerms，無法修改角色、顯示名、密碼。';
       }
     }
-
     document.getElementById('accountEditModal').classList.add('show');
   }
 
@@ -492,7 +478,6 @@ const Accounts = (() => {
       const newRole = document.getElementById('ae_role').value;
       const newPwd = document.getElementById('ae_newPassword').value;
       const newNote = document.getElementById('ae_note').value.trim();
-
       if(!newName){ alert('顯示名稱不能為空'); return; }
       if(newName.length > 12){ alert('顯示名稱最多 12 字'); return; }
       updates.displayName = newName;
@@ -539,7 +524,6 @@ const Accounts = (() => {
     const isSuper = Auth.isSuperAdmin();
     const headers = ['帳號', '顯示名稱', '角色', '狀態', '建立時間', '最後登入', '備註'];
     if(isSuper) headers.splice(3, 0, '密碼');
-
     const rows = list.map(a => {
       const r = [
         a.username || '', a.displayName || '', a.role || '', a.status || '',
@@ -550,7 +534,6 @@ const Accounts = (() => {
       if(isSuper) r.splice(3, 0, a.password || '');
       return r;
     });
-
     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v==null?'':v).replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
@@ -566,10 +549,8 @@ const Accounts = (() => {
   function init(){
     const btnRefresh = document.getElementById('btnAccountsRefresh');
     if(btnRefresh) btnRefresh.addEventListener('click', refresh);
-
     const btnExport = document.getElementById('btnAccountsExportCSV');
     if(btnExport) btnExport.addEventListener('click', exportCSV);
-
     ['accountsSearch','accountsFilterRole','accountsFilterStatus'].forEach(id => {
       const el = document.getElementById(id);
       if(el){
@@ -577,7 +558,6 @@ const Accounts = (() => {
         el.addEventListener('change', renderTable);
       }
     });
-
     const cancel = document.getElementById('ae_cancel');
     if(cancel) cancel.addEventListener('click', closeEditModal);
     const save = document.getElementById('ae_save');
@@ -637,11 +617,9 @@ const EntryGate = (() => {
     const p = document.getElementById('entryLoginPassword').value;
     const errEl = document.getElementById('entryLoginError');
     const btn = document.getElementById('entryBtnLogin');
-
     errEl.textContent = '';
     if(!u || !p){ errEl.textContent = '請輸入帳號與密碼'; return; }
     if(!isOnline()){ errEl.textContent = '目前無網路連線'; return; }
-
     btn.disabled = true;
     btn.textContent = '登入中...';
     try{
@@ -666,10 +644,8 @@ const EntryGate = (() => {
     const p2 = document.getElementById('entryRegPassword2').value;
     const errEl = document.getElementById('entryRegError');
     const btn = document.getElementById('entryBtnRegister');
-
     errEl.textContent = '';
     if(!isOnline()){ errEl.textContent = '目前無網路連線'; return; }
-
     btn.disabled = true;
     btn.textContent = '註冊中...';
     try{
@@ -710,12 +686,119 @@ const EntryGate = (() => {
 })();
 
 /* ============================================================
+   v8.6.9：置頂欄登入選單
+   ============================================================ */
+let authMenuInited = false;
+
+function initAuthMenu(){
+  if(authMenuInited) return;
+  const btn = document.getElementById('authBtn');
+  const menu = document.getElementById('authMenu');
+  if(!btn || !menu) return;
+  authMenuInited = true;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if(!state.auth.signedIn){
+      EntryGate.showForm();
+      return;
+    }
+    menu.classList.toggle('hidden');
+  });
+
+  menu.querySelectorAll('[data-auth-action]').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = item.dataset.authAction;
+      handleAuthMenuAction(action);
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if(menu.classList.contains('hidden')) return;
+    if(menu.contains(e.target)) return;
+    if(btn.contains(e.target)) return;
+    menu.classList.add('hidden');
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape' && !menu.classList.contains('hidden')){
+      menu.classList.add('hidden');
+    }
+  });
+}
+
+function handleAuthMenuAction(action){
+  const menu = document.getElementById('authMenu');
+  if(menu) menu.classList.add('hidden');
+
+  switch(action){
+    case 'account-settings': {
+      const tabBtn = document.querySelector('.top-nav button[data-tab="tab-account"]');
+      if(tabBtn) tabBtn.click();
+      break;
+    }
+    case 'accounts-manage': {
+      const tabBtn = document.querySelector('.top-nav button[data-tab="tab-accounts"]');
+      if(tabBtn) tabBtn.click();
+      break;
+    }
+    case 'sandbox': {
+      const tabBtn = document.querySelector('.top-nav button[data-tab="tab-sandbox"]');
+      if(tabBtn) tabBtn.click();
+      break;
+    }
+    case 'logout': {
+      if(window.SLG.Auth && window.SLG.Auth.logout) window.SLG.Auth.logout();
+      break;
+    }
+  }
+}
+
+function updateAuthButton(){
+  const btn = document.getElementById('authBtn');
+  const btnText = document.getElementById('authBtnText');
+  const menuName = document.getElementById('authMenuName');
+  const menuUsername = document.getElementById('authMenuUsername');
+  const menuRole = document.getElementById('authMenuRole');
+  const menuAccountsBtn = document.getElementById('authMenuAccountsBtn');
+
+  if(!btn || !btnText) return;
+
+  if(!state.auth.signedIn){
+    btn.classList.remove('signed-in');
+    btnText.textContent = '🔑 登入/註冊';
+    btn.title = '點擊登入或註冊帳號';
+    return;
+  }
+
+  btn.classList.add('signed-in');
+  const display = state.auth.displayName || state.auth.username || '使用者';
+  btnText.textContent = `👤 ${display} ▼`;
+  btn.title = '點擊顯示選單';
+
+  if(menuName) menuName.textContent = state.auth.displayName || '—';
+  if(menuUsername) menuUsername.textContent = '@' + (state.auth.username || '—');
+  if(menuRole){
+    menuRole.textContent = ROLE_LABELS[state.auth.role] || state.auth.role;
+    menuRole.className = 'auth-menu-role ' + (ROLE_CLASS[state.auth.role] || '');
+  }
+  if(menuAccountsBtn){
+    const canManage = Auth.isAdmin();
+    menuAccountsBtn.style.display = canManage ? '' : 'none';
+  }
+}
+
+/* ============================================================
    帳號 Tab UI
    ============================================================ */
 function renderAuthUI(){
   const a = state.auth;
   const guestPanel = document.getElementById('authGuestPanel');
   const userPanel  = document.getElementById('authUserPanel');
+
+  /* v8.6.9：同步更新置頂欄按鈕 */
+  updateAuthButton();
 
   if(!a.signedIn){
     if(guestPanel) guestPanel.style.display = '';
@@ -820,6 +903,9 @@ function bindAuthUI(){
     });
   }
 
+  /* v8.6.9：初始化置頂欄選單 */
+  initAuthMenu();
+
   renderAuthUI();
 }
 
@@ -829,6 +915,12 @@ function bindAuthUI(){
 Object.assign(window.SLG, {
   Auth, Accounts, EntryGate,
   renderAuthUI, bindAuthUI,
+  /* v8.6.9 */
+  initAuthMenu, toggleAuthMenu: () => {
+    const menu = document.getElementById('authMenu');
+    if(menu) menu.classList.toggle('hidden');
+  },
+  handleAuthMenuAction, updateAuthButton,
 });
 
 })();

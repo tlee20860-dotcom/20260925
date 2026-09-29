@@ -1,6 +1,6 @@
 /* ============================================================================
  * firebase.js — Firebase 連線 / 個人沙盤 / 房間沙盤 / 聊天 / 編輯權限 / 退出
- * v8.6.7：saveMySandbox 清 dirty + loadMySandbox 啟定時器
+ * v8.6.9：空白版本也備份歷史（修正問題 2）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -90,6 +90,10 @@ async function fetchAllSandboxes(){
   }catch(e){ console.warn('讀取沙盤清單失敗', e); return {}; }
 }
 
+/**
+ * v8.6.9：儲存個人雲端沙盤
+ * - 上傳前先存歷史（v8.6.9：空白版本也備份）
+ */
 async function saveMySandbox(){
   if(!fbDb) return false;
   if(!state.auth.signedIn) return false;
@@ -106,18 +110,22 @@ async function saveMySandbox(){
 
   try{
     state.mySandbox.saving = true;
-    /* 歷史備份 */
+
+    /* v8.6.9：歷史備份（空白版本也備份）*/
     try{
       const prevSnap = await sandboxRef(u).once('value');
       const prev = prevSnap.val();
-      if(prev && prev.data && prev.data.cities && prev.data.cities.length > 0){
-        const ts = prev.updatedAt || Date.now();
+      /* ★ 修正：只要有前一版（含空白）就備份 */
+      if(prev && prev.updatedAt && prev.data){
+        const ts = prev.updatedAt;
         await sandboxRef(u).child(`history/${ts}`).set({
           updatedAt: ts,
-          citiesCount: prev.data.cities.length,
+          citiesCount: prev.data.cities?.length || 0,
           alliancesCount: prev.data.alliances?.length || 0,
+          zonesCount: prev.data.zones?.length || 0,
           data: prev.data,
         });
+        /* 清理超過 20 筆 */
         const histSnap = await sandboxRef(u).child('history').once('value');
         const hist = histSnap.val() || {};
         const keys = Object.keys(hist).sort();
@@ -126,14 +134,13 @@ async function saveMySandbox(){
           try{ await sandboxRef(u).child(`history/${k}`).remove(); }catch(e){}
         }
       }
-    }catch(e){ console.warn('[sync] 歷史備份失敗', e); }
+    }catch(e){ console.warn('[sync] 歷史備份失敗（不影響主流程）', e); }
 
     await sandboxRef(u).set(payload);
     state.mySandbox.updatedAt = payload.updatedAt;
     state.mySandbox.loaded = true;
     state.mySandbox.saving = false;
     emit(EVT.MY_SANDBOX_UPDATED);
-    /* v8.6.7：清除 dirty 標記 */
     if(window.SLG.clearCloudDirty) window.SLG.clearCloudDirty();
     return true;
   }catch(e){
@@ -187,7 +194,6 @@ async function loadMySandbox(){
     state.mySandbox.loading = false;
     state.mySandbox.cloudLoaded = true;
     emit(EVT.MY_SANDBOX_UPDATED);
-    /* v8.6.7：啟動定時上傳器 */
     if(window.SLG.startSyncTimer && state.auth.signedIn){
       window.SLG.startSyncTimer();
     }
@@ -357,7 +363,6 @@ function connectFirebase(roomCode, asHost){
   if(!isOnline()){ emit(EVT.DEBUG, {msg:'❌ 離線中，無法連線房間', err:true}); alert('目前無網路連線，請稍後再試'); return; }
   if(!roomCode || roomCode.length !== 6){ emit(EVT.DEBUG, {msg:'❌ 房間碼必須為6位數', err:true}); return; }
   if(!state.commanderName){ emit(EVT.DEBUG, {msg:'❌ 請先填寫指揮官名稱', err:true}); return; }
-
   if(fbConnected || state.connecting) disconnectFirebase();
 
   state.roomCode = roomCode;
@@ -579,7 +584,6 @@ function disconnectFirebase(){
     for(const cityId of myEditLocks){ try{ locksRef.child(cityId).remove(); }catch(e){} }
     myEditLocks.clear();
   }
-
   if(presenceRef){ try{ presenceRef.onDisconnect().cancel(); presenceRef.remove(); }catch(e){} }
   if(locksRef){ try{ locksRef.off(); }catch(e){} }
   if(chatRef){ try{ chatRef.off(); }catch(e){} }

@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI、網路監控、同步
- * v8.6.7：加入雲端同步狀態管理（state.sync）
+ * v8.6.9：隊數分級 + Promise 上傳鎖 + lastUploadReason
  * ========================================================================== */
 (function(){
 'use strict';
@@ -19,13 +19,13 @@ const LS_PREFIX = 'slg_sandtable_v82_';
 const LS_LEGACY_PREFIX = 'slg_sandtable_v75_';
 const AI_LS_KEY = 'slg_ai_params';
 const SYNC_PREFS_KEY = 'slg_sync_prefs';
+const TROOP_TIERS_LS_KEY = 'slg_troop_tiers';
 const ACCOUNT_UID_KEY = 'slg_sandtable_v82_accountUid';
 const HOST_TIMEOUT = 15000;
 const EDIT_LOCK_TTL = 30000;
 
 const SANDBOX_SYNC_DEBOUNCE = 1500;
 const ROOM_SNAPSHOT_DEBOUNCE = 2000;
-
 const NETWORK_HEARTBEAT_INTERVAL = 15000;
 
 const NPC_ALLIANCE_NAME = 'NPC';
@@ -34,6 +34,18 @@ const NPC_ALLIANCE_ICON = '🏰';
 const POWER_YI = 1e8;
 const POWER_WAN = 1e4;
 const POWER_MIGRATE_THRESHOLD = 1e6;
+
+/* v8.6.9：隊數分級預設 */
+const DEFAULT_TROOP_TIERS = {
+  tiers: [
+    { maxLevel: 17, teamsPerPlayer: 3 },
+    { maxLevel: 20, teamsPerPlayer: 4 },
+    { maxLevel: 24, teamsPerPlayer: 5 },
+    { maxLevel: Infinity, teamsPerPlayer: 6 },
+  ],
+  autoCalcOnImport: true,
+  preserveOldTotal: false,
+};
 
 const DEFAULT_ALLIANCE_ICONS = [
   '⚔️','🗡️','🏹','🔱','🪓','🛡️','⚒️','🔨','🪃','⚜️','🏰','🚩',
@@ -53,26 +65,11 @@ const ATTACK_RULES = {
   common_enemy:['self','ally','npc','enemy'],
   npc:['self','ally','enemy','common_enemy'],
 };
-const DEFEND_RULES = {
-  self:['self','ally'],
-  ally:['self','ally'],
-  enemy:[],
-  common_enemy:[],
-  npc:[],
-};
-const SIDE_LABELS = {
-  self:'本方',
-  ally:'同盟',
-  enemy:'敵方',
-  common_enemy:'共同敵方',
-  npc:'NPC',
-};
+const DEFEND_RULES = { self:['self','ally'], ally:['self','ally'], enemy:[], common_enemy:[], npc:[] };
+const SIDE_LABELS = { self:'本方', ally:'同盟', enemy:'敵方', common_enemy:'共同敵方', npc:'NPC' };
 const ALLIANCE_SIDE_LABELS = { self:'本方', ally:'同盟', enemy:'敵方' };
 
-const ROLE = {
-  SUPERADMIN: 'superadmin', ADMIN: 'admin', OFFICER: 'officer',
-  MEMBER: 'member', GUEST: 'guest',
-};
+const ROLE = { SUPERADMIN: 'superadmin', ADMIN: 'admin', OFFICER: 'officer', MEMBER: 'member', GUEST: 'guest' };
 const ROLE_LABELS = {
   superadmin: '👑 超級管理員', admin: '🛡️ 管理員', officer: '⚔️ 幹部',
   member: '🙋 成員', guest: '👻 訪客',
@@ -91,8 +88,7 @@ const EVT = {
   MY_SANDBOX_UPDATED:'sandbox:mine', SANDBOXES_LIST_UPDATED:'sandbox:list',
   ROOM_SNAPSHOT_UPDATED:'room:snapshot', ROUTES_UPDATED:'routes:updated',
   DISTANCE_HIGHLIGHT:'distance:highlight', DISTANCE_CLEAR:'distance:clear',
-  NETWORK:'network',
-  SYNC_STATE:'sync:state',
+  NETWORK:'network', SYNC_STATE:'sync:state', TROOP_TIERS:'troop:tiers',
 };
 
 /* ============================================================
@@ -112,7 +108,6 @@ function formatDateCompact(ts){
   const d = ts ? new Date(ts) : new Date();
   return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 }
-
 function timeAgo(ts){
   if(!ts) return '—';
   const diff = Date.now() - ts;
@@ -123,7 +118,6 @@ function timeAgo(ts){
   const d = new Date(ts);
   return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
 }
-
 function buildSandboxFileName(displayName, updatedAt){
   const safe = (displayName || '匿名').replace(/[\\/:*?"<>|]/g, '_');
   return `${safe}_${formatDateCompact(updatedAt)}`;
@@ -163,6 +157,104 @@ function isAllianceIconUsed(icon, excludeId){
 }
 function getAvailableAllianceIcons(excludeId){
   return DEFAULT_ALLIANCE_ICONS.filter(icon => !isAllianceIconUsed(icon, excludeId));
+}
+
+/* ============================================================
+   v8.6.9：隊數分級工具
+   ============================================================ */
+
+/**
+ * 依分級計算總人數與總隊數
+ * @param {Object} tierCounts - { tier1, tier2, tier3, tier4 }
+ * @param {Array} customTiers - 可選，自訂分級陣列
+ * @returns {Object} { totalMembers, totalTeams, breakdown }
+ */
+function calcTeamsFromTiers(tierCounts, customTiers){
+  const tiers = customTiers || state.troopTiers.tiers || DEFAULT_TROOP_TIERS.tiers;
+  const counts = [
+    Number(tierCounts?.tier1) || 0,
+    Number(tierCounts?.tier2) || 0,
+    Number(tierCounts?.tier3) || 0,
+    Number(tierCounts?.tier4) || 0,
+  ];
+  let totalMembers = 0;
+  let totalTeams = 0;
+  const breakdown = [];
+  for(let i = 0; i < tiers.length; i++){
+    const n = Math.max(0, counts[i] || 0);
+    const per = Math.max(0, Number(tiers[i].teamsPerPlayer) || 0);
+    const t = n * per;
+    totalMembers += n;
+    totalTeams += t;
+    breakdown.push({
+      tier: i + 1,
+      maxLevel: tiers[i].maxLevel,
+      count: n,
+      teamsPerPlayer: per,
+      teams: t,
+    });
+  }
+  return { totalMembers, totalTeams, breakdown };
+}
+
+function getTroopTiers(){
+  return {
+    tiers: state.troopTiers.tiers.map(t => ({ ...t })),
+    autoCalcOnImport: !!state.troopTiers.autoCalcOnImport,
+    preserveOldTotal: !!state.troopTiers.preserveOldTotal,
+  };
+}
+
+function setTroopTiers(patch){
+  if(patch.tiers && Array.isArray(patch.tiers)){
+    state.troopTiers.tiers = patch.tiers.map(t => ({
+      maxLevel: t.maxLevel === Infinity ? Infinity : (parseInt(t.maxLevel, 10) || 0),
+      teamsPerPlayer: Math.max(0, parseInt(t.teamsPerPlayer, 10) || 0),
+    }));
+  }
+  if(typeof patch.autoCalcOnImport === 'boolean') state.troopTiers.autoCalcOnImport = patch.autoCalcOnImport;
+  if(typeof patch.preserveOldTotal === 'boolean') state.troopTiers.preserveOldTotal = patch.preserveOldTotal;
+  saveTroopTiers();
+  emit(EVT.TROOP_TIERS, state.troopTiers);
+}
+
+function resetTroopTiers(){
+  state.troopTiers = {
+    tiers: DEFAULT_TROOP_TIERS.tiers.map(t => ({ ...t })),
+    autoCalcOnImport: DEFAULT_TROOP_TIERS.autoCalcOnImport,
+    preserveOldTotal: DEFAULT_TROOP_TIERS.preserveOldTotal,
+  };
+  saveTroopTiers();
+  emit(EVT.TROOP_TIERS, state.troopTiers);
+}
+
+function loadTroopTiers(){
+  try{
+    const raw = localStorage.getItem(TROOP_TIERS_LS_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(Array.isArray(parsed.tiers) && parsed.tiers.length === 4){
+      state.troopTiers.tiers = parsed.tiers.map(t => ({
+        maxLevel: t.maxLevel === 'Infinity' || t.maxLevel === null ? Infinity : (parseInt(t.maxLevel, 10) || 0),
+        teamsPerPlayer: Math.max(0, parseInt(t.teamsPerPlayer, 10) || 0),
+      }));
+    }
+    if(typeof parsed.autoCalcOnImport === 'boolean') state.troopTiers.autoCalcOnImport = parsed.autoCalcOnImport;
+    if(typeof parsed.preserveOldTotal === 'boolean') state.troopTiers.preserveOldTotal = parsed.preserveOldTotal;
+  }catch(e){ console.warn('載入分級設定失敗', e); }
+}
+function saveTroopTiers(){
+  try{
+    const data = {
+      tiers: state.troopTiers.tiers.map(t => ({
+        maxLevel: t.maxLevel === Infinity ? 'Infinity' : t.maxLevel,
+        teamsPerPlayer: t.teamsPerPlayer,
+      })),
+      autoCalcOnImport: state.troopTiers.autoCalcOnImport,
+      preserveOldTotal: state.troopTiers.preserveOldTotal,
+    };
+    localStorage.setItem(TROOP_TIERS_LS_KEY, JSON.stringify(data));
+  }catch(e){ console.warn('儲存分級設定失敗', e); }
 }
 
 /* ============================================================
@@ -299,11 +391,11 @@ const state = {
   listPrefs: { warSort:'time', warGroup:'none', deploySort:'alliance', deployGroup:'none' },
   distanceResult: null, distanceView: 'number', distanceHighlight: null,
   network: { online: true, lastChange: 0, lastCheck: 0, initialized: false },
-  /* v8.6.7：雲端同步狀態 */
   sync: {
     dirty: false,
     dirtyCount: 0,
     lastUploadAt: 0,
+    lastUploadReason: '',  /* v8.6.9 */
     uploading: false,
     lastError: '',
     nextUploadAt: 0,
@@ -315,6 +407,12 @@ const state = {
       visibilitySync: true,
       beforeUnloadSync: true,
     },
+  },
+  /* v8.6.9：隊數分級 */
+  troopTiers: {
+    tiers: DEFAULT_TROOP_TIERS.tiers.map(t => ({ ...t })),
+    autoCalcOnImport: DEFAULT_TROOP_TIERS.autoCalcOnImport,
+    preserveOldTotal: DEFAULT_TROOP_TIERS.preserveOldTotal,
   },
 };
 
@@ -362,26 +460,23 @@ function initNetworkWatcher(){
   state.network.lastCheck = Date.now();
   state.network.initialized = true;
   console.log(`[網路] 初始狀態：${state.network.online ? '🟢 在線' : '🔴 離線'}`);
-
   window.addEventListener('online', () => setNetworkStatus(true, 'online event'));
   window.addEventListener('offline', () => setNetworkStatus(false, 'offline event'));
-
   clearInterval(networkHeartbeatTimer);
   networkHeartbeatTimer = setInterval(() => {
     state.network.lastCheck = Date.now();
     const navOnline = navigator.onLine !== false;
-    if(navOnline !== state.network.online){
-      setNetworkStatus(navOnline, 'heartbeat');
-    }
+    if(navOnline !== state.network.online) setNetworkStatus(navOnline, 'heartbeat');
   }, NETWORK_HEARTBEAT_INTERVAL);
 }
 
 /* ============================================================
-   v8.6.7：雲端同步管理
+   v8.6.9：雲端同步管理（含 Promise 上傳鎖）
    ============================================================ */
 let cloudSyncFn = null;
 let cloudSyncTimer = null;
 let syncCountdownTimer = null;
+let uploadPromise = null;   /* ★ v8.6.9：Promise 鎖 */
 
 function loadSyncPrefs(){
   try{
@@ -392,27 +487,17 @@ function loadSyncPrefs(){
     }
   }catch(e){ console.warn('載入同步設定失敗', e); }
 }
-
 function saveSyncPrefs(){
-  try{
-    localStorage.setItem(SYNC_PREFS_KEY, JSON.stringify(state.sync.prefs));
-  }catch(e){ console.warn('儲存同步設定失敗', e); }
+  try{ localStorage.setItem(SYNC_PREFS_KEY, JSON.stringify(state.sync.prefs)); }
+  catch(e){ console.warn('儲存同步設定失敗', e); }
 }
-
 function getSyncPrefs(){ return Object.assign({}, state.sync.prefs); }
-
 function setSyncPrefs(patch){
   Object.assign(state.sync.prefs, patch);
   saveSyncPrefs();
-  if(state.auth.signedIn){
-    startSyncTimer();
-  }
+  if(state.auth.signedIn) startSyncTimer();
 }
 
-/**
- * 標記雲端為「待上傳」
- * @param {string} reason - 'important' 會觸發立即上傳
- */
 function markCloudDirty(reason){
   state.sync.dirty = true;
   state.sync.dirtyCount++;
@@ -421,18 +506,17 @@ function markCloudDirty(reason){
     scheduleUpload(SANDBOX_SYNC_DEBOUNCE, 'important');
   }
 }
-
 function clearCloudDirty(){
   state.sync.dirty = false;
   state.sync.dirtyCount = 0;
   state.sync.lastError = '';
   emit(EVT.SYNC_STATE, state.sync);
 }
-
 function resetSyncState(){
   state.sync.dirty = false;
   state.sync.dirtyCount = 0;
   state.sync.lastUploadAt = 0;
+  state.sync.lastUploadReason = '';
   state.sync.uploading = false;
   state.sync.lastError = '';
   state.sync.nextUploadAt = 0;
@@ -441,6 +525,7 @@ function resetSyncState(){
   clearTimeout(cloudSyncTimer);
   clearInterval(syncCountdownTimer);
   syncCountdownTimer = null;
+  uploadPromise = null;
   emit(EVT.SYNC_STATE, state.sync);
 }
 
@@ -450,22 +535,26 @@ function scheduleUpload(delayMs, reason){
   if(!state.mySandbox.cloudLoaded) return;
   clearTimeout(cloudSyncTimer);
   cloudSyncTimer = setTimeout(() => {
-    performCloudUpload(reason || 'scheduled');
+    performCloudUpload(reason || 'scheduled').catch(e => console.warn('[sync]', e));
   }, delayMs || SANDBOX_SYNC_DEBOUNCE);
 }
 
 /**
- * 執行雲端上傳
- * @param {string} reason - 上傳原因（用於 log）
- * @returns {Promise<boolean>}
+ * v8.6.9：執行雲端上傳（Promise 鎖）
+ * 若已有上傳進行中，直接回傳同一個 Promise
  */
 async function performCloudUpload(reason){
   if(!state.auth.signedIn) return false;
   if(!isOnline()) return false;
-  if(state.sync.uploading) return false;
   if(!state.mySandbox.cloudLoaded){
     console.warn('[sync] 雲端尚未載入，跳過上傳');
     return false;
+  }
+
+  /* ★ Promise 鎖：避免並發重複觸發 */
+  if(uploadPromise){
+    console.log(`[sync] 已有上傳進行中，沿用既有 Promise（${reason}）`);
+    return uploadPromise;
   }
 
   const fn = cloudSyncFn || (window.SLG && window.SLG.saveMySandbox);
@@ -478,28 +567,31 @@ async function performCloudUpload(reason){
   state.sync.lastError = '';
   emit(EVT.SYNC_STATE, state.sync);
 
-  try{
-    await fn();
-    state.sync.dirty = false;
-    state.sync.dirtyCount = 0;
-    state.sync.lastUploadAt = Date.now();
-    const interval = state.sync.prefs.intervalMin || 5;
-    state.sync.nextUploadAt = Date.now() + interval * 60 * 1000;
-    logSystem('☁️ 雲端已同步（' + reason + '）');
-    return true;
-  }catch(e){
-    state.sync.lastError = e.message || '同步失敗';
-    console.warn('[sync] 上傳失敗', e);
-    return false;
-  }finally{
-    state.sync.uploading = false;
-    emit(EVT.SYNC_STATE, state.sync);
-  }
+  uploadPromise = (async () => {
+    try{
+      await fn();
+      state.sync.dirty = false;
+      state.sync.dirtyCount = 0;
+      state.sync.lastUploadAt = Date.now();
+      state.sync.lastUploadReason = reason || 'unknown';
+      const interval = state.sync.prefs.intervalMin || 5;
+      state.sync.nextUploadAt = Date.now() + interval * 60 * 1000;
+      logSystem('☁️ 雲端已同步（' + reason + '）');
+      return true;
+    }catch(e){
+      state.sync.lastError = e.message || '同步失敗';
+      console.warn('[sync] 上傳失敗', e);
+      return false;
+    }finally{
+      state.sync.uploading = false;
+      uploadPromise = null;
+      emit(EVT.SYNC_STATE, state.sync);
+    }
+  })();
+
+  return uploadPromise;
 }
 
-/**
- * 啟動定時上傳器（從上次成功上傳起算）
- */
 function startSyncTimer(){
   stopSyncTimer();
   if(!state.auth.signedIn) return;
@@ -511,7 +603,6 @@ function startSyncTimer(){
   if(!state.sync.nextUploadAt || state.sync.nextUploadAt < now + 1000){
     state.sync.nextUploadAt = now + intervalMs;
   }
-
   const delay = Math.max(1000, state.sync.nextUploadAt - now);
 
   state.sync.timer = setTimeout(async () => {
@@ -532,7 +623,6 @@ function startSyncTimer(){
 
   emit(EVT.SYNC_STATE, state.sync);
 }
-
 function stopSyncTimer(){
   if(state.sync.timer){
     clearTimeout(state.sync.timer);
@@ -540,7 +630,6 @@ function stopSyncTimer(){
   }
 }
 
-/* 舊 API 保留相容 */
 function registerCloudSync(fn){ cloudSyncFn = fn; }
 function triggerCloudSync(delay){
   if(!state.auth.signedIn) return;
@@ -586,10 +675,18 @@ function saveState(reason){
       narrativeLines: state.narrativeLines.slice(-1000),
       chatMessages: state.chatMessages.slice(-200),
       listPrefs: state.listPrefs,
+      /* v8.6.9：分級設定 */
+      troopTiers: {
+        tiers: state.troopTiers.tiers.map(t => ({
+          maxLevel: t.maxLevel === Infinity ? 'Infinity' : t.maxLevel,
+          teamsPerPlayer: t.teamsPerPlayer,
+        })),
+        autoCalcOnImport: state.troopTiers.autoCalcOnImport,
+        preserveOldTotal: state.troopTiers.preserveOldTotal,
+      },
     }));
   }catch(e){ console.warn('儲存失敗', e); }
 
-  /* v8.6.7：標記雲端 dirty（依 reason 決定是否立即上傳）*/
   if(state.mode === 'local' && state.auth.signedIn){
     markCloudDirty(reason || 'auto');
   }
@@ -597,11 +694,7 @@ function saveState(reason){
     triggerRoomSnapshotSync();
   }
 }
-
-/* 供「重要操作」使用（地圖路線、城池基本資料）*/
-function saveStateImportant(){
-  saveState('important');
-}
+function saveStateImportant(){ saveState('important'); }
 
 function migratePowerInState(){
   if(Array.isArray(state.alliances)){
@@ -656,6 +749,16 @@ function loadState(){
     if(typeof state.settings.crossZoneWarAllowed !== 'boolean') state.settings.crossZoneWarAllowed = false;
     if(d.entityRev) state.entityRev = d.entityRev;
 
+    /* v8.6.9：分級設定遷移 */
+    if(d.troopTiers && Array.isArray(d.troopTiers.tiers) && d.troopTiers.tiers.length === 4){
+      state.troopTiers.tiers = d.troopTiers.tiers.map(t => ({
+        maxLevel: t.maxLevel === 'Infinity' ? Infinity : (parseInt(t.maxLevel, 10) || 0),
+        teamsPerPlayer: Math.max(0, parseInt(t.teamsPerPlayer, 10) || 0),
+      }));
+      if(typeof d.troopTiers.autoCalcOnImport === 'boolean') state.troopTiers.autoCalcOnImport = d.troopTiers.autoCalcOnImport;
+      if(typeof d.troopTiers.preserveOldTotal === 'boolean') state.troopTiers.preserveOldTotal = d.troopTiers.preserveOldTotal;
+    }
+
     if(Array.isArray(d.alliances)){
       state.alliances = d.alliances.map(a => {
         if(typeof a.memberCount !== 'number') a.memberCount = 100;
@@ -676,6 +779,15 @@ function loadState(){
       state.cities = d.cities.map(c => {
         if(!c.defStartTime) c.defStartTime = '19:00';
         if(typeof c.level !== 'number') c.level = 1;
+        /* v8.6.9：tierCounts 保留原樣 */
+        if(c.tierCounts && typeof c.tierCounts === 'object'){
+          c.tierCounts = {
+            tier1: Math.max(0, parseInt(c.tierCounts.tier1, 10) || 0),
+            tier2: Math.max(0, parseInt(c.tierCounts.tier2, 10) || 0),
+            tier3: Math.max(0, parseInt(c.tierCounts.tier3, 10) || 0),
+            tier4: Math.max(0, parseInt(c.tierCounts.tier4, 10) || 0),
+          };
+        }
         const migrate = arr => (arr||[]).map(t => ({
           cityId: t.cityId,
           preWarPercent: t.preWarPercent !== undefined ? t.preWarPercent
@@ -885,6 +997,15 @@ function buildSandboxData(){
     zones: JSON.parse(JSON.stringify(state.zones)),
     cities: JSON.parse(JSON.stringify(state.cities)),
     routes: JSON.parse(JSON.stringify(state.routes)),
+    /* v8.6.9：一併儲存分級設定 */
+    troopTiers: {
+      tiers: state.troopTiers.tiers.map(t => ({
+        maxLevel: t.maxLevel === Infinity ? 'Infinity' : t.maxLevel,
+        teamsPerPlayer: t.teamsPerPlayer,
+      })),
+      autoCalcOnImport: state.troopTiers.autoCalcOnImport,
+      preserveOldTotal: state.troopTiers.preserveOldTotal,
+    },
   };
 }
 
@@ -897,6 +1018,15 @@ function applySandboxData(data){
   state.zones     = JSON.parse(JSON.stringify(data.zones     || []));
   state.cities    = JSON.parse(JSON.stringify(data.cities    || []));
   state.routes    = JSON.parse(JSON.stringify(data.routes    || []));
+  /* v8.6.9：套用分級設定（若有） */
+  if(data.troopTiers && Array.isArray(data.troopTiers.tiers) && data.troopTiers.tiers.length === 4){
+    state.troopTiers.tiers = data.troopTiers.tiers.map(t => ({
+      maxLevel: t.maxLevel === 'Infinity' ? Infinity : (parseInt(t.maxLevel, 10) || 0),
+      teamsPerPlayer: Math.max(0, parseInt(t.teamsPerPlayer, 10) || 0),
+    }));
+    if(typeof data.troopTiers.autoCalcOnImport === 'boolean') state.troopTiers.autoCalcOnImport = data.troopTiers.autoCalcOnImport;
+    if(typeof data.troopTiers.preserveOldTotal === 'boolean') state.troopTiers.preserveOldTotal = data.troopTiers.preserveOldTotal;
+  }
   state.entityRev = { alliance:{}, zone:{}, city:{} };
   for(const [kind, arr] of [['alliance', state.alliances],['zone', state.zones],['city', state.cities]]){
     for(const ent of arr){ state.entityRev[kind][ent.id] = 1; }
@@ -979,18 +1109,15 @@ function findRoute(cityAId, cityBId){
     (r.cityAId === cityBId && r.cityBId === cityAId)
   ) || null;
 }
-
 function addRoute(cityAId, cityBId){
   if(!cityAId || !cityBId || cityAId === cityBId) return null;
   if(findRoute(cityAId, cityBId)) return null;
   const route = { id: uid(), cityAId, cityBId };
   state.routes.push(route);
   emit(EVT.ROUTES_UPDATED);
-  /* v8.6.7：路線變更 → 重要操作 */
   saveStateImportant();
   return route;
 }
-
 function removeRoute(routeId){
   const idx = state.routes.findIndex(r => r.id === routeId);
   if(idx < 0) return false;
@@ -999,7 +1126,6 @@ function removeRoute(routeId){
   saveStateImportant();
   return true;
 }
-
 function getReachableCityIds(cityId){
   const ids = [];
   for(const r of state.routes){
@@ -1071,7 +1197,6 @@ function computeCityDistance(srcId, tgtId){
   const conquerFn = () => true;
   const passablePath = bfsPath(srcId, tgtId, passableFn);
   const conquerPath = bfsPath(srcId, tgtId, conquerFn);
-
   const buildResult = (path, mode) => {
     if(!path) return { found: false, path: [], steps: 0, nodes: [], conquerNodes: [] };
     const nodes = path.map(id => {
@@ -1092,7 +1217,6 @@ function computeCityDistance(srcId, tgtId){
     }
     return { found: true, path: path.slice(), steps: path.length - 1, nodes, conquerNodes };
   };
-
   return {
     src: { id: src.id, name: src.name, side: src.side, allianceId: src.allianceId,
       allianceName: (state.alliances.find(a => a.id === src.allianceId)?.name || '') },
@@ -1166,7 +1290,6 @@ function updateModeBar(){
     btn.textContent = '取消連線';
   } else {
     bar.className = 'mode-bar local';
-    /* v8.6.7：本機模式 → 依同步參數顯示 */
     const prefs = state.sync.prefs;
     if(a.signedIn){
       if(prefs.intervalMin > 0){
@@ -1230,10 +1353,7 @@ function resetRoomEditState(){
   state.myEditRequestStatus = 'idle';
 }
 
-function canViewSandboxes(){
-  if(!state.auth.signedIn) return false;
-  return true;
-}
+function canViewSandboxes(){ return !!state.auth.signedIn; }
 function canViewSandboxOf(targetUid, targetRole){
   if(!state.auth.signedIn) return false;
   if(targetUid === state.auth.accountUid) return true;
@@ -1284,15 +1404,71 @@ function readAIParamsFromUI(){
   return result;
 }
 
-/* 初始化同步設定 */
+/* ============================================================
+   v8.6.9：分級參數 UI 同步
+   ============================================================ */
+function syncTroopTiersToUI(){
+  const t = state.troopTiers;
+  const setVal = (id, v) => {
+    const el = document.getElementById(id);
+    if(el) el.value = v;
+  };
+  if(t.tiers[0]){
+    setVal('tier1Max', t.tiers[0].maxLevel === Infinity ? '' : t.tiers[0].maxLevel);
+    setVal('tier1Teams', t.tiers[0].teamsPerPlayer);
+  }
+  if(t.tiers[1]){
+    setVal('tier2Max', t.tiers[1].maxLevel === Infinity ? '' : t.tiers[1].maxLevel);
+    setVal('tier2Teams', t.tiers[1].teamsPerPlayer);
+  }
+  if(t.tiers[2]){
+    setVal('tier3Max', t.tiers[2].maxLevel === Infinity ? '' : t.tiers[2].maxLevel);
+    setVal('tier3Teams', t.tiers[2].teamsPerPlayer);
+  }
+  if(t.tiers[3]){
+    setVal('tier4Teams', t.tiers[3].teamsPerPlayer);
+  }
+  const autoEl = document.getElementById('tierAutoCalcOnImport');
+  if(autoEl) autoEl.checked = !!t.autoCalcOnImport;
+  const presEl = document.getElementById('tierPreserveOldTotal');
+  if(presEl) presEl.checked = !!t.preserveOldTotal;
+}
+
+function readTroopTiersFromUI(){
+  const getNum = (id, def) => {
+    const el = document.getElementById(id);
+    if(!el) return def;
+    const n = parseInt(el.value, 10);
+    return isNaN(n) ? def : n;
+  };
+  const tier1Max = getNum('tier1Max', 17);
+  const tier2Max = getNum('tier2Max', 20);
+  const tier3Max = getNum('tier3Max', 24);
+  const tiers = [
+    { maxLevel: tier1Max, teamsPerPlayer: getNum('tier1Teams', 3) },
+    { maxLevel: tier2Max, teamsPerPlayer: getNum('tier2Teams', 4) },
+    { maxLevel: tier3Max, teamsPerPlayer: getNum('tier3Teams', 5) },
+    { maxLevel: Infinity, teamsPerPlayer: getNum('tier4Teams', 6) },
+  ];
+  const autoEl = document.getElementById('tierAutoCalcOnImport');
+  const presEl = document.getElementById('tierPreserveOldTotal');
+  return {
+    tiers,
+    autoCalcOnImport: !!autoEl?.checked,
+    preserveOldTotal: !!presEl?.checked,
+  };
+}
+
+/* 初始化 */
 loadSyncPrefs();
+loadTroopTiers();
 
 /* ============================================================
-   暴露到全域
+   暴露
    ============================================================ */
 Object.assign(window.SLG, {
   LS_PREFIX, LS_LEGACY_PREFIX, AI_LS_KEY, ACCOUNT_UID_KEY,
-  SYNC_PREFS_KEY,
+  SYNC_PREFS_KEY, TROOP_TIERS_LS_KEY,
   HOST_TIMEOUT, EDIT_LOCK_TTL,
   SANDBOX_SYNC_DEBOUNCE, ROOM_SNAPSHOT_DEBOUNCE,
   NETWORK_HEARTBEAT_INTERVAL,
@@ -1302,7 +1478,7 @@ Object.assign(window.SLG, {
   ROLE, ROLE_LABELS, ROLE_CLASS, ROLE_ORDER, EVT,
 
   POWER_YI, POWER_WAN, POWER_MIGRATE_THRESHOLD,
-  DEFAULT_ALLIANCE_ICONS,
+  DEFAULT_ALLIANCE_ICONS, DEFAULT_TROOP_TIERS,
 
   uid, nowTime, esc, sideLabel, allianceSideLabel, sideClass, logSystem,
   formatDateCompact, timeAgo, buildSandboxFileName,
@@ -1310,12 +1486,16 @@ Object.assign(window.SLG, {
   formatPower, formatAvgPower, parsePowerInput, migratePower, powerToYiInput,
   getAllianceIcons, isAllianceIconUsed, getAvailableAllianceIcons,
 
+  /* v8.6.9：分級工具 */
+  calcTeamsFromTiers, getTroopTiers, setTroopTiers, resetTroopTiers,
+  loadTroopTiers, saveTroopTiers,
+  syncTroopTiersToUI, readTroopTiersFromUI,
+
   AI,
   state, on, emit,
 
   isOnline, initNetworkWatcher, setNetworkStatus,
 
-  /* v8.6.7：同步 */
   loadSyncPrefs, saveSyncPrefs, getSyncPrefs, setSyncPrefs,
   markCloudDirty, clearCloudDirty, resetSyncState,
   performCloudUpload, scheduleUpload,
@@ -1347,7 +1527,6 @@ Object.assign(window.SLG, {
   getAllianceDist, getAllianceByName, ensureNpcAlliance,
 
   findRoute, addRoute, removeRoute, getReachableCityIds,
-
   computeDefStartTimes, migratePowerInState,
 
   getAlliancesSorted, reorderAlliances, resetAllianceOrder, migrateAllianceOrder,
