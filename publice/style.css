@@ -2259,3 +2259,584 @@ tr.tier-edit-row td{
   font-style:italic;
   font-size:12px;
 }
+/* ============================================================
+   v8.8.0：地圖庫（Map Library）
+   ============================================================ */
+
+/* 地圖庫控制列 */
+.map-library-toolbar{
+  display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+  padding:10px 12px;
+  margin-bottom:10px;
+  background:linear-gradient(135deg,rgba(30,58,95,.45),rgba(42,74,111,.2));
+  border:1px solid rgba(68,170,255,.4);
+  border-radius:var(--radius-sm);
+  box-shadow:0 0 20px rgba(68,170,255,.08);
+}
+.map-lib-item{
+  display:flex;flex-direction:column;gap:3px;
+  flex:1;min-width:130px;
+}
+.map-lib-item label{
+  font-size:10px;
+  color:var(--neon-blue);
+  font-weight:700;
+  margin-bottom:0;
+  letter-spacing:.3px;
+  text-transform:uppercase;
+}
+.map-lib-item select{
+  font-size:12px;
+  padding:6px 24px 6px 8px;
+  background-color:var(--bg-input);
+  border:1px solid var(--border);
+  color:var(--text-primary);
+}
+.map-lib-item select:focus{
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 2px rgba(68,170,255,.18);
+  outline:none;
+}
+.map-lib-btns{
+  display:flex;gap:6px;flex-wrap:wrap;
+  flex:0 0 auto;
+}
+.map-lib-btns .btn{white-space:nowrap;}
+
+@media (max-width:768px){
+  .map-library-toolbar{flex-direction:column;align-items:stretch;}
+  .map-lib-item{min-width:0;width:100%;}
+  .map-lib-btns{width:100%;}
+  .map-lib-btns .btn{flex:1;min-width:0;}
+}
+
+/* ============================================================
+   上傳地圖 Modal
+   ============================================================ */
+.mu-progress{
+  width:100%;
+  height:8px;
+  background:#0f1a2a;
+  border:1px solid var(--border);
+  border-radius:4px;
+  overflow:hidden;
+  margin-top:10px;
+}
+.mu-progress-bar{
+  height:100%;
+  width:0;
+  background:linear-gradient(90deg,#3b82f6,#22ff88);
+  border-radius:4px;
+  transition:width .25s ease-out;
+}
+#mu_file{
+  padding:8px;
+  background:var(--bg-input);
+  border:1px dashed var(--border);
+  border-radius:var(--radius-sm);
+  cursor:pointer;
+  font-size:11px;
+  color:var(--text-secondary);
+}
+#mu_file:hover{border-color:var(--neon-blue);}
+#mu_file::file-selector-button{
+  background:linear-gradient(135deg,#2563eb,#3b82f6);
+  color:#fff;
+  border:none;
+  padding:5px 12px;
+  border-radius:var(--radius-sm);
+  font-size:11px;
+  font-weight:700;
+  cursor:pointer;
+  margin-right:10px;
+  font-family:inherit;
+}
+#mu_file::file-selector-button:hover{
+  background:linear-gradient(135deg,#3b82f6,#60a5fa);
+}
+
+/* ============================================================
+   節點校準 Modal
+   ============================================================ */
+.nc-layout{
+  display:grid;
+  grid-template-columns:320px 1fr;
+  gap:12px;
+  flex:1 1 auto;
+  min-height:0;
+  height:calc(95vh - 100px);
+  max-height:calc(95vh - 100px);
+}
+
+.nc-sidebar{
+  display:flex;
+  flex-direction:column;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  overflow:hidden;
+  min-height:0;
+}
+
+.nc-progress{
+  padding:10px 12px;
+  background:#0f1a2a;
+  border-bottom:1px solid var(--border);
+  flex:0 0 auto;
+}
+.nc-progress-text{
+  font-size:11px;
+  color:var(--text-secondary);
+  margin-bottom:6px;
+  font-family:"SF Mono","Consolas",monospace;
+}
+.nc-progress-text b{
+  color:var(--neon-green);
+  font-size:13px;
+  margin:0 2px;
+}
+.nc-progress-bar{
+  height:6px;
+  background:#060a10;
+  border-radius:3px;
+  overflow:hidden;
+}
+.nc-progress-fill{
+  height:100%;
+  width:0;
+  background:linear-gradient(90deg,#3b82f6,#22ff88);
+  border-radius:3px;
+  transition:width .3s ease-out;
+}
+
+.nc-search{
+  padding:8px 10px;
+  border-bottom:1px solid var(--border);
+  flex:0 0 auto;
+}
+.nc-search input{
+  width:100%;
+  font-size:12px;
+  padding:6px 10px;
+  background:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-primary);
+}
+.nc-search input:focus{
+  border-color:var(--neon-blue);
+  box-shadow:0 0 0 2px rgba(68,170,255,.15);
+  outline:none;
+}
+
+.nc-city-list{
+  flex:1 1 auto;
+  overflow-y:auto;
+  padding:4px;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  scrollbar-color:#2a3a52 transparent;
+}
+.nc-city-list::-webkit-scrollbar{width:6px;}
+.nc-city-list::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:3px;}
+
+.nc-city-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:8px 10px;
+  margin-bottom:3px;
+  background:#060a10;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  cursor:pointer;
+  transition:all .12s;
+  font-size:12px;
+}
+.nc-city-item:hover{
+  border-color:var(--neon-blue);
+  background:rgba(68,170,255,.06);
+}
+.nc-city-item.selected{
+  border-color:var(--neon-blue);
+  background:rgba(68,170,255,.14);
+  box-shadow:0 0 12px rgba(68,170,255,.25);
+}
+.nc-city-item.done{
+  border-color:rgba(34,255,136,.35);
+}
+.nc-city-item.done .nc-city-name{
+  color:var(--text-dim);
+}
+.nc-city-name{
+  font-weight:600;
+  color:var(--text-primary);
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.nc-city-code{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;
+  color:var(--neon-blue);
+  margin-left:4px;
+}
+.nc-city-status{
+  flex:0 0 auto;
+  font-size:14px;
+}
+.nc-city-coords{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:9px;
+  color:var(--text-dim);
+  margin-top:2px;
+}
+
+.nc-actions{
+  padding:8px 10px;
+  border-top:1px solid var(--border);
+  background:#0f1a2a;
+  display:flex;
+  gap:6px;
+  justify-content:flex-end;
+  flex:0 0 auto;
+}
+
+.nc-canvas-wrap{
+  position:relative;
+  background:#060a10;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  overflow:auto;
+  min-height:0;
+  -webkit-overflow-scrolling:touch;
+  cursor:crosshair;
+}
+.nc-canvas-wrap::-webkit-scrollbar{width:8px;height:8px;}
+.nc-canvas-wrap::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:4px;}
+
+#nc_canvas{
+  display:block;
+  background:#0a0e17;
+}
+
+.nc-canvas-hint{
+  position:absolute;
+  top:12px;
+  left:50%;
+  transform:translateX(-50%);
+  padding:6px 14px;
+  background:rgba(10,14,23,.92);
+  border:1px solid var(--neon-blue);
+  border-radius:14px;
+  font-size:11px;
+  color:var(--neon-blue);
+  font-weight:600;
+  pointer-events:none;
+  white-space:nowrap;
+  z-index:5;
+  box-shadow:0 4px 12px rgba(0,0,0,.5);
+}
+
+@media (max-width:768px){
+  .nc-layout{
+    grid-template-columns:1fr;
+    grid-template-rows:200px 1fr;
+    height:calc(95vh - 80px);
+  }
+  .nc-canvas-hint{font-size:10px;padding:4px 10px;}
+}
+
+/* ============================================================
+   模糊匹配候選 Modal
+   ============================================================ */
+.fm-candidates{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  max-height:50vh;
+  overflow-y:auto;
+  padding:2px;
+}
+.fm-candidate{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  cursor:pointer;
+  transition:all .15s;
+}
+.fm-candidate:hover{
+  border-color:var(--neon-blue);
+  background:rgba(68,170,255,.06);
+}
+.fm-candidate.selected{
+  border-color:var(--neon-blue);
+  background:rgba(68,170,255,.12);
+  box-shadow:0 0 12px rgba(68,170,255,.2);
+}
+.fm-candidate input[type=radio]{
+  width:16px;
+  height:16px;
+  flex:0 0 16px;
+  accent-color:var(--neon-blue);
+  cursor:pointer;
+}
+.fm-candidate-body{
+  flex:1;
+  min-width:0;
+}
+.fm-candidate-name{
+  font-size:13px;
+  font-weight:700;
+  color:var(--text-primary);
+}
+.fm-candidate-code{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;
+  color:var(--neon-blue);
+  margin-left:6px;
+}
+.fm-candidate-meta{
+  font-size:10px;
+  color:var(--text-dim);
+  margin-top:2px;
+}
+.fm-score{
+  flex:0 0 auto;
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:12px;
+  font-weight:700;
+  padding:3px 8px;
+  border-radius:10px;
+  background:rgba(68,170,255,.1);
+  border:1px solid rgba(68,170,255,.3);
+  color:var(--neon-blue);
+}
+.fm-score.high{
+  background:rgba(34,255,136,.1);
+  border-color:rgba(34,255,136,.3);
+  color:var(--neon-green);
+}
+.fm-score.low{
+  background:rgba(255,204,0,.1);
+  border-color:rgba(255,204,0,.3);
+  color:var(--neon-yellow);
+}
+.fm-candidate.skip{
+  border-style:dashed;
+  color:var(--text-dim);
+}
+.fm-candidate.skip .fm-candidate-name{
+  color:var(--text-secondary);
+  font-weight:600;
+}
+
+/* ============================================================
+   地圖並排畫廊（Gallery）
+   ============================================================ */
+.map-gallery-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:14px;
+  padding:4px;
+}
+
+.map-gallery-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  overflow:hidden;
+  cursor:pointer;
+  transition:all .18s;
+  display:flex;
+  flex-direction:column;
+}
+.map-gallery-card:hover{
+  border-color:var(--neon-blue);
+  transform:translateY(-2px);
+  box-shadow:0 6px 24px rgba(68,170,255,.18);
+}
+.map-gallery-card.active{
+  border-color:var(--neon-green);
+  box-shadow:0 0 20px rgba(34,255,136,.2);
+}
+
+.map-gallery-thumb{
+  width:100%;
+  aspect-ratio:16/10;
+  background:#060a10;
+  overflow:hidden;
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.map-gallery-thumb img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  transition:transform .3s;
+}
+.map-gallery-card:hover .map-gallery-thumb img{
+  transform:scale(1.03);
+}
+.map-gallery-thumb-placeholder{
+  font-size:48px;
+  color:var(--text-dim);
+  opacity:.4;
+}
+.map-gallery-thumb-badge{
+  position:absolute;
+  top:8px;
+  right:8px;
+  padding:3px 8px;
+  background:rgba(10,14,23,.88);
+  border:1px solid var(--neon-green);
+  border-radius:10px;
+  font-size:10px;
+  font-weight:700;
+  color:var(--neon-green);
+  font-family:"SF Mono","Consolas",monospace;
+}
+.map-gallery-thumb-badge.warn{
+  border-color:var(--neon-yellow);
+  color:var(--neon-yellow);
+}
+
+.map-gallery-body{
+  padding:10px 12px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  flex:1 1 auto;
+}
+.map-gallery-name{
+  font-size:13px;
+  font-weight:700;
+  color:var(--text-primary);
+  display:flex;
+  align-items:center;
+  gap:6px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.map-gallery-name .active-mark{
+  color:var(--neon-green);
+  font-size:10px;
+  flex:0 0 auto;
+}
+.map-gallery-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  font-size:10px;
+  color:var(--text-dim);
+}
+.map-gallery-meta .item{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+}
+.map-gallery-meta b{
+  color:var(--text-secondary);
+  font-family:"SF Mono","Consolas",monospace;
+}
+.map-gallery-actions{
+  display:flex;
+  gap:4px;
+  margin-top:auto;
+  padding-top:6px;
+  border-top:1px solid var(--border);
+}
+.map-gallery-actions .btn{
+  flex:1;
+  font-size:10px;
+  padding:4px 6px;
+  white-space:nowrap;
+}
+
+/* 空狀態 */
+.map-gallery-empty{
+  grid-column:1 / -1;
+  padding:40px 20px;
+  text-align:center;
+  background:#0a101a;
+  border:1px dashed var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-dim);
+}
+.map-gallery-empty .icon{
+  font-size:40px;
+  margin-bottom:10px;
+  opacity:.4;
+}
+.map-gallery-empty .text{
+  font-size:12px;
+  line-height:1.6;
+}
+
+@media (max-width:600px){
+  .map-gallery-grid{
+    grid-template-columns:1fr;
+  }
+  .map-gallery-thumb{
+    aspect-ratio:16/9;
+  }
+}
+
+/* ============================================================
+   v8.8.0：地圖庫權限鎖定樣式
+   ============================================================ */
+.map-lib-locked{
+  position:relative;
+  opacity:.5;
+  pointer-events:none;
+}
+.map-lib-locked::after{
+  content:'🔒';
+  position:absolute;
+  right:6px;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:12px;
+  pointer-events:none;
+}
+
+/* 校準模式開啟時的畫布裝飾 */
+.nc-canvas-wrap.calibrating::before{
+  content:'';
+  position:absolute;
+  top:0;left:0;right:0;bottom:0;
+  border:2px dashed rgba(68,170,255,.6);
+  pointer-events:none;
+  z-index:4;
+  animation:ncPulse 1.6s ease-in-out infinite;
+}
+@keyframes ncPulse{
+  0%,100%{opacity:.6;}
+  50%{opacity:.2;}
+}
+
+/* 校準點標記 */
+.nc-marker-label{
+  position:absolute;
+  padding:2px 6px;
+  background:rgba(34,255,136,.95);
+  color:#000;
+  font-size:10px;
+  font-weight:700;
+  border-radius:8px;
+  pointer-events:none;
+  white-space:nowrap;
+  transform:translate(-50%,-140%);
+  box-shadow:0 2px 8px rgba(0,0,0,.5);
+}

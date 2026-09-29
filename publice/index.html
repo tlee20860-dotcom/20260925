@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.7.1</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.8.0</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -34,13 +34,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.7.1</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.8.0</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.7.1</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.8.0</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -93,7 +93,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.7.1</span>
+      <span class="sidebar-version">v8.8.0</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -899,19 +899,51 @@
         </div>
 
         <div id="mapRouteWrap">
-          <div class="map-toolbar">
-            <select id="mapZoneSelect" class="map-zone-select" title="選擇要顯示的戰區">
-              <option value="all">🌐 全部</option>
-            </select>
-            <button class="btn btn-ghost btn-sm" id="btnMapEditRoute">✏️ 編輯路線：關</button>
-            <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
-            <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
-            <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
-            <button class="btn btn-ghost btn-sm" id="btnMapExportPDF">📄 匯出 PDF</button>
-            <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點、編輯模式下拖曳城池連線</span>
+          <!-- v8.8.0：地圖庫控制列 -->
+          <div class="map-library-toolbar">
+            <div class="map-lib-item">
+              <label>檢視模式</label>
+              <select id="mapLibraryViewMode">
+                <option value="single">🖼️ 單張</option>
+                <option value="gallery">📚 並排畫廊</option>
+              </select>
+            </div>
+            <div class="map-lib-item" style="flex:2;">
+              <label>選擇地圖</label>
+              <select id="mapLibrarySelect">
+                <option value="">載入中...</option>
+              </select>
+            </div>
+            <div class="map-lib-btns">
+              <button class="btn btn-primary btn-sm" id="btnMapUpload">📤 上傳新地圖</button>
+              <button class="btn btn-warning btn-sm" id="btnMapCalibrate">🎯 節點校準</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapExportCoords">💾 匯出座標</button>
+            </div>
           </div>
-          <div class="game-map-container" id="gameMapContainer">
-            <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
+
+          <!-- 單張地圖檢視區 -->
+          <div id="mapSingleView">
+            <div class="map-toolbar">
+              <select id="mapZoneSelect" class="map-zone-select" title="選擇要顯示的戰區">
+                <option value="all">🌐 全部</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="btnMapEditRoute">✏️ 編輯路線：關</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapExportPDF">📄 匯出 PDF</button>
+              <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點、編輯模式下拖曳城池連線</span>
+            </div>
+            <div class="game-map-container" id="gameMapContainer">
+              <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- v8.8.0：並排畫廊檢視區 -->
+          <div id="mapGalleryView" style="display:none;">
+            <div class="map-gallery-grid" id="mapGalleryGrid">
+              <!-- 動態生成地圖卡片 -->
+            </div>
           </div>
         </div>
 
@@ -1149,7 +1181,7 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.7.1）</div>
+        <div class="card-title">📖 城戰計算規則（v8.8.0）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1206,6 +1238,7 @@
             <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
             <li><b>v8.7.1：節點顯示「城池名 (盟徽)」</b></li>
             <li><b>v8.7.1：支援匯出 PDF 圖檔</b></li>
+            <li><b>v8.8.0：支援地圖庫（上傳底圖、節點校準、模糊匹配）</b></li>
           </ul>
           <h2>九、宣戰清單</h2>
           <ul>
@@ -1246,6 +1279,95 @@
   </main>
 </div>
 
+<!-- ============================================================
+     v8.8.0：地圖庫相關 Modal
+     ============================================================ -->
+
+<!-- 上傳地圖 Modal -->
+<div class="modal-overlay" id="mapUploadModal">
+  <div class="modal-box modal-lg" style="max-width:480px;">
+    <h3>📤 上傳新地圖</h3>
+    <div class="modal-scroll">
+      <div class="param-item">
+        <label>地圖名稱 <span style="color:var(--neon-red);">*</span></label>
+        <input type="text" id="mu_name" placeholder="例：全地圖 v1" maxlength="30">
+      </div>
+      <div class="param-item">
+        <label>底圖檔案 <span style="color:var(--neon-red);">*</span></label>
+        <input type="file" id="mu_file" accept="image/png,image/jpeg,image/webp">
+        <div class="param-hint">支援 PNG / JPG / WebP，建議 4K 以內。上傳至 Cloudinary。</div>
+      </div>
+      <div class="param-item">
+        <label>圖片尺寸（自動填入）</label>
+        <div class="flex-row" style="gap:6px;">
+          <input type="number" id="mu_width" placeholder="寬" readonly style="flex:1;">
+          <span style="color:var(--text-dim);align-self:center;">×</span>
+          <input type="number" id="mu_height" placeholder="高" readonly style="flex:1;">
+        </div>
+      </div>
+      <div class="mu-progress" id="mu_progress" style="display:none;">
+        <div class="mu-progress-bar" id="mu_progressBar"></div>
+      </div>
+      <div class="text-dim mt-8" id="mu_status"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="mu_cancel">取消</button>
+      <button class="btn btn-primary" id="mu_submit">📤 上傳</button>
+    </div>
+  </div>
+</div>
+
+<!-- 節點校準 Modal -->
+<div class="modal-overlay" id="nodeCalibrationModal">
+  <div class="modal-box modal-lg" style="max-width:1100px;max-height:95vh;">
+    <h3>🎯 節點校準：<span id="nc_mapName">—</span></h3>
+    <div class="nc-layout">
+      <!-- 左側：城池清單 -->
+      <div class="nc-sidebar">
+        <div class="nc-progress">
+          <div class="nc-progress-text">進度：<b id="nc_doneCount">0</b> / <b id="nc_totalCount">0</b></div>
+          <div class="nc-progress-bar"><div class="nc-progress-fill" id="nc_progressFill"></div></div>
+        </div>
+        <div class="nc-search">
+          <input type="text" id="nc_search" placeholder="🔍 搜尋城池...">
+        </div>
+        <div class="nc-city-list" id="nc_cityList">
+          <!-- 動態生成 -->
+        </div>
+        <div class="nc-actions">
+          <button class="btn btn-ghost btn-sm" id="nc_cancel">取消</button>
+          <button class="btn btn-primary btn-sm" id="nc_save">💾 儲存校準</button>
+        </div>
+      </div>
+      <!-- 右側：底圖點擊區 -->
+      <div class="nc-canvas-wrap" id="nc_canvasWrap">
+        <canvas id="nc_canvas"></canvas>
+        <div class="nc-canvas-hint" id="nc_canvasHint">請從左側選擇城池，然後點擊圖上位置</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 模糊匹配候選 Modal -->
+<div class="modal-overlay" id="fuzzyMatchModal">
+  <div class="modal-box modal-lg" style="max-width:520px;">
+    <h3>🔀 模糊匹配：<span id="fm_originName">—</span></h3>
+    <div class="modal-scroll">
+      <div class="text-dim" style="margin-bottom:10px;">
+        系統找不到完全符合的節點，請選擇要匹配的目標：
+      </div>
+      <div class="fm-candidates" id="fm_candidates">
+        <!-- 動態生成 -->
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="fm_skipAll">全部跳過</button>
+      <button class="btn btn-primary" id="fm_confirm">確認選擇</button>
+    </div>
+  </div>
+</div>
+
+<!-- 原有 Modal 保留 -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box">
     <h3 id="modalTitle">⚠️ 確認操作</h3>
@@ -1593,6 +1715,8 @@
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canRunSim"><span>可執行推演</span></label>
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canKick"><span>可踢人</span></label>
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditSettings"><span>可修改戰鬥參數</span></label>
+        <!-- v8.8.0：地圖庫編輯權 -->
+        <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditMapLibrary"><span>可編輯地圖庫</span></label>
       </div>
       <div class="section-label">🔑 修改密碼</div>
       <div class="param-item"><label>新密碼（留空不修改）</label><input type="password" id="ae_newPassword" placeholder="留空不修改" maxlength="64"></div>
