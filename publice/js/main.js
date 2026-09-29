@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.8.0：地圖庫事件綁定 + 地圖庫權限控制 + 啟動初始化
+ * v8.9.0：地圖庫事件綁定 + 菱形偵測載入檢查 + 版本號更新
  * ========================================================================== */
 (function(){
 'use strict';
@@ -201,7 +201,7 @@ function applyPermissions(){
   const chatInputEl = document.getElementById('chatInput');
   if(chatInputEl) chatInputEl.disabled = !signedIn;
 
-  /* v8.8.0：地圖庫按鈕權限 */
+  /* v8.9.0：地圖庫按鈕權限 */
   const canEditMapLib = effectiveCanEditMapLibrary();
   togglePerm(document.getElementById('btnMapUpload'), signedIn && canEditMapLib, '需要地圖庫編輯權限');
   togglePerm(document.getElementById('btnMapCalibrate'), signedIn && canEditMapLib, '需要地圖庫編輯權限');
@@ -258,7 +258,6 @@ function applyPermissions(){
     }
   });
 
-  /* Gallery 內的按鈕也要跟著權限切換 */
   document.querySelectorAll('#mapGalleryGrid [data-action="calibrate"],#mapGalleryGrid [data-action="edit"]').forEach(b => {
     b.disabled = !canEditMapLib;
     if(!canEditMapLib) b.classList.add('perm-disabled');
@@ -302,7 +301,7 @@ function handleNetworkChange({ online }){
 }
 
 /* ============================================================
-   同步事件（含 visibility 修正 + beforeunload 遮罩）
+   同步事件
    ============================================================ */
 let pendingVisibilityUpload = null;
 
@@ -349,7 +348,6 @@ function bindSyncWatchers(){
   });
 }
 
-/* ====== 中場休息：第 1/2 段結束 ====== */
 /* ============================================================
    同步設定 UI 綁定
    ============================================================ */
@@ -894,7 +892,7 @@ function initListPrefs(){
 }
 
 /* ============================================================
-   v8.8.0：地圖庫事件綁定（獨立函式，方便維護）
+   地圖庫事件綁定
    ============================================================ */
 function bindMapLibraryUI(){
   /* v8.9.0：確認 circleDetect 已載入 */
@@ -904,7 +902,6 @@ function bindMapLibraryUI(){
 
   if(MapLibrary()) MapLibrary().init();
 
-  /* 若已登入，啟動索引監聽 */
   if(state.auth.signedIn && window.SLG.startMapLibraryIndexWatcher){
     try{ window.SLG.startMapLibraryIndexWatcher(); }catch(e){ console.warn('啟動地圖庫索引監聽失敗', e); }
   }
@@ -1030,7 +1027,7 @@ function bindUI(){
   bindSyncSettingsUI();
   bindTroopTierUI();
 
-  /* v8.8.0：地圖庫 UI */
+  /* v8.9.0：地圖庫 UI */
   bindMapLibraryUI();
 
   const btnLogout = document.getElementById('btnLogout');
@@ -1603,7 +1600,6 @@ function bindUI(){
   window.addEventListener('beforeunload', () => {
     saveState();
     try{ releaseWorker(); }catch(e){}
-    /* v8.9.0：釋放 circleDetect Worker */
     try{
       if(typeof window.SLG.releaseCdWorker === 'function') window.SLG.releaseCdWorker();
     }catch(e){}
@@ -1640,7 +1636,6 @@ function bindEvents(){
     updateModeBar();
     if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
 
-    /* v8.8.0：登入後啟動地圖庫索引監聽；登出後停止 */
     if(state.auth.signedIn){
       if(window.SLG.startMapLibraryIndexWatcher){
         try{ window.SLG.startMapLibraryIndexWatcher(); }catch(e){}
@@ -1799,7 +1794,6 @@ function bindEvents(){
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
   });
 
-  /* v8.8.0：地圖庫事件 */
   on(EVT.MAP_LIBRARY_UPDATED, () => {
     applyPermissions();
   });
@@ -1933,7 +1927,6 @@ function boot(){
       }
       if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
 
-      /* v8.8.0：登入後啟動地圖庫 */
       try{
         if(window.SLG.startMapLibraryIndexWatcher){
           window.SLG.startMapLibraryIndexWatcher();
@@ -1949,10 +1942,10 @@ function boot(){
       if(window.SLG.EntryGate) window.SLG.EntryGate.showForm();
       if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
       applyPermissions();
+    }
   })();
 
-  
-  /* v8.9.0：診斷資訊 */
+  /* v8.9.0：啟動訊息 */
   console.log('%c[沙盤 v8.9.0] 地圖庫 + 菱形偵測 + 智慧命名就緒', 'color:#22ff88;font-weight:bold;font-size:14px');
   console.log('%c  · Cloudinary 上傳：' + (typeof window.SLG.uploadMapImageToCloudinary === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
   console.log('%c  · 菱形偵測：' + (typeof window.SLG.detectFromImage === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
@@ -1960,7 +1953,9 @@ function boot(){
   console.log('%c  · 模糊匹配：' + (typeof window.SLG.FuzzyMatch === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
 }
 
-/* v8.8.0：初次載入地圖庫索引 */
+/* ============================================================
+   地圖庫索引載入
+   ============================================================ */
 async function refreshMapLibraryIndex(){
   if(!state.auth.signedIn) return;
   if(!isOnline()) return;

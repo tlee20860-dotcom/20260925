@@ -1,6 +1,6 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.8.0：地圖庫（Map Library）+ 節點校準 + 模糊匹配候選
+ * v8.9.0：地圖庫（Map Library）+ 菱形偵測 + 智慧命名
  * ========================================================================== */
 (function(){
 'use strict';
@@ -37,7 +37,7 @@ let editingCityRowId = null;
 let editingCityTierId = null;
 
 /* ============================================================
-   v8.6.7 / v8.6.9：同步狀態渲染（含上次時間）
+   同步狀態渲染
    ============================================================ */
 let syncCountdownInterval = null;
 
@@ -1210,7 +1210,6 @@ const DEPLOY = (() => {
     const a = state.alliances.find(al => al.id === city.allianceId);
     return (a && a.icon) ? a.icon : '';
   }
-  /* v8.8.0：顯示城池編號 */
   function cityNameWithCode(city){
     if(!city) return '';
     return city.code ? `${city.name} [${city.code}]` : city.name;
@@ -3205,7 +3204,6 @@ const GameMap = (() => {
   const CANVAS_W = 2000, CANVAS_H = 2000;
   const LS_MAP_ZONE_KEY = 'slg_map_zone_v862';
 
-  /* v8.8.0：目前使用的底圖與節點 */
   let activeMapId = '';
   let activeMapNodes = null;
   let activeMapImageEl = null;
@@ -3275,7 +3273,6 @@ const GameMap = (() => {
     onMapLibraryChanged();
   }
 
-  /* v8.8.0：地圖庫變更時觸發重繪 */
   function onMapLibraryChanged(){
     const newId = state.mapLibrary.activeMapId || '';
     const map = newId ? getLoadedMap(newId) : null;
@@ -3538,7 +3535,6 @@ const GameMap = (() => {
     if(dragging){ dragging = false; applyCursor(); }
   }
 
-  /* v8.8.0：解析城池對應的節點 */
   function resolveCityMapNode(city, mapNodes){
     if(!city || !mapNodes) return null;
     if(city.mapNode && city.mapNode.nodeId && mapNodes[city.mapNode.nodeId]){
@@ -3561,7 +3557,6 @@ const GameMap = (() => {
     const cities = state.cities;
     if(cities.length === 0){ nodePositions.clear(); return; }
 
-    /* v8.8.0：若有底圖 + 節點 → 使用固定座標 */
     if(activeMapNodes && Object.keys(activeMapNodes).length > 0){
       nodePositions.clear();
       for(const c of cities){
@@ -3574,7 +3569,6 @@ const GameMap = (() => {
       return;
     }
 
-    /* 否則：力導向佈局 */
     if(!layoutDirty && nodePositions.size === cities.length) return;
     nodePositions.clear();
     const W = CANVAS_W, H = CANVAS_H, PAD = 200;
@@ -3650,7 +3644,6 @@ const GameMap = (() => {
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
     if(!any){
-      /* v8.8.0：若無節點位置但有底圖，直接顯示整張圖 */
       if(activeMapImageEl){
         const availW = containerEl.clientWidth || 600;
         const availH = containerEl.clientHeight || 400;
@@ -3763,7 +3756,6 @@ const GameMap = (() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    /* v8.8.0：優先繪製底圖 */
     if(activeMapImageEl){
       try{
         ctx.drawImage(activeMapImageEl, 0, 0, canvas.width, canvas.height);
@@ -3775,8 +3767,8 @@ const GameMap = (() => {
     } else {
       ctx.fillStyle = '#0a0e17';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      const isAllView = (currentZoneFilter === 'all');
-      if(isAllView){
+      const isAllView0 = (currentZoneFilter === 'all');
+      if(isAllView0){
         const zoneCities = new Map();
         for(const c of state.cities){
           const zid = c.zoneId || '__none__';
@@ -4051,7 +4043,7 @@ const GameMap = (() => {
 })();
 
 /* ============================================================
-   MapLibrary — v8.8.0：地圖庫控制列 + 上傳 Modal
+   MapLibrary — 地圖庫控制列 + 上傳 Modal
    ============================================================ */
 const MapLibrary = (() => {
   let uploading = false;
@@ -4101,7 +4093,6 @@ const MapLibrary = (() => {
       btnExportCoords.addEventListener('click', exportActiveMapCoords);
     }
 
-    /* 上傳 Modal 事件 */
     const muFile = document.getElementById('mu_file');
     if(muFile && !muFile.dataset.bound){
       muFile.dataset.bound = '1';
@@ -4280,7 +4271,7 @@ const MapLibrary = (() => {
   function openUploadModal(){
     if(!window.SLG.canEditMapLibrary()){ alert('🔒 您沒有地圖庫編輯權限'); return; }
     if(!state.auth.signedIn){ alert('請先登入'); return; }
-    uploading = false;   /* ★ v8.8.0 修復：重置上傳鎖，避免卡死 */
+    uploading = false;
     const modal = document.getElementById('mapUploadModal');
     if(!modal) return;
     document.getElementById('mu_name').value = '';
@@ -4303,11 +4294,11 @@ const MapLibrary = (() => {
     if(modal) modal.classList.remove('show');
   }
 
-async function doUpload(){
-  if(uploading){
-    console.warn('[MapUpload] 已有上傳進行中，忽略此次點擊');
-    return;
-  }
+  async function doUpload(){
+    if(uploading){
+      console.warn('[MapUpload] 已有上傳進行中，忽略此次點擊');
+      return;
+    }
     const name = (document.getElementById('mu_name').value || '').trim();
     const fileEl = document.getElementById('mu_file');
     const file = fileEl && fileEl.files ? fileEl.files[0] : null;
@@ -4346,6 +4337,11 @@ async function doUpload(){
         uploading = false;
         closeUploadModal();
         logSystem(`📤 已上傳新地圖：${name}`);
+        /* v8.9.0：上傳完成後，若有城池，提示校準 */
+        if(state.cities.length > 0){
+          const goCal = confirm(`地圖「${name}」已上傳！\n\n目前有 ${state.cities.length} 座城池，要現在去校準節點嗎？`);
+          if(goCal){ NodeCalibration.open(newId); }
+        }
       }, 400);
     }catch(e){
       uploading = false;
@@ -4387,6 +4383,7 @@ async function doUpload(){
   return { init, renderSelect, renderGallery, applyViewMode };
 })();
 
+/* ====== 中場休息：第 3/3 段上半結束 ====== */
 /* ============================================================
    NodeCalibration — v8.9.0：節點校準（菱形偵測 + 智慧命名）
    ============================================================ */
@@ -4395,16 +4392,16 @@ const NodeCalibration = (() => {
   let mapId = '';
   let mapData = null;
   let imageEl = null;
-  let nodes = {};              /* { nodeId: { name, code, x, y } } */
-  let candidates = [];         /* 偵測候選陣列 */
-  let activeCandidateId = '';  /* 目前選中的候選 ID */
+  let nodes = {};
+  let candidates = [];
+  let activeCandidateId = '';
   let canvas, ctx, wrapEl;
   let displayScale = 1;
   let displayW = 0, displayH = 0;
   let isScanning = false;
   let isManualAddMode = false;
   let currentFilter = 'all';
-  let usedCityIds = new Set(); /* 已命名的城池 ID（避免重複命名） */
+  let usedCityIds = new Set();
 
   /* ── 開啟校準 ── */
   async function open(id){
@@ -4418,7 +4415,6 @@ const NodeCalibration = (() => {
     const nameEl = document.getElementById('nc_mapName');
     if(nameEl) nameEl.textContent = '載入中...';
 
-    /* 重置狀態 */
     resetState();
     setModeBadge('準備中...', '');
 
@@ -4441,7 +4437,6 @@ const NodeCalibration = (() => {
     }
   }
 
-  /* ── 重置狀態 ── */
   function resetState(){
     candidates = [];
     activeCandidateId = '';
@@ -4449,11 +4444,9 @@ const NodeCalibration = (() => {
     isManualAddMode = false;
     currentFilter = 'all';
     usedCityIds = new Set();
-    /* 從 nodes 反推已命名的城池（依 code 或 name 比對） */
     for(const nid in nodes){
       const n = nodes[nid];
       if(!n || !n.name) continue;
-      /* 找出對應的 city */
       const city = state.cities.find(c => {
         if(c.code && n.code && c.code === n.code) return true;
         if(c.name === n.name) return true;
@@ -4463,7 +4456,6 @@ const NodeCalibration = (() => {
     }
   }
 
-  /* ── 關閉 ── */
   function close(){
     const modal = document.getElementById('nodeCalibrationModal');
     if(modal) modal.classList.remove('show');
@@ -4478,7 +4470,6 @@ const NodeCalibration = (() => {
     displayW = 0; displayH = 0;
   }
 
-  /* ── 模式徽章 ── */
   function setModeBadge(text, cls){
     const el = document.getElementById('nc_modeBadge');
     if(!el) return;
@@ -4486,7 +4477,6 @@ const NodeCalibration = (() => {
     el.className = 'nc-mode-badge' + (cls ? ' ' + cls : '');
   }
 
-  /* ── 顯示/隱藏掃描面板 ── */
   function showScanPanel(){
     const scanPanel = document.getElementById('nc_scanPanel');
     const statsPanel = document.getElementById('nc_statsPanel');
@@ -4508,7 +4498,6 @@ const NodeCalibration = (() => {
     if(candList) candList.style.display = '';
   }
 
-  /* ── 設定 Canvas ── */
   function setupCanvas(){
     wrapEl = document.getElementById('nc_canvasWrap');
     canvas = document.getElementById('nc_canvas');
@@ -4529,7 +4518,6 @@ const NodeCalibration = (() => {
     redrawCanvas();
   }
 
-  /* ── 開始掃描 ── */
   async function startScan(){
     if(!imageEl || !window.SLG.detectFromImage) return;
     isScanning = true;
@@ -4547,7 +4535,6 @@ const NodeCalibration = (() => {
         setProgress(progress, text);
       });
       candidates = result || [];
-      /* 標記 source */
       for(const c of candidates){ c.source = 'auto'; }
       isScanning = false;
       setModeBadge(`✅ 偵測完成（${candidates.length} 個候選）`, 'success');
@@ -4560,7 +4547,6 @@ const NodeCalibration = (() => {
       isScanning = false;
       setModeBadge('❌ 偵測失敗', '');
       if(scanHint) scanHint.textContent = '偵測失敗：' + e.message;
-      /* 至少顯示空清單 */
       candidates = [];
       showCandidatePanel();
       renderStats();
@@ -4569,21 +4555,13 @@ const NodeCalibration = (() => {
     }
   }
 
-  /* ── 重新掃描 ── */
   async function rescan(){
     if(isScanning){ return; }
     if(!confirm('重新掃描會清除目前所有候選（已命名的節點會保留）。\n\n確定嗎？')) return;
-    /* 保留已命名的 nodeId */
-    const namedIds = new Set();
-    for(const c of candidates){
-      if(c.namedCityId) namedIds.add(c.id);
-    }
     candidates = candidates.filter(c => c.namedCityId);
     showScanPanel();
     await startScan();
-    /* 重新對應已命名的候選 */
     for(const c of candidates){
-      /* 用座標重新比對舊節點 */
       for(const nid in nodes){
         const n = nodes[nid];
         if(!n || typeof n.x !== 'number') continue;
@@ -4600,7 +4578,6 @@ const NodeCalibration = (() => {
     renderCanvas();
   }
 
-  /* ── 統計 ── */
   function renderStats(){
     const total = candidates.length;
     const named = candidates.filter(c => c.namedCityId).length;
@@ -4616,7 +4593,6 @@ const NodeCalibration = (() => {
     setText('nc_statManual', manual);
   }
 
-  /* ── 篩選候選 ── */
   function getFilteredCandidates(){
     if(currentFilter === 'pending') return candidates.filter(c => !c.namedCityId);
     if(currentFilter === 'named') return candidates.filter(c => c.namedCityId);
@@ -4624,7 +4600,6 @@ const NodeCalibration = (() => {
     return candidates;
   }
 
-  /* ── 候選清單 ── */
   function renderCandidateList(){
     const el = document.getElementById('nc_candidateList');
     if(!el) return;
@@ -4671,14 +4646,12 @@ const NodeCalibration = (() => {
     });
   }
 
-  /* ── 聚焦候選（捲動 + 開啟命名面板） ── */
   function focusCandidate(id){
     activeCandidateId = id;
     renderCandidateList();
     renderCanvas();
     const c = candidates.find(x => x.id === id);
     if(!c) return;
-    /* 捲動到可見位置 */
     if(wrapEl){
       const px = c.x * displayScale;
       const py = c.y * displayScale;
@@ -4688,11 +4661,9 @@ const NodeCalibration = (() => {
         behavior: 'smooth',
       });
     }
-    /* 開啟命名面板 */
     openNamingPopup(c);
   }
 
-  /* ── 篩選切換 ── */
   function setFilter(filter){
     currentFilter = filter;
     document.querySelectorAll('[data-nc-filter]').forEach(btn => {
@@ -4702,7 +4673,6 @@ const NodeCalibration = (() => {
     renderCanvas();
   }
 
-  /* ── 補點模式切換 ── */
   function toggleManualAddMode(){
     isManualAddMode = !isManualAddMode;
     if(wrapEl){
@@ -4726,14 +4696,11 @@ const NodeCalibration = (() => {
     renderCanvas();
   }
 
-  /* ====== 中場休息：NodeCalibration 第 1/2 段結束 ====== */
-    /* ── 繪製畫布 ── */
   function redrawCanvas(){
     if(!ctx || !imageEl) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imageEl, 0, 0, displayW, displayH);
 
-    /* 繪製候選標記 */
     for(let i = 0; i < candidates.length; i++){
       const c = candidates[i];
       const dx = c.x * displayScale;
@@ -4743,17 +4710,10 @@ const NodeCalibration = (() => {
       const isManual = c.source === 'manual';
       const r = Math.max(14, (c.radius || 14) * displayScale + 6);
 
-      /* 顏色：
-         已命名 → 綠
-         手動補點 → 紫
-         待命名 → 紅
-         選中 → 藍框 (不管狀態)
-      */
       let color = '#ff4466';
       if(isNamed) color = '#22ff88';
       else if(isManual) color = '#aa66ff';
 
-      /* 外框 */
       ctx.beginPath();
       ctx.arc(dx, dy, r, 0, Math.PI * 2);
       ctx.strokeStyle = color;
@@ -4762,7 +4722,6 @@ const NodeCalibration = (() => {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      /* 選中額外光圈 */
       if(isActive){
         ctx.beginPath();
         ctx.arc(dx, dy, r + 6, 0, Math.PI * 2);
@@ -4773,7 +4732,6 @@ const NodeCalibration = (() => {
         ctx.setLineDash([]);
       }
 
-      /* 編號標籤 */
       const labelText = isNamed
         ? `${c.namedCityName}${c.namedCityCode ? ' (' + c.namedCityCode + ')' : ''}`
         : `#${i + 1}`;
@@ -4801,14 +4759,12 @@ const NodeCalibration = (() => {
       ctx.textBaseline = 'middle';
       ctx.fillText(labelText, dx, ly + bh / 2);
 
-      /* 中心點 */
       ctx.beginPath();
       ctx.arc(dx, dy, 2, 0, Math.PI * 2);
       ctx.fillStyle = labelColor;
       ctx.fill();
     }
 
-    /* 若有節點但沒有候選 → 顯示已儲存節點 */
     if(candidates.length === 0 && Object.keys(nodes).length > 0){
       for(const nid in nodes){
         const n = nodes[nid];
@@ -4826,30 +4782,25 @@ const NodeCalibration = (() => {
 
   function renderCanvas(){ redrawCanvas(); }
 
-  /* ── 綁定事件 ── */
   function bindEvents(){
-    /* 篩選按鈕 */
     document.querySelectorAll('[data-nc-filter]').forEach(btn => {
       if(btn.dataset.bound) return;
       btn.dataset.bound = '1';
       btn.addEventListener('click', () => setFilter(btn.dataset.ncFilter));
     });
 
-    /* 重掃 */
     const btnRescan = document.getElementById('nc_btnRescan');
     if(btnRescan && !btnRescan.dataset.bound){
       btnRescan.dataset.bound = '1';
       btnRescan.addEventListener('click', rescan);
     }
 
-    /* 補點 */
     const btnManual = document.getElementById('nc_btnManualAdd');
     if(btnManual && !btnManual.dataset.bound){
       btnManual.dataset.bound = '1';
       btnManual.addEventListener('click', toggleManualAddMode);
     }
 
-    /* 取消 */
     const btnCancel = document.getElementById('nc_cancel');
     if(btnCancel && !btnCancel.dataset.bound){
       btnCancel.dataset.bound = '1';
@@ -4861,14 +4812,12 @@ const NodeCalibration = (() => {
       });
     }
 
-    /* 儲存 */
     const btnSave = document.getElementById('nc_save');
     if(btnSave && !btnSave.dataset.bound){
       btnSave.dataset.bound = '1';
       btnSave.addEventListener('click', doSave);
     }
 
-    /* 命名面板按鈕 */
     const closeBtn = document.getElementById('nc_namingClose');
     if(closeBtn && !closeBtn.dataset.bound){
       closeBtn.dataset.bound = '1';
@@ -4887,7 +4836,6 @@ const NodeCalibration = (() => {
       delBtn.addEventListener('click', deleteActiveCandidate);
     }
 
-    /* 命名搜尋框 */
     const searchEl = document.getElementById('nc_namingSearch');
     if(searchEl && !searchEl.dataset.bound){
       searchEl.dataset.bound = '1';
@@ -4903,13 +4851,11 @@ const NodeCalibration = (() => {
       });
     }
 
-    /* 畫布點擊 */
     if(canvas && !canvas.dataset.bound){
       canvas.dataset.bound = '1';
       canvas.addEventListener('click', onClickCanvas);
     }
 
-    /* 視窗大小變化 */
     if(!window.__ncResizeBound){
       window.__ncResizeBound = true;
       window.addEventListener('resize', () => {
@@ -4922,13 +4868,11 @@ const NodeCalibration = (() => {
     }
   }
 
-  /* ── 畫布點擊處理 ── */
   function onClickCanvas(e){
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
-    /* 找點擊附近的候選 */
     let closest = null;
     let minDist = 30;
     for(const c of candidates){
@@ -4938,7 +4882,6 @@ const NodeCalibration = (() => {
       if(dist < minDist){ minDist = dist; closest = c; }
     }
 
-    /* 補點模式：新增候選 */
     if(isManualAddMode){
       const natX = Math.round(cx / displayScale);
       const natY = Math.round(cy / displayScale);
@@ -4962,11 +4905,9 @@ const NodeCalibration = (() => {
       return;
     }
 
-    /* 一般模式：點候選 → 開啟命名 */
     if(closest){
       focusCandidate(closest.id);
     } else {
-      /* 點空白處：不做任何事（或關閉面板） */
       closeNamingPopup();
       activeCandidateId = '';
       renderCandidateList();
@@ -4974,12 +4915,10 @@ const NodeCalibration = (() => {
     }
   }
 
-  /* ── 命名面板 ── */
   function openNamingPopup(candidate){
     const popup = document.getElementById('nc_namingPopup');
     if(!popup || !candidate) return;
 
-    /* 設定位置（靠近候選，但不超出畫布） */
     const px = candidate.x * displayScale;
     const py = candidate.y * displayScale;
     const popupW = 280;
@@ -4987,7 +4926,6 @@ const NodeCalibration = (() => {
     let left = px + 30;
     let top = py - 40;
 
-    /* 邊界處理 */
     if(left + popupW > displayW - 10) left = px - popupW - 30;
     if(left < 10) left = 10;
     if(top + popupH > displayH - 10) top = displayH - popupH - 10;
@@ -4997,21 +4935,17 @@ const NodeCalibration = (() => {
     popup.style.top = top + 'px';
     popup.classList.remove('hidden');
 
-    /* 標題 */
     const titleEl = document.getElementById('nc_namingTitle');
     if(titleEl){
       const idx = candidates.findIndex(c => c.id === candidate.id);
       titleEl.textContent = `選擇城池（候選 #${idx + 1}）`;
     }
 
-    /* 清空搜尋 */
     const search = document.getElementById('nc_namingSearch');
     if(search){ search.value = ''; }
 
-    /* 渲染清單 */
     renderNamingList();
 
-    /* 聚焦搜尋框 */
     setTimeout(() => {
       if(search) search.focus();
     }, 50);
@@ -5033,9 +4967,7 @@ const NodeCalibration = (() => {
 
     const search = (document.getElementById('nc_namingSearch')?.value || '').trim().toLowerCase();
 
-    /* 按距離排序（最接近候選座標的優先） */
     const sortedCities = [...state.cities].map(c => {
-      /* 若該城已有節點座標，用那個算距離；否則用無窮大 */
       let cityX = null, cityY = null;
       const existingNode = nodes[cityNodeId(c)];
       if(existingNode && typeof existingNode.x === 'number'){
@@ -5048,7 +4980,6 @@ const NodeCalibration = (() => {
       return { city: c, dist };
     }).sort((a, b) => a.dist - b.dist);
 
-    /* 篩選 */
     const filtered = sortedCities.filter(({ city }) => {
       if(!search) return true;
       const hay = (city.name + ' ' + (city.code || '')).toLowerCase();
@@ -5089,7 +5020,6 @@ const NodeCalibration = (() => {
     const city = state.cities.find(c => c.id === cityId);
     if(!city) return;
 
-    /* 若之前有命名 → 移除舊的 usedCityIds 標記 */
     if(cand.namedCityId && cand.namedCityId !== cityId){
       usedCityIds.delete(cand.namedCityId);
     }
@@ -5101,19 +5031,16 @@ const NodeCalibration = (() => {
 
     logSystem(`✅ 已命名：${city.name}${city.code ? ' (' + city.code + ')' : ''}`);
 
-    /* 更新 UI */
     renderStats();
     renderCandidateList();
     renderCanvas();
 
-    /* 自動跳下一個未命名 */
     setTimeout(() => {
       goToNextPending();
     }, 150);
   }
 
   function goToNextPending(){
-    /* 找下一個未命名的候選（循環） */
     const pending = candidates.filter(c => !c.namedCityId);
     if(pending.length === 0){
       closeNamingPopup();
@@ -5123,7 +5050,6 @@ const NodeCalibration = (() => {
       setModeBadge('✅ 全部命名完成！', 'success');
       return;
     }
-    /* 從當前位置往後找 */
     const currentIdx = candidates.findIndex(c => c.id === activeCandidateId);
     let next = null;
     for(let i = 1; i <= candidates.length; i++){
@@ -5143,7 +5069,6 @@ const NodeCalibration = (() => {
     if(idx < 0) return;
     const cand = candidates[idx];
     if(!confirm(`確定刪除此候選？\n（座標：${cand.x}, ${cand.y}）`)) return;
-    /* 移除 usedCityIds 標記 */
     if(cand.namedCityId) usedCityIds.delete(cand.namedCityId);
     candidates.splice(idx, 1);
     activeCandidateId = '';
@@ -5154,18 +5079,15 @@ const NodeCalibration = (() => {
     logSystem('🗑️ 已刪除候選');
   }
 
-  /* ── 儲存校準結果 ── */
   async function doSave(){
     if(!mapId) return;
     if(!window.SLG.canEditMapLibrary()){ alert('🔒 沒有編輯權限'); return; }
 
-    /* 收集已命名的候選 → 轉成 nodes 格式 */
     const newNodes = {};
     const namedList = candidates.filter(c => c.namedCityId);
     if(namedList.length === 0){
       if(!confirm('目前沒有任何命名的節點，確定要儲存（清空）嗎？')) return;
     }
-    /* 保留既有節點中「未被候選對應到」的（避免誤刪） */
     for(const nid in nodes){
       const n = nodes[nid];
       if(!n) continue;
@@ -5176,7 +5098,6 @@ const NodeCalibration = (() => {
       });
       if(!matched) newNodes[nid] = n;
     }
-    /* 加入新命名的節點 */
     for(const c of namedList){
       const city = state.cities.find(x => x.id === c.namedCityId);
       if(!city) continue;
@@ -5204,7 +5125,6 @@ const NodeCalibration = (() => {
     }
   }
 
-  /* ── 工具：取得城池對應的節點 ID ── */
   function cityNodeId(city){
     if(!city) return '';
     if(city.code) return city.code;
@@ -5213,13 +5133,14 @@ const NodeCalibration = (() => {
 
   return { open, close, rescan };
 })();
+
 /* ============================================================
-   FuzzyMatch — v8.8.0：模糊匹配候選 Modal
+   FuzzyMatch — 模糊匹配候選 Modal
    ============================================================ */
 const FuzzyMatch = (() => {
   let queue = [];
   let currentIndex = 0;
-  let decisions = {};   /* cityId → nodeId or null(skip) */
+  let decisions = {};
 
   function open(items){
     if(!Array.isArray(items) || items.length === 0) return;
@@ -5277,19 +5198,21 @@ const FuzzyMatch = (() => {
     if(!listEl) return;
     const candidates = item.candidates || [];
     let html = '';
+    let firstChecked = true;
     for(const c of candidates){
       const score = Math.round((c.score || 0) * 100);
       const scoreCls = score >= 80 ? 'high' : (score >= 60 ? '' : 'low');
       const codeStr = c.node.code ? `<span class="fm-candidate-code">[${esc(c.node.code)}]</span>` : '';
       const coordsStr = (typeof c.node.x === 'number') ? `座標 (${c.node.x}, ${c.node.y})` : '';
       html += `<label class="fm-candidate">
-        <input type="radio" name="fm_choice" value="${esc(c.nodeId)}" ${html === '' ? 'checked' : ''}>
+        <input type="radio" name="fm_choice" value="${esc(c.nodeId)}" ${firstChecked ? 'checked' : ''}>
         <div class="fm-candidate-body">
           <div class="fm-candidate-name">${esc(c.node.name || '')}${codeStr}</div>
           <div class="fm-candidate-meta">${coordsStr}</div>
         </div>
         <span class="fm-score ${scoreCls}">${score}%</span>
       </label>`;
+      firstChecked = false;
     }
     html += `<label class="fm-candidate skip">
       <input type="radio" name="fm_choice" value="__skip__">
@@ -5303,7 +5226,6 @@ const FuzzyMatch = (() => {
   }
 
   function applyAndClose(){
-    /* 寫入 city.mapNode */
     let applied = 0;
     for(const cityId in decisions){
       const nodeId = decisions[cityId];
@@ -5337,12 +5259,11 @@ const FuzzyMatch = (() => {
 })();
 
 /* ============================================================
-   v8.8.0：匯入城池後的匹配處理
+   匯入城池後的匹配處理
    ============================================================ */
 function onCityImportMatched({ touchedCities, matchResult, mode }){
   if(!matchResult) return;
   if(!matchResult.needChoice || matchResult.needChoice.length === 0) return;
-  /* 開啟模糊匹配 Modal */
   const items = matchResult.needChoice.map(item => ({
     cityId: item.cityId,
     cityName: item.cityName,
@@ -6021,7 +5942,6 @@ function saveCityFromModal(){
     attackTargets, defendTargets
   };
   if(hasAnyTier) entity.tierCounts = tierCounts;
-  /* v8.8.0：保留編號 */
   if(existingCity && existingCity.code) entity.code = existingCity.code;
   if(existingCity && existingCity.mapNode) entity.mapNode = existingCity.mapNode;
 
@@ -6079,7 +5999,6 @@ Object.assign(window.SLG, {
 
   CityManager, WarManager, DeployInstr, RouteManager, GameMap,
 
-  /* v8.8.0 */
   MapLibrary, NodeCalibration, FuzzyMatch,
   onCityImportMatched,
 
@@ -6090,5 +6009,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.8.0）
+ * ui.js 結束（v8.9.0）
  * ========================================================================== */
