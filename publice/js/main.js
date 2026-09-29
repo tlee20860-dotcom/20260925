@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.6.9：登入按鈕 + 分級參數 + visibility 修正 + beforeunload 遮罩
+ * v8.8.0：地圖庫事件綁定 + 地圖庫權限控制 + 啟動初始化
  * ========================================================================== */
 (function(){
 'use strict';
@@ -37,6 +37,7 @@ const viz = () => window.SLG.viz;
 const R = () => window.SLG.R;
 const DYN = () => window.SLG.DYN;
 const DEPLOY = () => window.SLG.DEPLOY;
+const MapLibrary = () => window.SLG.MapLibrary;
 
 /* ============================================================
    確認對話框
@@ -82,6 +83,11 @@ function effectiveCanEditData(){
 function effectiveCanImportExcel(){
   if(window.SLG.isInRoom()) return window.SLG.getEffectiveImportExcelPermission();
   return Auth() && Auth().canImportExcel();
+}
+function effectiveCanEditMapLibrary(){
+  if(!Auth() || !Auth().isSignedIn()) return false;
+  if(window.SLG.canEditMapLibrary) return window.SLG.canEditMapLibrary();
+  return false;
 }
 
 function applyPermissions(){
@@ -135,7 +141,6 @@ function applyPermissions(){
     'aiTeamFactor','aiWallFactor1','aiWallFactor2','aiDefendFactor','aiMinPct'
   ], !canEditSettings);
 
-  /* v8.6.9：分級設定也需管理員 */
   ['btnSaveTiers','btnResetTiers'].forEach(id => {
     togglePerm(document.getElementById(id), canEditSettings, '需要管理員以上權限');
   });
@@ -196,6 +201,16 @@ function applyPermissions(){
   const chatInputEl = document.getElementById('chatInput');
   if(chatInputEl) chatInputEl.disabled = !signedIn;
 
+  /* v8.8.0：地圖庫按鈕權限 */
+  const canEditMapLib = effectiveCanEditMapLibrary();
+  togglePerm(document.getElementById('btnMapUpload'), signedIn && canEditMapLib, '需要地圖庫編輯權限');
+  togglePerm(document.getElementById('btnMapCalibrate'), signedIn && canEditMapLib, '需要地圖庫編輯權限');
+  togglePerm(document.getElementById('btnMapExportCoords'), signedIn, '請先登入');
+  const mapLibViewModeEl = document.getElementById('mapLibraryViewMode');
+  if(mapLibViewModeEl) mapLibViewModeEl.disabled = !signedIn;
+  const mapLibSelectEl = document.getElementById('mapLibrarySelect');
+  if(mapLibSelectEl) mapLibSelectEl.disabled = !signedIn;
+
   document.querySelectorAll(
     '[data-action="edit-city"],[data-action="del-city"],' +
     '[data-action="edit-alliance"],[data-action="del-alliance"],' +
@@ -233,16 +248,22 @@ function applyPermissions(){
     if(!canEditData){ b.disabled = true; b.style.pointerEvents = 'none'; b.style.opacity = '.35'; }
   });
 
-/* v8.7.0：人數欄位權限 */
-document.querySelectorAll('.city-member-cell').forEach(el => {
-  if(canEditData){
-    el.classList.remove('disabled-cell');
-    el.style.cursor = 'pointer';
-  } else {
-    el.classList.add('disabled-cell');
-    el.style.cursor = 'not-allowed';
-  }
-});
+  document.querySelectorAll('.city-member-cell').forEach(el => {
+    if(canEditData){
+      el.classList.remove('disabled-cell');
+      el.style.cursor = 'pointer';
+    } else {
+      el.classList.add('disabled-cell');
+      el.style.cursor = 'not-allowed';
+    }
+  });
+
+  /* Gallery 內的按鈕也要跟著權限切換 */
+  document.querySelectorAll('#mapGalleryGrid [data-action="calibrate"],#mapGalleryGrid [data-action="edit"]').forEach(b => {
+    b.disabled = !canEditMapLib;
+    if(!canEditMapLib) b.classList.add('perm-disabled');
+    else b.classList.remove('perm-disabled');
+  });
 
   if(window.SLG.updateRoomEditButton) window.SLG.updateRoomEditButton();
   if(window.SLG.updateRoomSandboxActions) window.SLG.updateRoomSandboxActions();
@@ -259,7 +280,6 @@ function hideNetworkOverlay(){
   const el = document.getElementById('networkOverlay');
   if(el) el.classList.remove('show');
 }
-/* v8.6.9：同步遮罩 */
 function showSyncOverlay(){
   const el = document.getElementById('syncOverlay');
   if(el) el.classList.add('show');
@@ -282,15 +302,13 @@ function handleNetworkChange({ online }){
 }
 
 /* ============================================================
-   v8.6.9：同步事件（含 visibility 修正 + beforeunload 遮罩）
+   同步事件（含 visibility 修正 + beforeunload 遮罩）
    ============================================================ */
 let pendingVisibilityUpload = null;
 
 function bindSyncWatchers(){
-  /* visibilitychange：隱藏時上傳；恢復時檢查殘留 */
   document.addEventListener('visibilitychange', () => {
     if(document.visibilityState !== 'hidden'){
-      /* 恢復：檢查殘留 dirty */
       if(state.auth.signedIn && state.sync.dirty && !state.sync.uploading && isOnline()){
         logSystem('🔄 偵測到殘留變更，重新觸發上傳');
         performCloudUpload('visibility-restore').catch(e => console.warn(e));
@@ -301,14 +319,13 @@ function bindSyncWatchers(){
     if(!state.auth.signedIn) return;
     if(!state.sync.dirty) return;
     if(!isOnline()) return;
-    if(pendingVisibilityUpload) return;   /* 避免重複觸發 */
+    if(pendingVisibilityUpload) return;
 
     logSystem('👁️ 分頁隱藏，觸發上傳');
     pendingVisibilityUpload = performCloudUpload('visibilitychange')
       .finally(() => { pendingVisibilityUpload = null; });
   });
 
-  /* beforeunload：顯示遮罩 + 嘗試上傳 + 觸發原生對話框 */
   window.addEventListener('beforeunload', (e) => {
     saveState();
     if(!state.auth.signedIn) return;
@@ -316,31 +333,25 @@ function bindSyncWatchers(){
     if(!state.sync.dirty) return;
     if(state.sync._allowClose) return;
 
-    /* 嘗試觸發（雖然多半無法完成，但盡力而為） */
     try{ performCloudUpload('beforeunload'); }catch(_){}
-
-    /* 顯示遮罩 */
     showSyncOverlay();
-
-    /* 觸發瀏覽器原生對話框 */
     e.preventDefault();
     e.returnValue = '';
     return '';
   });
 
-  /* 監聽 sync 狀態：上傳完成 → 隱藏遮罩 */
   on(EVT.SYNC_STATE, () => {
     if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
     updateModeBar();
-    /* 若已無 dirty → 隱藏同步遮罩 */
     if(!state.sync.dirty && !state.sync.uploading){
       hideSyncOverlay();
     }
   });
 }
 
+/* ====== 中場休息：第 1/2 段結束 ====== */
 /* ============================================================
-   v8.6.9：同步設定 UI 綁定
+   同步設定 UI 綁定
    ============================================================ */
 function bindSyncSettingsUI(){
   const intervalEl = document.getElementById('syncIntervalMin');
@@ -394,7 +405,6 @@ function bindSyncSettingsUI(){
     });
   }
 
-  /* 點擊同步狀態 → 開啟歷史 Modal */
   const statusBtn = document.getElementById('syncStatus');
   if(statusBtn && !statusBtn.dataset.bound){
     statusBtn.dataset.bound = '1';
@@ -409,7 +419,7 @@ function bindSyncSettingsUI(){
 }
 
 /* ============================================================
-   v8.6.9：分級設定 UI 綁定
+   分級設定 UI 綁定
    ============================================================ */
 function bindTroopTierUI(){
   syncTroopTiersToUI();
@@ -420,14 +430,12 @@ function bindTroopTierUI(){
     btnSave.addEventListener('click', () => {
       if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改分級設定')) return;
       const data = readTroopTiersFromUI();
-      /* 驗證門檻遞增 */
       const t = data.tiers;
       if(!(t[0].maxLevel < t[1].maxLevel && t[1].maxLevel < t[2].maxLevel)){
         alert('⚠️ 分級門檻必須遞增（級別1 < 級別2 < 級別3）');
         return;
       }
       window.SLG.setTroopTiers(data);
-      /* 重算所有城池的總隊數（若有 tierCounts）*/
       let recalcCount = 0;
       for(const c of state.cities){
         if(!c.tierCounts) continue;
@@ -854,7 +862,10 @@ function switchMapView(view){
   const dynamicWrap = document.getElementById('mapDynamicWrap');
   if(routeWrap) routeWrap.style.display = (view === 'route') ? '' : 'none';
   if(dynamicWrap) dynamicWrap.style.display = (view === 'dynamic') ? '' : 'none';
-  if(view === 'route'){ if(window.SLG.GameMap) window.SLG.GameMap.activate(); }
+  if(view === 'route'){
+    if(window.SLG.GameMap) window.SLG.GameMap.activate();
+    if(MapLibrary()) MapLibrary().applyViewMode();
+  }
   else { if(window.SLG.viz) viz().activate(); }
 }
 
@@ -880,6 +891,18 @@ function initListPrefs(){
   if(ds) ds.value = state.listPrefs.deploySort || 'alliance';
   const dg = document.getElementById('deployGroupSelect');
   if(dg) dg.value = state.listPrefs.deployGroup || 'none';
+}
+
+/* ============================================================
+   v8.8.0：地圖庫事件綁定（獨立函式，方便維護）
+   ============================================================ */
+function bindMapLibraryUI(){
+  if(MapLibrary()) MapLibrary().init();
+
+  /* 若已登入，啟動索引監聽 */
+  if(state.auth.signedIn && window.SLG.startMapLibraryIndexWatcher){
+    try{ window.SLG.startMapLibraryIndexWatcher(); }catch(e){ console.warn('啟動地圖庫索引監聽失敗', e); }
+  }
 }
 
 /* ============================================================
@@ -999,11 +1022,12 @@ function bindUI(){
 
   if(window.SLG.bindAuthUI) window.SLG.bindAuthUI();
 
-  /* v8.6.9：同步 / 分級設定 UI */
   bindSyncSettingsUI();
   bindTroopTierUI();
 
-  /* v8.6.9：登出按鈕（僅 tab-account 內的） */
+  /* v8.8.0：地圖庫 UI */
+  bindMapLibraryUI();
+
   const btnLogout = document.getElementById('btnLogout');
   if(btnLogout && !btnLogout.dataset.bound){
     btnLogout.dataset.bound = '1';
@@ -1606,6 +1630,24 @@ function bindEvents(){
     applyPermissions();
     updateModeBar();
     if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
+
+    /* v8.8.0：登入後啟動地圖庫索引監聽；登出後停止 */
+    if(state.auth.signedIn){
+      if(window.SLG.startMapLibraryIndexWatcher){
+        try{ window.SLG.startMapLibraryIndexWatcher(); }catch(e){}
+      }
+      if(MapLibrary()){ MapLibrary().renderSelect(); MapLibrary().renderGallery(); }
+    } else {
+      if(window.SLG.stopAllMapLibraryWatchers){
+        try{ window.SLG.stopAllMapLibraryWatchers(); }catch(e){}
+      }
+      state.mapLibrary.index = {};
+      state.mapLibrary.loaded = {};
+      state.mapLibrary.activeMapId = '';
+      if(MapLibrary()){ MapLibrary().renderSelect(); MapLibrary().renderGallery(); }
+      if(window.SLG.GameMap) window.SLG.GameMap.onMapLibraryChanged();
+    }
+
     if(!state.auth.signedIn){ hideAllTabContent(); }
     else {
       const roomBtn = document.querySelector('.top-nav button[data-tab="tab-room"]');
@@ -1747,6 +1789,11 @@ function bindEvents(){
   on(EVT.SANDBOXES_LIST_UPDATED, () => {
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
   });
+
+  /* v8.8.0：地圖庫事件 */
+  on(EVT.MAP_LIBRARY_UPDATED, () => {
+    applyPermissions();
+  });
 }
 
 function hideAllTabContent(){
@@ -1848,6 +1895,8 @@ function boot(){
   if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
     window.SLG.GameMap.refreshZoneSelector();
   }
+  if(MapLibrary()) MapLibrary().renderSelect();
+  if(MapLibrary()) MapLibrary().renderGallery();
   applyPermissions();
 
   (async () => {
@@ -1874,6 +1923,16 @@ function boot(){
         window.SLG.GameMap.refreshZoneSelector();
       }
       if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
+
+      /* v8.8.0：登入後啟動地圖庫 */
+      try{
+        if(window.SLG.startMapLibraryIndexWatcher){
+          window.SLG.startMapLibraryIndexWatcher();
+        }
+        await refreshMapLibraryIndex();
+      }catch(e){ console.warn('地圖庫初始化失敗', e); }
+      if(window.SLG.MapLibrary){ window.SLG.MapLibrary.renderSelect(); window.SLG.MapLibrary.renderGallery(); }
+
       logSystem('🚪 已自動登入，跳過入口');
       if(document.getElementById('tab-sandbox')?.classList.contains('active')){ refreshSandboxList(); }
     } else {
@@ -1884,7 +1943,21 @@ function boot(){
     }
   })();
 
-  console.log('%c[沙盤 v8.6.9] 分級隊數 + 置頂登入 + 同步改進（就緒）', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c[沙盤 v8.8.0] 地圖庫（Cloudinary + 節點校準 + 模糊匹配）就緒', 'color:#22ff88;font-weight:bold;font-size:14px');
+}
+
+/* v8.8.0：初次載入地圖庫索引 */
+async function refreshMapLibraryIndex(){
+  if(!state.auth.signedIn) return;
+  if(!isOnline()) return;
+  try{
+    const idx = await window.SLG.fetchMapLibraryIndex();
+    state.mapLibrary.index = idx || {};
+    emit(EVT.MAP_LIBRARY_UPDATED, { type: 'index-loaded' });
+    logSystem(`🗺️ 已載入地圖庫索引（${Object.keys(idx || {}).length} 張地圖）`);
+  }catch(e){
+    console.warn('載入地圖庫索引失敗', e);
+  }
 }
 
 /* ============================================================
@@ -1892,7 +1965,7 @@ function boot(){
    ============================================================ */
 Object.assign(window.SLG, {
   showConfirm, applyPermissions, requirePerm, togglePerm,
-  effectiveCanEditData, effectiveCanImportExcel,
+  effectiveCanEditData, effectiveCanImportExcel, effectiveCanEditMapLibrary,
   loadSandboxFromList, uploadMySandboxToRoom, openSandboxPicker,
   downloadRoomSandbox, refreshSandboxList, backupCurrentSandbox,
   showRoomEmptyPrompt, hideRoomEmptyPrompt,
@@ -1900,6 +1973,8 @@ Object.assign(window.SLG, {
   showNetworkOverlay, hideNetworkOverlay, handleNetworkChange,
   showSyncOverlay, hideSyncOverlay,
   bindSyncWatchers, bindSyncSettingsUI, bindTroopTierUI,
+  bindMapLibraryUI,
+  refreshMapLibraryIndex,
 });
 
 if(document.readyState === 'loading'){

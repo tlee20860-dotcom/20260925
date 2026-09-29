@@ -1,6 +1,6 @@
 /* ============================================================================
  * data.js — Excel/CSV 匯入匯出
- * v8.6.9：支援城池分級欄位（人≤17 / 人18-20 / 人21-24 / 人≥25）
+ * v8.8.0：新增城池編號欄位 + 匯入後自動觸發地圖節點匹配
  * ========================================================================== */
 (function(){
 'use strict';
@@ -20,6 +20,9 @@ const {
   POWER_YI, POWER_WAN,
   parsePowerInput, migratePower, getAlliancesSorted,
   calcTeamsFromTiers,
+  /* v8.8.0：模糊比對 */
+  matchCityToMapNode,
+  getActiveMap,
 } = window.SLG;
 
 /* ============================================================
@@ -104,8 +107,10 @@ const ALLIANCE_FIELD_ALIASES = {
   order:       ['順序','排序','order','sort'],
 };
 
+/* v8.8.0：新增 code 欄位（城池編號） */
 const CITY_FIELD_ALIASES = {
   name:        ['城池名稱','城池','城名','名稱','name','cityname','city'],
+  code:        ['城池編號','編號','城編號','代碼','code','citycode','id'],
   zone:        ['戰區','分區','區域','zone','zoneid','region'],
   alliance:    ['同盟','盟','盟名稱','盟名','alliancename','alliance'],
   side:        ['陣營','陣營關係','side','faction'],
@@ -236,7 +241,7 @@ function parseAlliancesTable(rows){
 }
 
 /* ============================================================
-   v8.6.9：解析城池表（支援分級）
+   v8.8.0：解析城池表（支援編號 + 分級）
    ============================================================ */
 function parseCitiesTable(rows){
   if(!rows || rows.length < 2) return { cities: [], errors: ['城池表至少需要表頭 + 1 筆資料'] };
@@ -245,7 +250,6 @@ function parseCitiesTable(rows){
   for(const [field, aliases] of Object.entries(CITY_FIELD_ALIASES)){
     idx[field] = findFieldIndex(headers, aliases);
   }
-  /* v8.6.9：分級欄位 */
   const tierIdx = {};
   for(const [field, aliases] of Object.entries(TIER_FIELD_ALIASES)){
     tierIdx[field] = findFieldIndex(headers, aliases);
@@ -271,6 +275,9 @@ function parseCitiesTable(rows){
       return v !== '' ? v : def;
     };
 
+    /* v8.8.0：城池編號 */
+    const code = (idx.code >= 0) ? String(r[idx.code] || '').trim() : '';
+
     const zoneName = get('zone', '未分配');
     const allianceName = get('alliance', '');
     const sideRaw = get('side', '本方');
@@ -288,7 +295,6 @@ function parseCitiesTable(rows){
     let tierCounts = null;
 
     if(hasTierFields){
-      /* v8.6.9：使用分級欄位 */
       const t1 = tierIdx.tier1 >= 0 ? (parseFloat(r[tierIdx.tier1]) || 0) : 0;
       const t2 = tierIdx.tier2 >= 0 ? (parseFloat(r[tierIdx.tier2]) || 0) : 0;
       const t3 = tierIdx.tier3 >= 0 ? (parseFloat(r[tierIdx.tier3]) || 0) : 0;
@@ -298,7 +304,6 @@ function parseCitiesTable(rows){
       memberCount = calc.totalMembers;
       totalTeams = calc.totalTeams;
     } else {
-      /* 舊格式：人數 + 總隊數 */
       memberCount = parseFloat(get('memberCount', '0')) || 0;
       totalTeams = parseFloat(get('totalTeams', '0')) || 0;
     }
@@ -312,7 +317,7 @@ function parseCitiesTable(rows){
     }
 
     cities.push({
-      name, zoneName, allianceName, side,
+      name, code, zoneName, allianceName, side,
       level, memberCount, totalPower, totalTeams,
       cooldownMin, wallMin, isCapital,
       tierCounts,
@@ -392,6 +397,7 @@ function parseMapRoutesTable(text){
   return { routes, errors };
 }
 
+/* ====== 中場休息：第 1/2 段結束 ====== */
 /* ============================================================
    Excel 匯入 UI
    ============================================================ */
@@ -446,6 +452,8 @@ function updateExcelPreview(){
     if(n > 0){
       html += `<div><span class="ok">✅ 城池表：${n} 座</span>`;
       if(result.hasTierFields) html += ` <span class="ok">（分級模式）</span>`;
+      const withCode = result.cities.filter(c => c.code).length;
+      if(withCode > 0) html += ` <span class="ok">（含編號 ${withCode}）</span>`;
       if(result.errors.length > 0) html += ` <span class="warn">（${result.errors.length} 筆警告）</span>`;
       html += `</div>`;
       if(result.neededZones.length > 0){
@@ -606,7 +614,73 @@ function doImportAlliances(){
 }
 
 /* ============================================================
-   ② 匯入城池表（v8.6.9：支援分級）
+   v8.8.0：匯入後自動觸發地圖節點匹配
+   ============================================================ */
+/**
+ * 嘗試把系統城池與當前地圖節點自動匹配
+ * - 精確（編號 / 名稱 / 正規化）→ 自動套用
+ * - 模糊多候選 → 交給 UI 彈 Modal 讓使用者選
+ * - 完全無候選 → 列入 unmatched
+ * @param {Array} cities - 匯入的城池（含 code）
+ * @returns {Object} { matched, fuzzyAuto, needChoice:[{cityId, cityName, candidates}], unmatched:[{cityId, cityName}] }
+ */
+function tryAutoMatchCitiesToMap(cities){
+  const result = {
+    matched: 0,
+    fuzzyAuto: 0,
+    needChoice: [],
+    unmatched: [],
+    skipped: 0,
+  };
+
+  /* 若無啟用中的地圖，跳過 */
+  const activeMap = getActiveMap ? getActiveMap() : null;
+  if(!activeMap || !activeMap.nodes || Object.keys(activeMap.nodes).length === 0){
+    result.skipped = cities.length;
+    return result;
+  }
+
+  const nodes = activeMap.nodes;
+
+  for(const city of cities){
+    const r = matchCityToMapNode({ name: city.name, code: city.code || '' }, nodes);
+    if(r.autoAccepted && r.node){
+      /* 精確 / 正規化 / 模糊自動 → 寫入 city.mapNode */
+      city.mapNode = {
+        nodeId: r.nodeId,
+        x: r.node.x,
+        y: r.node.y,
+        method: r.method,
+      };
+      if(r.method === 'fuzzy-auto') result.fuzzyAuto++;
+      else result.matched++;
+    } else if(r.needsUserChoice && r.candidates && r.candidates.length > 0){
+      result.needChoice.push({
+        cityId: city.id,
+        cityName: city.name,
+        cityCode: city.code || '',
+        candidates: r.candidates,
+      });
+    } else {
+      result.unmatched.push({ cityId: city.id, cityName: city.name, cityCode: city.code || '' });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 在城池陣列中，依 mapNode 資訊寫入地圖節點對應（存回 entity）
+ */
+function applyMapNodeToCity(city, nodeId, x, y, method){
+  if(!city) return;
+  city.mapNode = { nodeId, x, y, method: method || 'manual' };
+  state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+  markDirty('city', city.id);
+}
+
+/* ============================================================
+   ② 匯入城池表（v8.8.0：支援編號 + 地圖節點匹配）
    ============================================================ */
 function doImportCities(){
   const text = document.getElementById('excelCitiesText')?.value.trim() || '';
@@ -653,6 +727,9 @@ function doImportCities(){
   const preserveOld = !!state.troopTiers.preserveOldTotal;
   const autoCalc = !!state.troopTiers.autoCalcOnImport;
 
+  /* v8.8.0：記錄本次匯入涉及的城池物件（用於地圖節點匹配） */
+  const touchedCities = [];
+
   for(const cd of result.cities){
     const zoneId = ensureZone(cd.zoneName);
     let allianceId = '';
@@ -677,12 +754,10 @@ function doImportCities(){
     const avgPower = cd.totalTeams > 0 ? Math.floor(cd.totalPower / cd.totalTeams) : 0;
     const existing = (mode !== 'overwrite') ? cityByName.get(cd.name) : null;
 
-    /* v8.6.9：計算最終的 memberCount / totalTeams */
     let finalMemberCount = cd.memberCount;
     let finalTotalTeams = cd.totalTeams;
 
     if(preserveOld && existing && existing.totalTeams > 0 && cd._usedTiers && autoCalc){
-      /* 保留舊的總隊數 */
       finalTotalTeams = existing.totalTeams;
       finalMemberCount = existing.memberCount || cd.memberCount;
     }
@@ -700,9 +775,12 @@ function doImportCities(){
       existing.cooldownMin = cd.cooldownMin;
       existing.wallMin = cd.wallMin;
       existing.isCapital = cd.isCapital;
+      /* v8.8.0：儲存編號 */
+      if(cd.code) existing.code = cd.code;
       if(cd.tierCounts) existing.tierCounts = cd.tierCounts;
       state.entityRev.city[existing.id] = (state.entityRev.city[existing.id] || 0) + 1;
       markDirty('city', existing.id);
+      touchedCities.push(existing);
       updated++;
     } else {
       const id = uid();
@@ -715,11 +793,14 @@ function doImportCities(){
         defStartTime: '19:00', isCapital: cd.isCapital,
         attackTargets: [], defendTargets: [],
       };
+      /* v8.8.0：儲存編號 */
+      if(cd.code) entity.code = cd.code;
       if(cd.tierCounts) entity.tierCounts = cd.tierCounts;
       state.cities.push(entity);
       cityByName.set(cd.name, entity);
       state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
       markDirty('city', id);
+      touchedCities.push(entity);
       added++;
     }
   }
@@ -738,8 +819,40 @@ function doImportCities(){
     : (mode === 'append'
         ? `新增完成：新增 ${added}${skipped > 0 ? `，跳過 ${skipped}` : ''}`
         : `合併完成：新增 ${added}，更新 ${updated}（宣戰關係已保留）`);
-  alert(`✅ ${summary}` + (result.hasTierFields ? '\n\n📊 已使用分級欄位自動計算總隊數' : ''));
+
+  let msg = `✅ ${summary}`;
+  if(result.hasTierFields) msg += '\n\n📊 已使用分級欄位自動計算總隊數';
+
+  /* v8.8.0：自動觸發地圖節點匹配 */
+  const matchResult = tryAutoMatchCitiesToMap(touchedCities);
+  if(matchResult.skipped === touchedCities.length && touchedCities.length > 0){
+    msg += '\n\n🗺️ 未設定使用中的地圖，跳過節點匹配。';
+  } else if(matchResult.matched > 0 || matchResult.fuzzyAuto > 0 || matchResult.needChoice.length > 0 || matchResult.unmatched.length > 0){
+    const parts = [];
+    if(matchResult.matched > 0) parts.push(`✅ 精確匹配 ${matchResult.matched}`);
+    if(matchResult.fuzzyAuto > 0) parts.push(`🔍 模糊自動 ${matchResult.fuzzyAuto}`);
+    if(matchResult.needChoice.length > 0) parts.push(`❓ 待確認 ${matchResult.needChoice.length}`);
+    if(matchResult.unmatched.length > 0) parts.push(`⚠️ 未匹配 ${matchResult.unmatched.length}`);
+    msg += '\n\n🗺️ 地圖節點匹配：' + parts.join(' · ');
+
+    if(matchResult.needChoice.length > 0 || matchResult.unmatched.length > 0){
+      msg += '\n（將開啟匹配確認視窗）';
+    }
+  }
+
+  alert(msg);
   logSystem(`📥 城池表匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
+
+  /* 保存結果供後續 UI 處理 */
+  if(window.SLG.onCityImportMatched){
+    try{
+      window.SLG.onCityImportMatched({
+        touchedCities,
+        matchResult,
+        mode,
+      });
+    }catch(e){ console.warn('[匯入] 節點匹配後處理失敗', e); }
+  }
 }
 
 /* ============================================================
@@ -898,17 +1011,17 @@ function downloadCSV(csv, filename){
   URL.revokeObjectURL(url);
 }
 
-/* v8.6.9：匯出城池表（含分級欄位） */
+/* v8.8.0：匯出城池表（含編號 + 分級欄位） */
 function exportCitiesCSV(){
   if(state.cities.length === 0){ alert('目前沒有任何城池'); return; }
-  const headers = ['城池名稱','戰區','同盟','陣營','等級','人≤17','人18-20','人21-24','人≥25','總戰力（億）','均戰（萬）','總隊數','冷卻','城牆','首都'];
+  const headers = ['城池名稱','城池編號','戰區','同盟','陣營','等級','人≤17','人18-20','人21-24','人≥25','總戰力（億）','均戰（萬）','總隊數','冷卻','城牆','首都'];
   const rows = state.cities.map(c => {
     const zone = state.zones.find(z => z.id === c.zoneId);
     const alliance = state.alliances.find(a => a.id === c.allianceId);
     const avgPower = c.totalTeams > 0 ? Math.floor((Number(c.totalPower) || 0) / c.totalTeams) : 0;
     const tc = c.tierCounts || { tier1:'', tier2:'', tier3:'', tier4:'' };
     return [
-      c.name, zone ? zone.name : '', alliance ? alliance.name : '',
+      c.name, c.code || '', zone ? zone.name : '', alliance ? alliance.name : '',
       SIDE_LABELS[c.side] || c.side,
       c.level || 1,
       tc.tier1 !== undefined && c.tierCounts ? tc.tier1 : '',
@@ -975,13 +1088,13 @@ function exportRoutesCSV(){
 }
 
 function downloadExcelTemplate(){
-  const template = `【v8.6.9：分級欄位說明】
-城池表支援兩種格式：
+  const template = `【v8.8.0：城池表欄位說明】
+城池表支援兩種格式 + 編號欄位：
 
 【格式 A - 分級模式（推薦）】
-城池名稱,戰區,同盟,陣營,等級,人≤17,人18-20,人21-24,人≥25,總戰力（億）,冷卻,城牆,首都
-洛陽,司隸,鼎盟,敵方,10,50,30,20,10,10.00,5,30,是
-函谷關,司隸,秦盟,敵方,9,40,20,10,5,8.00,5,20,
+城池名稱,城池編號,戰區,同盟,陣營,等級,人≤17,人18-20,人21-24,人≥25,總戰力（億）,冷卻,城牆,首都
+南秦,L98,南中,帝盟,敵方,10,50,30,20,10,10.00,5,30,是
+句町,L75,南中,秦盟,敵方,9,40,20,10,5,8.00,5,20,
 
 ■ 只需填各級人數，系統自動算總隊數
 ■ 分級規則（可在參數設定自訂）：
@@ -989,14 +1102,11 @@ function downloadExcelTemplate(){
   ・18~20 級：每人 4 隊
   ・21~24 級：每人 5 隊
   ・≥25 級：每人 6 隊
-■ 別名：人≤17 / 人(≤17) / 低階 / 人17以下
-■ 別名：人18-20 / 人(18-20) / 中階 / 人18到20
-■ 別名：人21-24 / 人(21-24) / 高階 / 人21到24
-■ 別名：人≥25 / 人(≥25) / 頂階 / 人25以上
+■ 城池編號欄位別名：城池編號 / 編號 / 城編號 / 代碼 / code
 
 【格式 B - 傳統模式（相容）】
-城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都
-洛陽,司隸,鼎盟,敵方,10,100,10.00,100,5,30,是
+城池名稱,城池編號,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都
+南秦,L98,南中,帝盟,敵方,10,100,10.00,100,5,30,是
 
 ─────────────────────────────────────────────
 
@@ -1015,18 +1125,28 @@ function downloadExcelTemplate(){
 ─────────────────────────────────────────────
 
 【地圖路線】
-洛陽-函谷關
+南秦-句町
 ■ 一行一條，用「-」分隔，無向圖
 
 ─────────────────────────────────────────────
 
 【宣戰表】
 出兵城,目標城,類型,戰前%,復活%,順序,開始時間
-洛陽,函谷關,進攻,50,50,1,19:00
-洛陽北,洛陽,協防,30,30,1,
+南秦,句町,進攻,50,50,1,19:00
+南秦西,南秦,協防,30,30,1,
 ■ 開始時間 = 目標城防守開始時間
 ■ 協防的開始時間留空
 ■ 跨戰區預設略過
+
+─────────────────────────────────────────────
+
+【v8.8.0 地圖節點自動匹配】
+匯入城池表後，若已設定使用中的地圖：
+1. 系統優先以「城池編號」精確匹配
+2. 次以「城池名稱」精確匹配
+3. 再以「正規化名稱」匹配（去掉城/關/寨等後綴）
+4. 最後以模糊比對（相似度 ≥ 0.5 列出候選讓你選）
+5. 完全無匹配 → 列入未匹配清單
 `;
   const blob = new Blob(['\uFEFF' + template], {type:'text/plain;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -1055,6 +1175,10 @@ Object.assign(window.SLG, {
   getImportMode, confirmImport,
   IMPORT_MODE_LABELS, IMPORT_MODE_HINTS,
   TIER_FIELD_ALIASES,
+
+  /* v8.8.0：地圖節點匹配 */
+  tryAutoMatchCitiesToMap,
+  applyMapNodeToCity,
 });
 
 })();

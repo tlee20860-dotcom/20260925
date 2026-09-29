@@ -1,6 +1,7 @@
 /* ============================================================================
  * firebase.js — Firebase 連線 / 個人沙盤 / 房間沙盤 / 聊天 / 編輯權限 / 退出
- * v8.6.9：空白版本也備份歷史（修正問題 2）
+ *                + v8.8.0 地圖庫（Cloudinary 上傳 + RTDB CRUD + 即時監聽）
+ * v8.8.0：新增地圖庫 API
  * ========================================================================== */
 (function(){
 'use strict';
@@ -30,6 +31,12 @@ const FIREBASE_CONFIG = {
 
 const SANDBOX_HISTORY_LIMIT = 20;
 
+/* v8.8.0：Cloudinary 設定 */
+const CLOUDINARY_CLOUD_NAME = 'qom5g2ar';
+const CLOUDINARY_UPLOAD_PRESET = 'slg_map_upload';
+const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+const MAP_IMAGE_MAX_SIZE = 50 * 1024 * 1024;   /* 50 MB */
+
 let fbApp = null;
 let fbDb = null;
 let fbConnected = false;
@@ -48,6 +55,13 @@ const fbEventHandlers = [];
 const myEditLocks = new Set();
 let connectTime = Date.now();
 let connectWaitTimer = null;
+
+/* v8.8.0：地圖庫監聽 */
+let mapLibraryIndexRef = null;
+let mapLibraryIndexHandler = null;
+let mapLibraryMapRef = null;
+let mapLibraryMapHandler = null;
+let currentWatchedMapId = '';
 
 const isConnected = () => fbConnected && !!fbDb && !!state.roomCode;
 
@@ -115,7 +129,6 @@ async function saveMySandbox(){
     try{
       const prevSnap = await sandboxRef(u).once('value');
       const prev = prevSnap.val();
-      /* ★ 修正：只要有前一版（含空白）就備份 */
       if(prev && prev.updatedAt && prev.data){
         const ts = prev.updatedAt;
         await sandboxRef(u).child(`history/${ts}`).set({
@@ -125,7 +138,6 @@ async function saveMySandbox(){
           zonesCount: prev.data.zones?.length || 0,
           data: prev.data,
         });
-        /* 清理超過 20 筆 */
         const histSnap = await sandboxRef(u).child('history').once('value');
         const hist = histSnap.val() || {};
         const keys = Object.keys(hist).sort();
@@ -811,6 +823,7 @@ function rejectEditRequest(u){
     .catch(e => { console.warn('拒絕失敗', e); alert('❌ 拒絕失敗：' + e.message); });
 }
 
+/* ====== 中場休息：第 1/2 段結束 ====== */
 /* ============================================================
    資料救援
    ============================================================ */
@@ -920,10 +933,401 @@ async function confirmExit(choice){
 }
 
 /* ============================================================
+   v8.8.0：地圖庫（Map Library）
+   ============================================================ */
+
+/* ── 路徑輔助 ── */
+function mapIndexRef(){ return fbDb.ref('mapLibraryIndex'); }
+function mapRef(mapId){ return fbDb.ref(`mapLibrary/${mapId}`); }
+
+/* ── 權限檢查 ── */
+function canEditMapLibrary(){
+  if(!state.auth.signedIn) return false;
+  if(window.SLG.Auth && window.SLG.Auth.isAdmin()) return true;
+  if(state.auth.extraPerms && state.auth.extraPerms.canEditMapLibrary) return true;
+  return false;
+}
+
+/* ── Cloudinary 上傳 ── */
+/**
+ * 上傳地圖底圖到 Cloudinary
+ * @param {File} file - 圖片檔案
+ * @param {Function} onProgress - (percent 0~100) => void
+ * @returns {Promise<Object>} { secureUrl, width, height, publicId, bytes }
+ */
+function uploadMapImageToCloudinary(file, onProgress){
+  return new Promise((resolve, reject) => {
+    if(!file){ reject(new Error('未選擇檔案')); return; }
+    if(file.size > MAP_IMAGE_MAX_SIZE){
+      reject(new Error(`檔案過大（${(file.size/1024/1024).toFixed(1)} MB），上限 ${MAP_IMAGE_MAX_SIZE/1024/1024} MB`));
+      return;
+    }
+    if(!/^image\//.test(file.type)){
+      reject(new Error('僅支援圖片檔案（PNG / JPG / WebP）'));
+      return;
+    }
+    if(!isOnline()){
+      reject(new Error('離線中，無法上傳'));
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', 'slg_maps');
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', CLOUDINARY_UPLOAD_URL, true);
+
+    xhr.upload.onprogress = (e) => {
+      if(e.lengthComputable && typeof onProgress === 'function'){
+        const percent = Math.round((e.loaded / e.total) * 100);
+        try{ onProgress(percent); }catch(_){}
+      }
+    };
+
+    xhr.onload = () => {
+      if(xhr.status >= 200 && xhr.status < 300){
+        try{
+          const res = JSON.parse(xhr.responseText);
+          if(!res.secure_url){
+            reject(new Error('Cloudinary 未回傳 secure_url'));
+            return;
+          }
+          resolve({
+            secureUrl: res.secure_url,
+            width: res.width || 0,
+            height: res.height || 0,
+            publicId: res.public_id || '',
+            bytes: res.bytes || 0,
+            format: res.format || '',
+          });
+        }catch(e){
+          reject(new Error('解析 Cloudinary 回應失敗：' + e.message));
+        }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try{
+          const err = JSON.parse(xhr.responseText);
+          if(err && err.error && err.error.message) msg = err.error.message;
+        }catch(_){}
+        reject(new Error('Cloudinary 上傳失敗：' + msg));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('網路錯誤，Cloudinary 上傳失敗'));
+    xhr.ontimeout = () => reject(new Error('Cloudinary 上傳逾時'));
+    xhr.timeout = 120000;   /* 2 分鐘 */
+
+    xhr.send(formData);
+  });
+}
+
+/* ── 地圖庫 CRUD ── */
+/**
+ * 讀取地圖庫索引（輕量，只有 metadata）
+ * @returns {Promise<Object>} { mapId: { name, updatedAt, imageWidth, imageHeight, imageUrl, nodeCount } }
+ */
+async function fetchMapLibraryIndex(){
+  if(!fbDb) return {};
+  if(!state.auth.signedIn) return {};
+  if(!isOnline()) return state.mapLibrary.index || {};
+  try{
+    const snap = await mapIndexRef().once('value');
+    return snap.val() || {};
+  }catch(e){
+    console.warn('讀取地圖庫索引失敗', e);
+    return {};
+  }
+}
+
+/**
+ * 讀取單張地圖完整資料（含節點座標 + 底圖 URL）
+ * @param {string} mapId
+ * @returns {Promise<Object|null>} { name, imageUrl, imageWidth, imageHeight, nodes, updatedAt, ... }
+ */
+async function fetchMapLibraryMap(mapId){
+  if(!fbDb || !mapId) return null;
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  if(!isOnline()) throw new Error('離線中，無法讀取地圖');
+  try{
+    const snap = await mapRef(mapId).once('value');
+    return snap.val() || null;
+  }catch(e){
+    console.warn(`讀取地圖 ${mapId} 失敗`, e);
+    throw e;
+  }
+}
+
+/**
+ * 儲存（新增 / 更新）整張地圖
+ * @param {string} mapId  - 若為空則自動生成
+ * @param {Object} payload - { name, imageUrl, imageWidth, imageHeight, nodes }
+ * @returns {Promise<string>} 新 / 更新的 mapId
+ */
+async function saveMapLibraryMap(mapId, payload){
+  if(!fbDb) throw new Error('Firebase 未就緒');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  if(!canEditMapLibrary()) throw new Error('您沒有地圖庫編輯權限');
+  if(!isOnline()) throw new Error('離線中，無法儲存');
+  if(!payload || !payload.name) throw new Error('缺少地圖名稱');
+
+  const id = mapId || ('map_' + uid());
+  const now = Date.now();
+
+  const fullData = {
+    name: String(payload.name).trim().slice(0, 30),
+    imageUrl: payload.imageUrl || '',
+    imageWidth: Number(payload.imageWidth) || 0,
+    imageHeight: Number(payload.imageHeight) || 0,
+    nodes: payload.nodes || {},
+    updatedAt: now,
+    updatedBy: state.auth.accountUid || '',
+    updatedByName: state.auth.displayName || '',
+  };
+
+  const prevSnap = await mapRef(id).once('value');
+  const prev = prevSnap.val();
+  if(prev && prev.createdAt){
+    fullData.createdAt = prev.createdAt;
+    fullData.createdBy = prev.createdBy || '';
+    fullData.createdByName = prev.createdByName || '';
+  } else {
+    fullData.createdAt = now;
+    fullData.createdBy = state.auth.accountUid || '';
+    fullData.createdByName = state.auth.displayName || '';
+  }
+
+  /* 寫入完整資料 + 更新索引（用 update 保持原子性） */
+  const nodeCount = Object.keys(fullData.nodes || {}).length;
+  const updates = {};
+  updates[`mapLibrary/${id}`] = fullData;
+  updates[`mapLibraryIndex/${id}`] = {
+    name: fullData.name,
+    updatedAt: fullData.updatedAt,
+    imageWidth: fullData.imageWidth,
+    imageHeight: fullData.imageHeight,
+    imageUrl: fullData.imageUrl,
+    nodeCount,
+    createdByName: fullData.createdByName,
+    updatedByName: fullData.updatedByName,
+  };
+
+  await fbDb.ref().update(updates);
+  logSystem(`💾 已儲存地圖：${fullData.name}（${nodeCount} 節點）`);
+  return id;
+}
+
+/**
+ * 只更新節點座標（快速儲存校準結果）
+ * @param {string} mapId
+ * @param {Object} nodes - { nodeId: { name, code, x, y } }
+ * @param {Object} meta  - 可選 { imageUrl, imageWidth, imageHeight, name }
+ */
+async function updateMapNodes(mapId, nodes, meta){
+  if(!fbDb || !mapId) throw new Error('缺少 mapId');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  if(!canEditMapLibrary()) throw new Error('您沒有地圖庫編輯權限');
+  if(!isOnline()) throw new Error('離線中，無法儲存');
+
+  const now = Date.now();
+  const updates = {};
+  updates[`mapLibrary/${mapId}/nodes`] = nodes || {};
+  updates[`mapLibrary/${mapId}/updatedAt`] = now;
+  updates[`mapLibrary/${mapId}/updatedBy`] = state.auth.accountUid || '';
+  updates[`mapLibrary/${mapId}/updatedByName`] = state.auth.displayName || '';
+
+  const nodeCount = Object.keys(nodes || {}).length;
+  updates[`mapLibraryIndex/${mapId}/updatedAt`] = now;
+  updates[`mapLibraryIndex/${mapId}/nodeCount`] = nodeCount;
+  updates[`mapLibraryIndex/${mapId}/updatedByName`] = state.auth.displayName || '';
+
+  if(meta){
+    if(typeof meta.name === 'string' && meta.name.trim()){
+      const trimmed = meta.name.trim().slice(0, 30);
+      updates[`mapLibrary/${mapId}/name`] = trimmed;
+      updates[`mapLibraryIndex/${mapId}/name`] = trimmed;
+    }
+    if(typeof meta.imageUrl === 'string'){
+      updates[`mapLibrary/${mapId}/imageUrl`] = meta.imageUrl;
+      updates[`mapLibraryIndex/${mapId}/imageUrl`] = meta.imageUrl;
+    }
+    if(typeof meta.imageWidth === 'number'){
+      updates[`mapLibrary/${mapId}/imageWidth`] = meta.imageWidth;
+      updates[`mapLibraryIndex/${mapId}/imageWidth`] = meta.imageWidth;
+    }
+    if(typeof meta.imageHeight === 'number'){
+      updates[`mapLibrary/${mapId}/imageHeight`] = meta.imageHeight;
+      updates[`mapLibraryIndex/${mapId}/imageHeight`] = meta.imageHeight;
+    }
+  }
+
+  await fbDb.ref().update(updates);
+  logSystem(`💾 已更新地圖節點（${nodeCount} 節點）`);
+}
+
+/**
+ * 刪除整張地圖
+ * @param {string} mapId
+ */
+async function deleteMapLibraryMap(mapId){
+  if(!fbDb || !mapId) throw new Error('缺少 mapId');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  if(!(window.SLG.Auth && window.SLG.Auth.isSuperAdmin())){
+    throw new Error('只有超級管理員可以刪除地圖');
+  }
+  if(!isOnline()) throw new Error('離線中，無法刪除');
+
+  const updates = {};
+  updates[`mapLibrary/${mapId}`] = null;
+  updates[`mapLibraryIndex/${mapId}`] = null;
+  await fbDb.ref().update(updates);
+
+  /* 本機快取清除 */
+  delete state.mapLibrary.index[mapId];
+  delete state.mapLibrary.loaded[mapId];
+  if(state.mapLibrary.activeMapId === mapId){
+    state.mapLibrary.activeMapId = '';
+    if(window.SLG.saveMapLibraryPrefs) window.SLG.saveMapLibraryPrefs();
+  }
+  emit(EVT.MAP_LIBRARY_UPDATED, { type: 'deleted', mapId });
+  logSystem(`🗑️ 已刪除地圖：${mapId}`);
+}
+
+/* ── 即時監聽 ── */
+function startMapLibraryIndexWatcher(){
+  if(!fbDb) return;
+  if(!state.auth.signedIn) return;
+  if(!isOnline()) return;
+  stopMapLibraryIndexWatcher();
+
+  mapLibraryIndexRef = mapIndexRef();
+  mapLibraryIndexHandler = mapLibraryIndexRef.on('value', snap => {
+    const val = snap.val() || {};
+    state.mapLibrary.index = val;
+    emit(EVT.MAP_LIBRARY_UPDATED, { type: 'index-updated' });
+  }, err => {
+    console.warn('地圖庫索引監聽失敗', err);
+  });
+}
+
+function stopMapLibraryIndexWatcher(){
+  if(mapLibraryIndexRef && mapLibraryIndexHandler){
+    try{ mapLibraryIndexRef.off('value', mapLibraryIndexHandler); }catch(e){}
+  }
+  mapLibraryIndexRef = null;
+  mapLibraryIndexHandler = null;
+}
+
+function startMapLibraryMapWatcher(mapId){
+  if(!fbDb || !mapId) return;
+  if(!state.auth.signedIn) return;
+  if(!isOnline()) return;
+  stopMapLibraryMapWatcher();
+  currentWatchedMapId = mapId;
+
+  mapLibraryMapRef = mapRef(mapId);
+  mapLibraryMapHandler = mapLibraryMapRef.on('value', snap => {
+    const val = snap.val();
+    if(!val){
+      /* 地圖被刪 */
+      delete state.mapLibrary.loaded[mapId];
+      if(state.mapLibrary.activeMapId === mapId){
+        state.mapLibrary.activeMapId = '';
+        if(window.SLG.saveMapLibraryPrefs) window.SLG.saveMapLibraryPrefs();
+      }
+    } else {
+      /* 合併（保留 imageEl） */
+      const existing = state.mapLibrary.loaded[mapId] || {};
+      state.mapLibrary.loaded[mapId] = Object.assign({}, existing, val);
+      /* 若圖片 URL 有變更，重新載入 imageEl */
+      if(existing.imageUrl !== val.imageUrl){
+        loadMapImageElement(mapId, val.imageUrl);
+      }
+    }
+    emit(EVT.MAP_LIBRARY_UPDATED, { type: 'map-updated', mapId });
+  }, err => {
+    console.warn('地圖監聽失敗', err);
+  });
+}
+
+function stopMapLibraryMapWatcher(){
+  if(mapLibraryMapRef && mapLibraryMapHandler){
+    try{ mapLibraryMapRef.off('value', mapLibraryMapHandler); }catch(e){}
+  }
+  mapLibraryMapRef = null;
+  mapLibraryMapHandler = null;
+  currentWatchedMapId = '';
+}
+
+function stopAllMapLibraryWatchers(){
+  stopMapLibraryIndexWatcher();
+  stopMapLibraryMapWatcher();
+}
+
+/* ── 底圖 Image 元素快取 ── */
+function loadMapImageElement(mapId, url){
+  return new Promise((resolve, reject) => {
+    if(!url){ reject(new Error('缺少圖片 URL')); return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const map = state.mapLibrary.loaded[mapId];
+      if(map){
+        map.imageEl = img;
+        if(!map.imageWidth) map.imageWidth = img.naturalWidth;
+        if(!map.imageHeight) map.imageHeight = img.naturalHeight;
+      }
+      emit(EVT.MAP_LIBRARY_UPDATED, { type: 'image-loaded', mapId });
+      resolve(img);
+    };
+    img.onerror = (e) => {
+      console.warn(`載入底圖失敗：${mapId}`, url);
+      reject(new Error('圖片載入失敗'));
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * 確保地圖已完整載入（含底圖 imageEl）
+ * @param {string} mapId
+ * @returns {Promise<Object>} 地圖物件
+ */
+async function ensureMapLoaded(mapId){
+  if(!mapId) throw new Error('缺少 mapId');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+
+  let map = state.mapLibrary.loaded[mapId];
+
+  /* 若尚未從雲端讀取完整資料 */
+  if(!map || !map.nodes || !map.imageUrl){
+    if(!isOnline()) throw new Error('離線中，無法載入地圖');
+    const data = await fetchMapLibraryMap(mapId);
+    if(!data) throw new Error('地圖不存在');
+    map = Object.assign({}, state.mapLibrary.loaded[mapId] || {}, data);
+    state.mapLibrary.loaded[mapId] = map;
+  }
+
+  /* 若底圖 imageEl 尚未載入 */
+  if(!map.imageEl && map.imageUrl){
+    try{
+      await loadMapImageElement(mapId, map.imageUrl);
+    }catch(e){
+      console.warn('底圖載入失敗', e);
+    }
+  }
+
+  return map;
+}
+
+/* ============================================================
    暴露
    ============================================================ */
 Object.assign(window.SLG, {
   FIREBASE_CONFIG, SANDBOX_HISTORY_LIMIT,
+  CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET, CLOUDINARY_UPLOAD_URL,
+  MAP_IMAGE_MAX_SIZE,
   initFirebase, getDb, getApp, isConnected,
   connectFirebase, disconnectFirebase, publish,
   acquireEditLock, releaseEditLock,
@@ -936,6 +1340,23 @@ Object.assign(window.SLG, {
   listSandboxHistory, restoreFromHistory, previewHistory,
   requestRoomEditAccess, approveEditRequest, rejectEditRequest,
   requestDisconnect, confirmExit,
+
+  /* v8.8.0：地圖庫 */
+  canEditMapLibrary,
+  uploadMapImageToCloudinary,
+  fetchMapLibraryIndex,
+  fetchMapLibraryMap,
+  saveMapLibraryMap,
+  updateMapNodes,
+  deleteMapLibraryMap,
+  startMapLibraryIndexWatcher,
+  stopMapLibraryIndexWatcher,
+  startMapLibraryMapWatcher,
+  stopMapLibraryMapWatcher,
+  stopAllMapLibraryWatchers,
+  loadMapImageElement,
+  ensureMapLoaded,
+  mapIndexRef, mapRef,
 });
 
 })();
