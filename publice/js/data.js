@@ -1,6 +1,6 @@
 /* ============================================================================
- * data.js — Excel/CSV 匯入匯出（v8.6.2）
- * v8.6.2：匯入宣戰表時檢查跨戰區（依 settings.crossZoneWarAllowed）
+ * data.js — Excel/CSV 匯入匯出（v8.6.8）
+ * v8.6.8：匯入支援 3 種模式（合併 / 新增 / 覆蓋）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -13,7 +13,7 @@ const {
   SIDE_LABELS,
   clamp,
   markDirty, tickLamport, flushPatches,
-  saveState,
+  saveState, saveStateImportant,
   getAllianceByName,
   ensureNpcAlliance,
   NPC_ALLIANCE_NAME,
@@ -27,7 +27,7 @@ const {
 } = window.SLG;
 
 /* ============================================================
-   通用：解析分隔符文字（自動偵測逗號或 Tab）
+   通用：解析分隔符文字
    ============================================================ */
 function parseDelimited(text){
   text = String(text || '').replace(/^\uFEFF/, '');
@@ -46,9 +46,7 @@ function parseDelimited(text){
       if(c === '"'){
         if(text[i+1] === '"'){ field += '"'; i++; }
         else inQuotes = false;
-      } else {
-        field += c;
-      }
+      } else { field += c; }
     } else {
       if(c === '"'){ inQuotes = true; }
       else if(c === delim){ row.push(field); field = ''; }
@@ -58,7 +56,6 @@ function parseDelimited(text){
     }
   }
   if(field.length || row.length){ row.push(field); rows.push(row); }
-
   return rows.filter(r => r.some(c => c != null && String(c).trim() !== ''));
 }
 
@@ -70,6 +67,37 @@ function findFieldIndex(headers, aliases){
     if(aliases.includes(h)) return i;
   }
   return -1;
+}
+
+/* ============================================================
+   v8.6.8：匯入模式工具
+   ============================================================ */
+const IMPORT_MODE_LABELS = {
+  merge: '🔄 合併',
+  append: '➕ 新增',
+  overwrite: '💥 覆蓋',
+};
+
+const IMPORT_MODE_HINTS = {
+  merge: '同名會更新、新的加入、其他保留',
+  append: '同名會跳過、新的加入、其他保留',
+  overwrite: '清空後重建（⚠️ 會刪除所有現有資料）',
+};
+
+function getImportMode(modeKey){
+  const el = document.getElementById(modeKey);
+  return el ? el.value : 'merge';
+}
+
+function confirmImport(mode, count, typeLabel){
+  const modeLabel = IMPORT_MODE_LABELS[mode] || mode;
+  const hint = IMPORT_MODE_HINTS[mode] || '';
+  return confirm(
+    `即將以「${modeLabel}」模式匯入 ${count} 個${typeLabel}。\n\n` +
+    `模式說明：${hint}\n\n` +
+    (mode === 'overwrite' ? '⚠️ 覆蓋模式會清空所有現有資料！\n\n' : '') +
+    `確定執行？`
+  );
 }
 
 /* ============================================================
@@ -108,11 +136,6 @@ const ROUTE_FIELD_ALIASES = {
   attackStartTime: ['進攻開始時間','進攻時間','開始時間','attackstarttime','attackstart','starttime','start'],
 };
 
-const MAP_ROUTE_FIELD_ALIASES = {
-  cityA: ['城池a','城池A','城a','城A','citya','citya','城池1','城1'],
-  cityB: ['城池b','城池B','城b','城B','cityb','cityb','城池2','城2'],
-};
-
 const SIDE_PARSE_MAP = {
   '本方':'self','自己':'self','self':'self','我方':'self','我軍':'self',
   '同盟':'ally','盟友':'ally','ally':'ally','友方':'ally',
@@ -123,7 +146,7 @@ const SIDE_PARSE_MAP = {
 const TRUTHY_SET = new Set(['是','y','yes','true','1','✓','√','v','有','首都','主城']);
 
 /* ============================================================
-   時間格式正規化（HH:MM）
+   時間正規化
    ============================================================ */
 function normalizeTimeString(s){
   if(!s) return '';
@@ -132,12 +155,8 @@ function normalizeTimeString(s){
     const [h, m] = s.split(':');
     return String(parseInt(h,10)).padStart(2,'0') + ':' + m.padStart(2,'0');
   }
-  if(/^\d{4}$/.test(s)){
-    return s.slice(0,2) + ':' + s.slice(2,4);
-  }
-  if(/^\d{6}$/.test(s)){
-    return s.slice(0,2) + ':' + s.slice(2,4);
-  }
+  if(/^\d{4}$/.test(s)) return s.slice(0,2) + ':' + s.slice(2,4);
+  if(/^\d{6}$/.test(s)) return s.slice(0,2) + ':' + s.slice(2,4);
   if(/^\d{1,2}:\d{2}:\d{2}$/.test(s)){
     const [h, m] = s.split(':');
     return String(parseInt(h,10)).padStart(2,'0') + ':' + m.padStart(2,'0');
@@ -146,7 +165,7 @@ function normalizeTimeString(s){
 }
 
 /* ============================================================
-   戰力解析（億 → 完整數字）
+   戰力解析
    ============================================================ */
 function parsePowerFromImport(raw){
   const s = String(raw == null ? '' : raw).trim();
@@ -162,7 +181,6 @@ function powerToYiStr(num){
   if(n === 0) return '0.00';
   return (n / POWER_YI).toFixed(2);
 }
-
 function powerToWanStr(num){
   const n = Number(num) || 0;
   if(n === 0) return '0';
@@ -170,7 +188,7 @@ function powerToWanStr(num){
 }
 
 /* ============================================================
-   解析：盟名單（v8.6.0：加入 order）
+   解析函式（不變）
    ============================================================ */
 function parseAlliancesTable(rows){
   if(!rows || rows.length < 2) return { alliances: [], errors: ['盟名單至少需要表頭 + 1 筆資料'] };
@@ -200,12 +218,10 @@ function parseAlliancesTable(rows){
     const memberCount = parseFloat(get('memberCount', '100')) || 100;
     const totalPowerRaw = get('totalPower', '2');
     const totalPower = parsePowerFromImport(totalPowerRaw);
-
     const sideRaw = get('side', '敵方');
     const sideNorm = normalizeHeader(sideRaw);
     const side = SIDE_PARSE_MAP[sideRaw] || SIDE_PARSE_MAP[sideNorm] || 'enemy';
 
-    /* v8.6.0：order（可留空，之後依檔案順序補）*/
     let order = null;
     if(idx.order >= 0){
       const v = String(r[idx.order] || '').trim();
@@ -215,28 +231,13 @@ function parseAlliancesTable(rows){
       }
     }
 
-    alliances.push({
-      name,
-      icon: icon || NPC_ALLIANCE_ICON,
-      memberCount,
-      totalPower,
-      side,
-      order,
-      _rowIdx: i - 1,  /* 用於 order 補值 */
-    });
+    alliances.push({ name, icon: icon || NPC_ALLIANCE_ICON, memberCount, totalPower, side, order, _rowIdx: i - 1 });
   }
 
-  /* v8.6.0：若某些盟無 order，依檔案順序補 */
-  alliances.forEach((a, i) => {
-    if(a.order === null) a.order = i;
-  });
-
+  alliances.forEach((a, i) => { if(a.order === null) a.order = i; });
   return { alliances, errors };
 }
 
-/* ============================================================
-   解析：城池表
-   ============================================================ */
 function parseCitiesTable(rows){
   if(!rows || rows.length < 2) return { cities: [], errors: ['城池表至少需要表頭 + 1 筆資料'] };
   const headers = rows[0].map(h => String(h||'').trim());
@@ -268,21 +269,16 @@ function parseCitiesTable(rows){
     const sideRaw = get('side', '本方');
     const sideNorm = normalizeHeader(sideRaw);
     const side = SIDE_PARSE_MAP[sideRaw] || SIDE_PARSE_MAP[sideNorm] || 'self';
-
     const level = parseInt(get('level', '1')) || 1;
     const memberCount = parseFloat(get('memberCount', '0')) || 0;
-    const totalPowerRaw = get('totalPower', '0');
-    const totalPower = parsePowerFromImport(totalPowerRaw);
+    const totalPower = parsePowerFromImport(get('totalPower', '0'));
     const totalTeams = parseFloat(get('totalTeams', '0')) || 0;
     const cooldownMin = parseFloat(get('cooldownMin', '5')) || 5;
     const wallMin = parseFloat(get('wallMin', '30')) || 30;
     const capRaw = String(get('isCapital', '')).toLowerCase().trim();
     const isCapital = TRUTHY_SET.has(capRaw);
 
-    if(totalTeams < 0){
-      errors.push(`第 ${i+1} 列「${name}」總隊數不可為負數，略過`);
-      continue;
-    }
+    if(totalTeams < 0){ errors.push(`第 ${i+1} 列「${name}」總隊數不可為負數，略過`); continue; }
 
     neededZones.add(zoneName);
     if(allianceName){
@@ -297,16 +293,9 @@ function parseCitiesTable(rows){
     });
   }
 
-  return {
-    cities, errors,
-    neededZones: [...neededZones],
-    neededAlliances: [...neededAlliances.entries()]
-  };
+  return { cities, errors, neededZones: [...neededZones], neededAlliances: [...neededAlliances.entries()] };
 }
 
-/* ============================================================
-   解析：宣戰路線表
-   ============================================================ */
 function parseRoutesTable(rows){
   if(!rows || rows.length < 2) return { routes: [], errors: ['宣戰表至少需要表頭 + 1 筆資料'] };
   const headers = rows[0].map(h => String(h||'').trim());
@@ -314,9 +303,7 @@ function parseRoutesTable(rows){
   for(const [field, aliases] of Object.entries(ROUTE_FIELD_ALIASES)){
     idx[field] = findFieldIndex(headers, aliases);
   }
-  if(idx.src < 0 || idx.tgt < 0){
-    return { routes: [], errors: ['宣戰表缺少「出兵城」或「目標城」欄位'] };
-  }
+  if(idx.src < 0 || idx.tgt < 0) return { routes: [], errors: ['宣戰表缺少「出兵城」或「目標城」欄位'] };
 
   const routes = [];
   const errors = [];
@@ -350,12 +337,8 @@ function parseRoutesTable(rows){
       const raw = String(r[idx.attackStartTime] || '').trim();
       attackStartTime = normalizeTimeString(raw);
     }
-    if(type === 'attack' && !attackStartTime){
-      attackStartTime = '19:00';
-    }
-    if(type === 'assist'){
-      attackStartTime = '';
-    }
+    if(type === 'attack' && !attackStartTime) attackStartTime = '19:00';
+    if(type === 'assist') attackStartTime = '';
 
     routes.push({
       srcName: src, tgtName: tgt, isAttack: type === 'attack',
@@ -368,12 +351,8 @@ function parseRoutesTable(rows){
   return { routes, errors };
 }
 
-/* ============================================================
-   解析：地圖路線表
-   ============================================================ */
 function parseMapRoutesTable(text){
   if(!text) return { routes: [], errors: [] };
-
   const lines = String(text).split(/\r?\n/);
   const routes = [];
   const errors = [];
@@ -381,9 +360,7 @@ function parseMapRoutesTable(text){
   for(let i = 0; i < lines.length; i++){
     const raw = lines[i].trim();
     if(!raw) continue;
-
     let cityA = '', cityB = '';
-
     if(raw.includes('-')){
       const parts = raw.split('-').map(s => s.trim()).filter(Boolean);
       if(parts.length >= 2){ cityA = parts[0]; cityB = parts[1]; }
@@ -391,20 +368,10 @@ function parseMapRoutesTable(text){
       const parts = raw.split(/[,\t]/).map(s => s.trim()).filter(Boolean);
       if(parts.length >= 2){ cityA = parts[0]; cityB = parts[1]; }
     }
-
-    if(!cityA || !cityB){
-      errors.push(`第 ${i+1} 行格式錯誤：${raw}`);
-      continue;
-    }
-
-    if(cityA === cityB){
-      errors.push(`第 ${i+1} 行兩城相同：${raw}`);
-      continue;
-    }
-
+    if(!cityA || !cityB){ errors.push(`第 ${i+1} 行格式錯誤：${raw}`); continue; }
+    if(cityA === cityB){ errors.push(`第 ${i+1} 行兩城相同：${raw}`); continue; }
     routes.push({ cityAName: cityA, cityBName: cityB });
   }
-
   return { routes, errors };
 }
 
@@ -538,6 +505,11 @@ function openExcelImportModal(){
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
+  /* v8.6.8：重置模式選單為「合併」 */
+  ['excelAlliancesMode','excelCitiesMode','excelMapRoutesMode','excelRoutesMode'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = 'merge';
+  });
   updateExcelPreview();
   const modal = document.getElementById('excelImportModal');
   if(modal) modal.classList.add('show');
@@ -548,10 +520,8 @@ function closeExcelImportModal(){
 }
 
 /* ============================================================
-   手動選擇匯入
+   ① 匯入盟名單（v8.6.8：3 模式）
    ============================================================ */
-
-/* ① 匯入盟名單（v8.6.0：含 order）*/
 function doImportAlliances(){
   const text = document.getElementById('excelAlliancesText')?.value.trim() || '';
   if(!text){ alert('請填入盟名單'); return; }
@@ -563,50 +533,90 @@ function doImportAlliances(){
     return;
   }
 
-  const ok = confirm(
-    `即將匯入 ${result.alliances.length} 個盟。\n\n` +
-    `⚠️ 此操作會覆蓋現有沙盤的「所有盟」。\n\n` +
-    `確定執行？`
-  );
-  if(!ok) return;
+  const mode = getImportMode('excelAlliancesMode');
+  if(!confirmImport(mode, result.alliances.length, '盟')) return;
 
-  state.alliances.length = 0;
-
-  /* 依 order 排序後寫入 */
+  /* 依 order 排序 */
   const sorted = [...result.alliances].sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  sorted.forEach((a, i) => {
-    const id = uid();
-    const entity = {
-      id,
-      name: a.name,
-      icon: a.icon,
-      side: a.side,
-      memberCount: a.memberCount,
-      totalPower: a.totalPower,
-      avgPower: a.memberCount > 0 ? (a.totalPower / a.memberCount) : 0,
-      power: a.totalPower,
-      order: i,  /* v8.6.0：依檔案順序 */
-      createdAt: Date.now() + i,
-    };
-    state.alliances.push(entity);
-    state.entityRev.alliance[id] = (state.entityRev.alliance[id] || 0) + 1;
-    markDirty('alliance', id);
-  });
+  let added = 0, updated = 0, skipped = 0;
+
+  if(mode === 'overwrite'){
+    /* 舊邏輯：清空後重建 */
+    state.alliances.length = 0;
+    sorted.forEach((a, i) => {
+      const id = uid();
+      const entity = {
+        id, name: a.name, icon: a.icon, side: a.side,
+        memberCount: a.memberCount, totalPower: a.totalPower,
+        avgPower: a.memberCount > 0 ? (a.totalPower / a.memberCount) : 0,
+        power: a.totalPower, order: i, createdAt: Date.now() + i,
+      };
+      state.alliances.push(entity);
+      state.entityRev.alliance[id] = (state.entityRev.alliance[id] || 0) + 1;
+      markDirty('alliance', id);
+      added++;
+    });
+  } else {
+    /* 合併 / 新增 */
+    const nameMap = new Map();
+    for(const a of state.alliances) nameMap.set(a.name, a);
+
+    sorted.forEach((a, i) => {
+      const existing = nameMap.get(a.name);
+      if(existing){
+        if(mode === 'append'){ skipped++; return; }
+        /* merge：更新基本資料 */
+        existing.icon = a.icon || existing.icon;
+        existing.side = a.side;
+        existing.memberCount = a.memberCount;
+        existing.totalPower = a.totalPower;
+        existing.avgPower = a.memberCount > 0 ? (a.totalPower / a.memberCount) : 0;
+        existing.power = a.totalPower;
+        if(typeof existing.order !== 'number') existing.order = a.order;
+        state.entityRev.alliance[existing.id] = (state.entityRev.alliance[existing.id] || 0) + 1;
+        markDirty('alliance', existing.id);
+        updated++;
+      } else {
+        const id = uid();
+        const maxOrder = state.alliances.reduce((m, al) =>
+          Math.max(m, typeof al.order === 'number' ? al.order : -1), -1);
+        const entity = {
+          id, name: a.name, icon: a.icon, side: a.side,
+          memberCount: a.memberCount, totalPower: a.totalPower,
+          avgPower: a.memberCount > 0 ? (a.totalPower / a.memberCount) : 0,
+          power: a.totalPower, order: maxOrder + 1 + i, createdAt: Date.now() + i,
+        };
+        state.alliances.push(entity);
+        nameMap.set(a.name, entity);
+        state.entityRev.alliance[id] = (state.entityRev.alliance[id] || 0) + 1;
+        markDirty('alliance', id);
+        added++;
+      }
+    });
+  }
 
   tickLamport();
   flushPatches();
-  saveState();
+  saveStateImportant();
 
   if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
   if(window.SLG.CityManager) window.SLG.CityManager.render();
   if(window.SLG.renderMatrix) window.SLG.renderMatrix();
+  if(window.SLG.renderOverview) window.SLG.renderOverview();
 
-  alert(`✅ 已匯入 ${result.alliances.length} 個盟`);
-  logSystem(`📥 盟名單匯入完成：${result.alliances.length} 個`);
+  const summary = mode === 'overwrite'
+    ? `已覆蓋：${added} 個盟`
+    : (mode === 'append'
+        ? `新增完成：新增 ${added}${skipped > 0 ? `，跳過 ${skipped}` : ''}`
+        : `合併完成：新增 ${added}，更新 ${updated}`);
+  alert(`✅ ${summary}`);
+  logSystem(`📥 盟名單匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
 }
 
-/* ② 匯入城池表 */
+/* ============================================================
+   ② 匯入城池表（v8.6.8：3 模式，合併時保留宣戰關係）
+   ============================================================ */
 function doImportCities(){
   const text = document.getElementById('excelCitiesText')?.value.trim() || '';
   if(!text){ alert('請填入城池表'); return; }
@@ -618,20 +628,10 @@ function doImportCities(){
     return;
   }
 
-  const ok = confirm(
-    `即將匯入 ${result.cities.length} 座城池。\n\n` +
-    `⚠️ 此操作會覆蓋現有沙盤的「所有城池」。\n\n` +
-    `確定執行？`
-  );
-  if(!ok) return;
+  const mode = getImportMode('excelCitiesMode');
+  if(!confirmImport(mode, result.cities.length, '城池')) return;
 
-  const oldIds = state.cities.map(c => c.id);
-  state.cities.length = 0;
-  for(const id of oldIds){
-    state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
-    markDirty('cityDeleted', id);
-  }
-
+  /* 準備 zone 對應 */
   const zoneMap = new Map();
   for(const z of state.zones) zoneMap.set(z.name, z.id);
   const ensureZone = (name) => {
@@ -645,8 +645,27 @@ function doImportCities(){
     return id;
   };
 
+  /* 準備 alliance 對應 */
   const allianceByName = new Map();
   for(const a of state.alliances) allianceByName.set(a.name, a.id);
+
+  let added = 0, updated = 0, skipped = 0;
+
+  if(mode === 'overwrite'){
+    /* 舊邏輯：清空所有城池（連 attackTargets / defendTargets 都清掉）*/
+    const oldIds = state.cities.map(c => c.id);
+    state.cities.length = 0;
+    for(const id of oldIds){
+      state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
+      markDirty('cityDeleted', id);
+    }
+  }
+
+  /* 準備 name → city 對應 */
+  const cityByName = new Map();
+  if(mode !== 'overwrite'){
+    for(const c of state.cities) cityByName.set(c.name, c);
+  }
 
   for(const cd of result.cities){
     const zoneId = ensureZone(cd.zoneName);
@@ -671,33 +690,52 @@ function doImportCities(){
     }
 
     const avgPower = cd.totalTeams > 0 ? Math.floor(cd.totalPower / cd.totalTeams) : 0;
-    const id = uid();
-    const entity = {
-      id,
-      name: cd.name,
-      zoneId,
-      allianceId,
-      side,
-      level: cd.level,
-      memberCount: cd.memberCount,
-      totalPower: cd.totalPower,
-      totalTeams: cd.totalTeams,
-      avgPower,
-      cooldownMin: cd.cooldownMin,
-      wallMin: cd.wallMin,
-      defStartTime: '19:00',
-      isCapital: cd.isCapital,
-      attackTargets: [],
-      defendTargets: [],
-    };
-    state.cities.push(entity);
-    state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
-    markDirty('city', id);
+
+    /* 檢查是否已存在（合併 / 新增模式）*/
+    const existing = (mode !== 'overwrite') ? cityByName.get(cd.name) : null;
+
+    if(existing){
+      if(mode === 'append'){ skipped++; continue; }
+      /* merge：更新基本資料，保留 attackTargets / defendTargets */
+      existing.zoneId = zoneId;
+      existing.allianceId = allianceId;
+      existing.side = side;
+      existing.level = cd.level;
+      existing.memberCount = cd.memberCount;
+      existing.totalPower = cd.totalPower;
+      existing.totalTeams = cd.totalTeams;
+      existing.avgPower = avgPower;
+      existing.cooldownMin = cd.cooldownMin;
+      existing.wallMin = cd.wallMin;
+      /* 首都：新資料為權威 */
+      existing.isCapital = cd.isCapital;
+      /* attackTargets / defendTargets 保留，不動 */
+
+      state.entityRev.city[existing.id] = (state.entityRev.city[existing.id] || 0) + 1;
+      markDirty('city', existing.id);
+      updated++;
+    } else {
+      /* 新增 */
+      const id = uid();
+      const entity = {
+        id, name: cd.name, zoneId, allianceId, side,
+        level: cd.level, memberCount: cd.memberCount,
+        totalPower: cd.totalPower, totalTeams: cd.totalTeams, avgPower,
+        cooldownMin: cd.cooldownMin, wallMin: cd.wallMin,
+        defStartTime: '19:00', isCapital: cd.isCapital,
+        attackTargets: [], defendTargets: [],
+      };
+      state.cities.push(entity);
+      cityByName.set(cd.name, entity);
+      state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
+      markDirty('city', id);
+      added++;
+    }
   }
 
   tickLamport();
   flushPatches();
-  saveState();
+  saveStateImportant();
 
   if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
   if(window.SLG.CityManager) window.SLG.CityManager.render();
@@ -705,13 +743,20 @@ function doImportCities(){
   if(window.SLG.RouteManager) window.SLG.RouteManager.render();
   if(window.SLG.GameMap) window.SLG.GameMap.render();
   if(window.SLG.renderCityMatrix) window.SLG.renderCityMatrix();
+  if(window.SLG.renderOverview) window.SLG.renderOverview();
 
-  alert(`✅ 已匯入 ${result.cities.length} 座城池` +
-    (state.settings.crossZoneWarAllowed ? '' : '\n\nℹ️ 目前「不允許跨戰區宣戰」，跨戰區宣戰將被過濾。'));
-  logSystem(`📥 城池表匯入完成：${result.cities.length} 座`);
+  const summary = mode === 'overwrite'
+    ? `已覆蓋：${added} 座城池`
+    : (mode === 'append'
+        ? `新增完成：新增 ${added}${skipped > 0 ? `，跳過 ${skipped}` : ''}`
+        : `合併完成：新增 ${added}，更新 ${updated}（宣戰關係已保留）`);
+  alert(`✅ ${summary}` + (state.settings.crossZoneWarAllowed ? '' : '\n\nℹ️ 目前「不允許跨戰區宣戰」，跨戰區宣戰將被過濾。'));
+  logSystem(`📥 城池表匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
 }
 
-/* ③ 匯入地圖路線表 */
+/* ============================================================
+   ③ 匯入地圖路線表（v8.6.8：3 模式，合併 = 新增）
+   ============================================================ */
 function doImportMapRoutes(){
   const text = document.getElementById('excelMapRoutesText')?.value.trim() || '';
   if(!text){ alert('請填入地圖路線表'); return; }
@@ -722,39 +767,48 @@ function doImportMapRoutes(){
     return;
   }
 
-  const ok = confirm(
-    `即將匯入 ${result.routes.length} 條地圖路線。\n\n` +
-    `⚠️ 此操作會覆蓋現有沙盤的「所有地圖路線」。\n\n` +
-    `確定執行？`
-  );
-  if(!ok) return;
+  const mode = getImportMode('excelMapRoutesMode');
+  if(!confirmImport(mode, result.routes.length, '地圖路線')) return;
 
   const cityByName = new Map();
   for(const c of state.cities) cityByName.set(c.name, c.id);
 
-  state.routes.length = 0;
+  let added = 0, skipped = 0, notFound = 0;
 
-  let added = 0, skipped = 0;
+  if(mode === 'overwrite'){
+    state.routes.length = 0;
+  }
+
   for(const r of result.routes){
     const aId = cityByName.get(r.cityAName);
     const bId = cityByName.get(r.cityBName);
-    if(!aId || !bId){ skipped++; continue; }
+    if(!aId || !bId){ notFound++; continue; }
     if(aId === bId){ skipped++; continue; }
-    if(findRoute(aId, bId)){ skipped++; continue; }
+    if(findRoute(aId, bId)){
+      /* 已存在 */
+      skipped++;
+      continue;
+    }
     addRoute(aId, bId);
     added++;
   }
 
-  saveState();
-
+  saveStateImportant();
   if(window.SLG.RouteManager) window.SLG.RouteManager.render();
   if(window.SLG.GameMap) window.SLG.GameMap.render();
+  if(window.SLG.renderOverview) window.SLG.renderOverview();
 
-  alert(`✅ 已匯入 ${added} 條地圖路線${skipped > 0 ? `（${skipped} 條略過）` : ''}`);
-  logSystem(`📥 地圖路線匯入完成：${added} 條`);
+  /* 合併和新增對路線是一樣的行為 */
+  const summary = mode === 'overwrite'
+    ? `已覆蓋：${added} 條`
+    : `新增完成：新增 ${added}${skipped > 0 ? `，跳過 ${skipped}` : ''}${notFound > 0 ? `，找不到城池 ${notFound}` : ''}`;
+  alert(`✅ ${summary}`);
+  logSystem(`📥 地圖路線匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
 }
 
-/* ④ 匯入宣戰表（v8.6.2：跨戰區檢查）*/
+/* ============================================================
+   ④ 匯入宣戰表（v8.6.8：3 模式）
+   ============================================================ */
 function doImportRoutes(){
   const text = document.getElementById('excelRoutesText')?.value.trim() || '';
   if(!text){ alert('請填入宣戰表'); return; }
@@ -766,18 +820,17 @@ function doImportRoutes(){
     return;
   }
 
-  const ok = confirm(
-    `即將匯入 ${result.routes.length} 條宣戰指示。\n\n` +
-    `⚠️ 此操作會覆蓋現有沙盤的「所有宣戰指示」。\n\n` +
-    `確定執行？`
-  );
-  if(!ok) return;
+  const mode = getImportMode('excelRoutesMode');
+  if(!confirmImport(mode, result.routes.length, '宣戰指示')) return;
 
-  for(const c of state.cities){
-    c.attackTargets = [];
-    c.defendTargets = [];
-    state.entityRev.city[c.id] = (state.entityRev.city[c.id] || 0) + 1;
-    markDirty('city', c.id);
+  /* 覆蓋模式：清空所有宣戰 */
+  if(mode === 'overwrite'){
+    for(const c of state.cities){
+      c.attackTargets = [];
+      c.defendTargets = [];
+      state.entityRev.city[c.id] = (state.entityRev.city[c.id] || 0) + 1;
+      markDirty('city', c.id);
+    }
   }
 
   const cityByName = new Map();
@@ -785,62 +838,83 @@ function doImportRoutes(){
 
   const allowCrossZone = !!state.settings.crossZoneWarAllowed;
 
-  let added = 0, skipped = 0, crossZoneSkipped = 0;
+  let added = 0, updated = 0, skipped = 0, crossZoneSkipped = 0, notFound = 0;
   const crossZoneList = [];
 
   for(const route of result.routes){
-    const srcCity = state.cities.find(c => c.id === cityByName.get(route.srcName));
+    const srcCityId = cityByName.get(route.srcName);
     const tgtCityId = cityByName.get(route.tgtName);
-    if(!srcCity || !tgtCityId){ skipped++; continue; }
+    if(!srcCityId || !tgtCityId){ notFound++; continue; }
+    const srcCity = state.cities.find(c => c.id === srcCityId);
+    const tgtCity = state.cities.find(c => c.id === tgtCityId);
+    if(!srcCity || !tgtCity){ notFound++; continue; }
 
-    /* v8.6.2：跨戰區檢查 */
+    /* 跨戰區檢查 */
     if(!allowCrossZone){
-      const tgtCity = state.cities.find(c => c.id === tgtCityId);
-      if(tgtCity){
-        const srcZone = srcCity.zoneId || '';
-        const tgtZone = tgtCity.zoneId || '';
-        if(srcZone !== tgtZone){
-          crossZoneSkipped++;
-          const srcZoneName = state.zones.find(z => z.id === srcZone)?.name || '未分配';
-          const tgtZoneName = state.zones.find(z => z.id === tgtZone)?.name || '未分配';
-          crossZoneList.push(`${srcCity.name}(${srcZoneName}) → ${tgtCity.name}(${tgtZoneName})`);
-          continue;
-        }
+      const srcZone = srcCity.zoneId || '';
+      const tgtZone = tgtCity.zoneId || '';
+      if(srcZone !== tgtZone){
+        crossZoneSkipped++;
+        const srcZoneName = state.zones.find(z => z.id === srcZone)?.name || '未分配';
+        const tgtZoneName = state.zones.find(z => z.id === tgtZone)?.name || '未分配';
+        crossZoneList.push(`${srcCity.name}(${srcZoneName}) → ${tgtCity.name}(${tgtZoneName})`);
+        continue;
       }
     }
 
-    const arr = route.isAttack ? srcCity.attackTargets : srcCity.defendTargets;
-    const newRoute = {
-      cityId: tgtCityId,
-      preWarPercent: route.preWarPercent,
-      postRevivePercent: route.postRevivePercent,
-      priority: route.priority,
-      attackStartTime: route.isAttack ? (route.attackStartTime || '19:00') : '',
-    };
-    const existingIdx = arr.findIndex(t => t.cityId === tgtCityId);
-    if(existingIdx >= 0) arr[existingIdx] = newRoute;
-    else arr.push(newRoute);
+    const arr = route.isAttack ? 'attackTargets' : 'defendTargets';
+    if(!srcCity[arr]) srcCity[arr] = [];
 
-    state.entityRev.city[srcCity.id] = (state.entityRev.city[srcCity.id] || 0) + 1;
-    markDirty('city', srcCity.id);
-    added++;
+    const existingIdx = srcCity[arr].findIndex(t => t.cityId === tgtCityId);
+
+    if(existingIdx >= 0){
+      if(mode === 'append'){ skipped++; continue; }
+      /* merge：更新 */
+      const existing = srcCity[arr][existingIdx];
+      existing.preWarPercent = route.preWarPercent;
+      existing.postRevivePercent = route.postRevivePercent;
+      existing.priority = route.priority;
+      existing.attackStartTime = route.isAttack ? (route.attackStartTime || '19:00') : '';
+      state.entityRev.city[srcCityId] = (state.entityRev.city[srcCityId] || 0) + 1;
+      markDirty('city', srcCityId);
+      updated++;
+    } else {
+      /* 新增 */
+      srcCity[arr].push({
+        cityId: tgtCityId,
+        preWarPercent: route.preWarPercent,
+        postRevivePercent: route.postRevivePercent,
+        priority: route.priority,
+        attackStartTime: route.isAttack ? (route.attackStartTime || '19:00') : '',
+      });
+      state.entityRev.city[srcCityId] = (state.entityRev.city[srcCityId] || 0) + 1;
+      markDirty('city', srcCityId);
+      added++;
+    }
   }
 
-  if(window.SLG.computeDefStartTimes){
-    window.SLG.computeDefStartTimes(state.cities);
-  }
+  if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
 
   tickLamport();
   flushPatches();
-  saveState();
+  saveStateImportant();
 
   if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
   if(window.SLG.WarManager) window.SLG.WarManager.render();
   if(window.SLG.DeployInstr) window.SLG.DeployInstr.render();
   if(window.SLG.GameMap) window.SLG.GameMap.render();
 
-  let msg = `✅ 已匯入 ${added} 條宣戰指示`;
-  if(skipped > 0) msg += `（${skipped} 條略過）`;
+  let summary;
+  if(mode === 'overwrite'){
+    summary = `已覆蓋：${added} 條`;
+  } else if(mode === 'append'){
+    summary = `新增完成：新增 ${added}${skipped > 0 ? `，跳過 ${skipped}` : ''}`;
+  } else {
+    summary = `合併完成：新增 ${added}，更新 ${updated}`;
+  }
+  if(notFound > 0) summary += `，找不到城池 ${notFound}`;
+
+  let msg = `✅ ${summary}`;
   if(crossZoneSkipped > 0){
     msg += `\n\n⚠️ 跨戰區限制：略過 ${crossZoneSkipped} 條`;
     msg += `\n${crossZoneList.slice(0, 8).join('\n')}`;
@@ -848,7 +922,7 @@ function doImportRoutes(){
     msg += `\n\n（可至 ⚙️ 參數設定 → 🎯 宣戰規則 → 勾選「允許跨戰區宣戰」）`;
   }
   alert(msg);
-  logSystem(`📥 宣戰表匯入完成：${added} 條${crossZoneSkipped > 0 ? `（跨戰區略過 ${crossZoneSkipped} 條）` : ''}`);
+  logSystem(`📥 宣戰表匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
 }
 
 /* ============================================================
@@ -864,7 +938,6 @@ function downloadCSV(csv, filename){
   URL.revokeObjectURL(url);
 }
 
-/* 城池表匯出（戰力以億、均戰以萬） */
 function exportCitiesCSV(){
   if(state.cities.length === 0){ alert('目前沒有任何城池'); return; }
   const headers = ['城池名稱','戰區','同盟','陣營','等級','人數','總戰力（億）','均戰（萬）','總隊數','冷卻','城牆','首都'];
@@ -873,17 +946,11 @@ function exportCitiesCSV(){
     const alliance = state.alliances.find(a => a.id === c.allianceId);
     const avgPower = c.totalTeams > 0 ? Math.floor((Number(c.totalPower) || 0) / c.totalTeams) : 0;
     return [
-      c.name,
-      zone ? zone.name : '',
-      alliance ? alliance.name : '',
+      c.name, zone ? zone.name : '', alliance ? alliance.name : '',
       SIDE_LABELS[c.side] || c.side,
-      c.level || 1,
-      c.memberCount || '',
-      powerToYiStr(c.totalPower),
-      powerToWanStr(avgPower),
-      c.totalTeams || '',
-      c.cooldownMin,
-      c.wallMin,
+      c.level || 1, c.memberCount || '',
+      powerToYiStr(c.totalPower), powerToWanStr(avgPower),
+      c.totalTeams || '', c.cooldownMin, c.wallMin,
       c.isCapital ? '是' : '',
     ];
   });
@@ -892,21 +959,15 @@ function exportCitiesCSV(){
   logSystem('📤 已匯出城池表 CSV（戰力單位：億）');
 }
 
-/* v8.6.0：盟名單匯出（依 order 排序、含順序欄位）*/
 function exportAlliancesCSV(){
   if(state.alliances.length === 0){ alert('目前沒有任何盟'); return; }
   const headers = ['順序','盟名稱','盟徽','人數','總戰力（億）','平均戰力（萬）','陣營'];
-  /* 依 order 排序 */
   const sorted = getAlliancesSorted ? getAlliancesSorted() : [...state.alliances];
   const rows = sorted.map((a, i) => {
     const avgPower = a.memberCount > 0 ? (Number(a.totalPower) || 0) / a.memberCount : 0;
     return [
-      i,
-      a.name,
-      a.icon || '',
-      a.memberCount || 0,
-      powerToYiStr(a.totalPower),
-      powerToWanStr(avgPower),
+      i, a.name, a.icon || '', a.memberCount || 0,
+      powerToYiStr(a.totalPower), powerToWanStr(avgPower),
       SIDE_LABELS[a.side] || a.side,
     ];
   });
@@ -915,7 +976,6 @@ function exportAlliancesCSV(){
   logSystem('📤 已匯出盟名單 CSV（戰力單位：億）');
 }
 
-/* 匯出地圖路線 */
 function exportMapRoutesCSV(){
   if(state.routes.length === 0){ alert('目前沒有任何地圖路線'); return; }
   const cityById = new Map(state.cities.map(c => [c.id, c]));
@@ -930,7 +990,6 @@ function exportMapRoutesCSV(){
   logSystem(`📤 已匯出地圖路線 CSV（${rows.length} 條）`);
 }
 
-/* 匯出宣戰表 */
 function exportRoutesCSV(){
   const headers = ['出兵城','目標城','類型','戰前%','復活%','順序','開始時間'];
   const rows = [];
@@ -940,21 +999,13 @@ function exportRoutesCSV(){
       if(!t.cityId) continue;
       const tgt = cityById.get(t.cityId);
       if(!tgt) continue;
-      rows.push([
-        src.name, tgt.name, '進攻',
-        t.preWarPercent, t.postRevivePercent, t.priority,
-        t.attackStartTime || '19:00'
-      ]);
+      rows.push([src.name, tgt.name, '進攻', t.preWarPercent, t.postRevivePercent, t.priority, t.attackStartTime || '19:00']);
     }
     for(const t of (src.defendTargets || [])){
       if(!t.cityId) continue;
       const tgt = cityById.get(t.cityId);
       if(!tgt) continue;
-      rows.push([
-        src.name, tgt.name, '協防',
-        t.preWarPercent, t.postRevivePercent, t.priority,
-        ''
-      ]);
+      rows.push([src.name, tgt.name, '協防', t.preWarPercent, t.postRevivePercent, t.priority, '']);
     }
   }
   if(rows.length === 0){ alert('目前沒有任何宣戰指示'); return; }
@@ -963,33 +1014,36 @@ function exportRoutesCSV(){
   logSystem(`📤 已匯出宣戰表 CSV（${rows.length} 條）`);
 }
 
-/* v8.6.2：更新範本說明（加入跨戰區說明）*/
 function downloadExcelTemplate(){
-  const template = `【盟名單欄位說明】（v8.6.0：戰力單位＝億、加入順序欄位）
-順序,盟名稱,盟徽,人數,總戰力（億）,陣營
-0,帝盟,⚔️,100,2.00,敵方
-1,秦盟,🏹,90,1.80,敵方
-2,鼎盟,🛡️,80,1.60,敵方
-
-■ 順序：可留空（預設依檔案列順序）
-■ 盟徽：兵種 emoji（⚔️ 🗡️ 🏹 🔱 🪓 🛡️ 🎯 🔫 🚁 🐉 🦅 等）
-  ・同一個盟徽不可重複使用
-■ 陣營可填：本方 / 同盟 / 敵方
-■ 人數：可留空（預設 100）
-■ 總戰力（億）：輸入「億」為單位，例：輸入 2.00 代表 2 億
+  const template = `【匯入模式說明（v8.6.8）】
+每個區塊匯入前可選：
+🔄 合併 = 同名的更新、新的加入、其他保留（推薦）
+➕ 新增 = 同名的跳過、新的加入、其他保留
+💥 覆蓋 = 清空後重建
 
 ─────────────────────────────────────────────
 
-【城池表欄位說明】（v8.6.0：戰力單位＝億）
+【盟名單欄位說明】
+順序,盟名稱,盟徽,人數,總戰力（億）,陣營
+0,帝盟,⚔️,100,2.00,敵方
+1,秦盟,🏹,90,1.80,敵方
+
+■ 順序：可留空（預設依檔案列順序）
+■ 盟徽：Emoji，同一個盟徽不可重複使用
+■ 陣營：本方 / 同盟 / 敵方
+■ 總戰力（億）：輸入 2.00 代表 2 億
+
+─────────────────────────────────────────────
+
+【城池表欄位說明】
 城池名稱,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都
 洛陽,司隸,鼎盟,敵方,10,100,10.00,100,5,30,是
 函谷關,司隸,秦盟,敵方,9,80,8.00,80,5,20,
 
-■ 同盟：填盟名稱，會自動對應盟徽（找不到 → NPC）
-■ 等級：1~10（可留空，預設 1）
-■ 人數 / 總戰力（億）/ 總隊數：可留空
-■ 冷卻 / 城牆：單位為分鐘
-■ 防守開始時間：由宣戰指示推算（不再手動輸入）
+■ 同盟：填盟名稱（找不到 → NPC）
+■ 等級：1~10
+■ 合併模式下，宣戰關係會被保留
+■ 防守開始時間：由宣戰指示推算
 
 ─────────────────────────────────────────────
 
@@ -998,27 +1052,21 @@ function downloadExcelTemplate(){
 洛陽-函谷關
 洛陽-洛陽北
 
-■ 一行一條
-■ 用「-」分隔（也支援逗號）
+■ 一行一條，用「-」分隔
 ■ 無向圖（A-B 等同 B-A）
+■ 合併 = 新增（路線無「更新」概念）
 
 ─────────────────────────────────────────────
 
-【宣戰表欄位說明】（v8.6.2：跨戰區檢查）
+【宣戰表欄位說明】
 出兵城,目標城,類型,戰前%,復活%,順序,開始時間
 洛陽,函谷關,進攻,50,50,1,19:00
 洛陽北,洛陽,協防,30,30,1,
 
 ■ 類型：進攻 / 協防
-■ 戰前%：開局派出的兵力百分比
-■ 復活%：復活後派出的兵力百分比
-■ 順序：數字越小越優先
-■ 開始時間（HH:MM）：即目標城的防守開始時間
-  ・若該城被多條宣戰指向，以「最早的開始時間」為該城的防守開始時間
-■ 協防的開始時間：留空（協防跟隨目標城的防守時間）
-■ v8.6.2：預設「不允許跨戰區宣戰」
-  ・若出兵城與目標城不同戰區 → 此行會被略過（匯入後會列出警告）
-  ・如需跨戰區，請至 ⚙️ 參數設定 開啟「允許跨戰區宣戰」
+■ 開始時間（HH:MM）：目標城的防守開始時間
+■ 協防的開始時間：留空
+■ 跨戰區預設略過（可於參數設定開啟）
 `;
   const blob = new Blob(['\uFEFF' + template], {type:'text/plain;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -1037,22 +1085,16 @@ Object.assign(window.SLG, {
   normalizeTimeString,
   parsePowerFromImport,
   powerToYiStr, powerToWanStr,
-  parseAlliancesTable,
-  parseCitiesTable,
-  parseRoutesTable,
-  parseMapRoutesTable,
+  parseAlliancesTable, parseCitiesTable, parseRoutesTable, parseMapRoutesTable,
   updateExcelPreview,
   openExcelImportModal, closeExcelImportModal,
-  doImportAlliances,
-  doImportCities,
-  doImportMapRoutes,
-  doImportRoutes,
+  doImportAlliances, doImportCities, doImportMapRoutes, doImportRoutes,
   downloadCSV,
-  exportCitiesCSV,
-  exportAlliancesCSV,
-  exportMapRoutesCSV,
-  exportRoutesCSV,
+  exportCitiesCSV, exportAlliancesCSV, exportMapRoutesCSV, exportRoutesCSV,
   downloadExcelTemplate,
+  /* v8.6.8 工具 */
+  getImportMode, confirmImport,
+  IMPORT_MODE_LABELS, IMPORT_MODE_HINTS,
 });
 
 })();
