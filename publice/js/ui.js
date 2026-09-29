@@ -4388,18 +4388,25 @@ async function doUpload(){
 })();
 
 /* ============================================================
-   NodeCalibration — v8.8.0：節點校準
+   NodeCalibration — v8.9.0：節點校準（菱形偵測 + 智慧命名）
    ============================================================ */
 const NodeCalibration = (() => {
+  /* ── 狀態 ── */
   let mapId = '';
   let mapData = null;
   let imageEl = null;
-  let nodes = {};              // { nodeId: { name, code, x, y } }
-  let activeCityId = '';
+  let nodes = {};              /* { nodeId: { name, code, x, y } } */
+  let candidates = [];         /* 偵測候選陣列 */
+  let activeCandidateId = '';  /* 目前選中的候選 ID */
   let canvas, ctx, wrapEl;
-  let displayScale = 1;        // 顯示縮放比 = displayW / naturalW
+  let displayScale = 1;
   let displayW = 0, displayH = 0;
+  let isScanning = false;
+  let isManualAddMode = false;
+  let currentFilter = 'all';
+  let usedCityIds = new Set(); /* 已命名的城池 ID（避免重複命名） */
 
+  /* ── 開啟校準 ── */
   async function open(id){
     if(!window.SLG.canEditMapLibrary()){ alert('🔒 您沒有地圖庫編輯權限'); return; }
     if(!id){ alert('缺少 mapId'); return; }
@@ -4407,8 +4414,13 @@ const NodeCalibration = (() => {
     const modal = document.getElementById('nodeCalibrationModal');
     if(!modal) return;
     modal.classList.add('show');
+
     const nameEl = document.getElementById('nc_mapName');
     if(nameEl) nameEl.textContent = '載入中...';
+
+    /* 重置狀態 */
+    resetState();
+    setModeBadge('準備中...', '');
 
     try{
       const m = await window.SLG.ensureMapLoaded(id);
@@ -4417,10 +4429,11 @@ const NodeCalibration = (() => {
       if(!imageEl){ throw new Error('底圖載入失敗'); }
       nodes = JSON.parse(JSON.stringify(m.nodes || {}));
       if(nameEl) nameEl.textContent = m.name || '未命名';
+
       setupCanvas();
       bindEvents();
-      renderCityList();
-      updateProgress();
+      showScanPanel();
+      await startScan();
     }catch(e){
       console.error('校準開啟失敗', e);
       alert('❌ 開啟校準失敗：' + e.message);
@@ -4428,18 +4441,74 @@ const NodeCalibration = (() => {
     }
   }
 
+  /* ── 重置狀態 ── */
+  function resetState(){
+    candidates = [];
+    activeCandidateId = '';
+    isScanning = false;
+    isManualAddMode = false;
+    currentFilter = 'all';
+    usedCityIds = new Set();
+    /* 從 nodes 反推已命名的城池（依 code 或 name 比對） */
+    for(const nid in nodes){
+      const n = nodes[nid];
+      if(!n || !n.name) continue;
+      /* 找出對應的 city */
+      const city = state.cities.find(c => {
+        if(c.code && n.code && c.code === n.code) return true;
+        if(c.name === n.name) return true;
+        return false;
+      });
+      if(city) usedCityIds.add(city.id);
+    }
+  }
+
+  /* ── 關閉 ── */
   function close(){
     const modal = document.getElementById('nodeCalibrationModal');
     if(modal) modal.classList.remove('show');
+    closeNamingPopup();
     mapId = '';
     mapData = null;
     imageEl = null;
     nodes = {};
-    activeCityId = '';
+    candidates = [];
+    activeCandidateId = '';
     displayScale = 1;
     displayW = 0; displayH = 0;
   }
 
+  /* ── 模式徽章 ── */
+  function setModeBadge(text, cls){
+    const el = document.getElementById('nc_modeBadge');
+    if(!el) return;
+    el.textContent = text;
+    el.className = 'nc-mode-badge' + (cls ? ' ' + cls : '');
+  }
+
+  /* ── 顯示/隱藏掃描面板 ── */
+  function showScanPanel(){
+    const scanPanel = document.getElementById('nc_scanPanel');
+    const statsPanel = document.getElementById('nc_statsPanel');
+    const filterBar = document.getElementById('nc_filterBar');
+    const candList = document.getElementById('nc_candidateList');
+    if(scanPanel) scanPanel.style.display = '';
+    if(statsPanel) statsPanel.style.display = 'none';
+    if(filterBar) filterBar.style.display = 'none';
+    if(candList) candList.style.display = 'none';
+  }
+  function showCandidatePanel(){
+    const scanPanel = document.getElementById('nc_scanPanel');
+    const statsPanel = document.getElementById('nc_statsPanel');
+    const filterBar = document.getElementById('nc_filterBar');
+    const candList = document.getElementById('nc_candidateList');
+    if(scanPanel) scanPanel.style.display = 'none';
+    if(statsPanel) statsPanel.style.display = '';
+    if(filterBar) filterBar.style.display = '';
+    if(candList) candList.style.display = '';
+  }
+
+  /* ── 設定 Canvas ── */
   function setupCanvas(){
     wrapEl = document.getElementById('nc_canvasWrap');
     canvas = document.getElementById('nc_canvas');
@@ -4460,238 +4529,690 @@ const NodeCalibration = (() => {
     redrawCanvas();
   }
 
+  /* ── 開始掃描 ── */
+  async function startScan(){
+    if(!imageEl || !window.SLG.detectFromImage) return;
+    isScanning = true;
+    setModeBadge('🔍 偵測中...', 'scanning');
+
+    const scanBar = document.getElementById('nc_scanProgressBar');
+    const scanHint = document.getElementById('nc_scanHint');
+    const setProgress = (p, txt) => {
+      if(scanBar) scanBar.style.width = Math.round(p * 100) + '%';
+      if(scanHint && txt) scanHint.textContent = txt;
+    };
+
+    try{
+      const result = await window.SLG.detectFromImage(imageEl, null, (progress, text) => {
+        setProgress(progress, text);
+      });
+      candidates = result || [];
+      /* 標記 source */
+      for(const c of candidates){ c.source = 'auto'; }
+      isScanning = false;
+      setModeBadge(`✅ 偵測完成（${candidates.length} 個候選）`, 'success');
+      showCandidatePanel();
+      renderStats();
+      renderCandidateList();
+      renderCanvas();
+    }catch(e){
+      console.error('偵測失敗', e);
+      isScanning = false;
+      setModeBadge('❌ 偵測失敗', '');
+      if(scanHint) scanHint.textContent = '偵測失敗：' + e.message;
+      /* 至少顯示空清單 */
+      candidates = [];
+      showCandidatePanel();
+      renderStats();
+      renderCandidateList();
+      renderCanvas();
+    }
+  }
+
+  /* ── 重新掃描 ── */
+  async function rescan(){
+    if(isScanning){ return; }
+    if(!confirm('重新掃描會清除目前所有候選（已命名的節點會保留）。\n\n確定嗎？')) return;
+    /* 保留已命名的 nodeId */
+    const namedIds = new Set();
+    for(const c of candidates){
+      if(c.namedCityId) namedIds.add(c.id);
+    }
+    candidates = candidates.filter(c => c.namedCityId);
+    showScanPanel();
+    await startScan();
+    /* 重新對應已命名的候選 */
+    for(const c of candidates){
+      /* 用座標重新比對舊節點 */
+      for(const nid in nodes){
+        const n = nodes[nid];
+        if(!n || typeof n.x !== 'number') continue;
+        if(Math.abs(n.x - c.x) < 5 && Math.abs(n.y - c.y) < 5){
+          c.namedCityId = n.namedCityId || '';
+          c.namedCityName = n.name || '';
+          c.namedCityCode = n.code || '';
+          break;
+        }
+      }
+    }
+    renderStats();
+    renderCandidateList();
+    renderCanvas();
+  }
+
+  /* ── 統計 ── */
+  function renderStats(){
+    const total = candidates.length;
+    const named = candidates.filter(c => c.namedCityId).length;
+    const pending = total - named;
+    const manual = candidates.filter(c => c.source === 'manual').length;
+    const setText = (id, v) => {
+      const el = document.getElementById(id);
+      if(el) el.textContent = v;
+    };
+    setText('nc_statTotal', total);
+    setText('nc_statNamed', named);
+    setText('nc_statPending', pending);
+    setText('nc_statManual', manual);
+  }
+
+  /* ── 篩選候選 ── */
+  function getFilteredCandidates(){
+    if(currentFilter === 'pending') return candidates.filter(c => !c.namedCityId);
+    if(currentFilter === 'named') return candidates.filter(c => c.namedCityId);
+    if(currentFilter === 'manual') return candidates.filter(c => c.source === 'manual');
+    return candidates;
+  }
+
+  /* ── 候選清單 ── */
+  function renderCandidateList(){
+    const el = document.getElementById('nc_candidateList');
+    if(!el) return;
+    const list = getFilteredCandidates();
+    if(list.length === 0){
+      el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:11px;">此篩選無候選</div>';
+      return;
+    }
+    el.innerHTML = list.map((c, i) => {
+      const isNamed = !!c.namedCityId;
+      const isActive = (c.id === activeCandidateId);
+      const isManual = c.source === 'manual';
+      const score = Math.round((c.confidence || 0) * 100);
+      const scoreCls = score >= 80 ? 'high' : (score >= 60 ? '' : 'low');
+      const cls = 'nc-candidate-item' +
+        (isNamed ? ' named' : '') +
+        (isManual ? ' manual' : '') +
+        (isActive ? ' selected' : '');
+      const icon = isNamed ? '✅' : (isManual ? '➕' : '🔴');
+      const nameHtml = isNamed
+        ? `<div class="nc-candidate-name">${esc(c.namedCityName)}${c.namedCityCode ? ` <span class="nc-candidate-code">[${esc(c.namedCityCode)}]</span>` : ''}</div>`
+        : `<div class="nc-candidate-name unnamed">（未命名）</div>`;
+      const metaHtml = `<div class="nc-candidate-meta">
+        <span>#${i + 1}</span>
+        <span class="nc-candidate-score ${scoreCls}">${score}%</span>
+        <span>(${c.x}, ${c.y})</span>
+        ${isManual ? '<span style="color:var(--neon-purple);">手動</span>' : ''}
+      </div>`;
+      return `<div class="${cls}" data-cand-id="${esc(c.id)}">
+        <span class="nc-candidate-icon">${icon}</span>
+        <div class="nc-candidate-info">
+          ${nameHtml}
+          ${metaHtml}
+        </div>
+        <span class="nc-candidate-status">${isActive ? '▶' : ''}</span>
+      </div>`;
+    }).join('');
+
+    el.querySelectorAll('.nc-candidate-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const id = item.dataset.candId;
+        focusCandidate(id);
+      });
+    });
+  }
+
+  /* ── 聚焦候選（捲動 + 開啟命名面板） ── */
+  function focusCandidate(id){
+    activeCandidateId = id;
+    renderCandidateList();
+    renderCanvas();
+    const c = candidates.find(x => x.id === id);
+    if(!c) return;
+    /* 捲動到可見位置 */
+    if(wrapEl){
+      const px = c.x * displayScale;
+      const py = c.y * displayScale;
+      wrapEl.scrollTo({
+        left: Math.max(0, px - wrapEl.clientWidth / 2),
+        top: Math.max(0, py - wrapEl.clientHeight / 2),
+        behavior: 'smooth',
+      });
+    }
+    /* 開啟命名面板 */
+    openNamingPopup(c);
+  }
+
+  /* ── 篩選切換 ── */
+  function setFilter(filter){
+    currentFilter = filter;
+    document.querySelectorAll('[data-nc-filter]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.ncFilter === filter);
+    });
+    renderCandidateList();
+    renderCanvas();
+  }
+
+  /* ── 補點模式切換 ── */
+  function toggleManualAddMode(){
+    isManualAddMode = !isManualAddMode;
+    if(wrapEl){
+      wrapEl.classList.toggle('manual-mode', isManualAddMode);
+    }
+    const btn = document.getElementById('nc_btnManualAdd');
+    if(btn){
+      btn.textContent = isManualAddMode ? '✖️ 取消補點' : '➕ 補點';
+      btn.classList.toggle('btn-warning', !isManualAddMode);
+    }
+    const hint = document.getElementById('nc_canvasHint');
+    if(hint){
+      hint.textContent = isManualAddMode
+        ? '🎯 點圖上任意位置新增候選'
+        : '請點選紅框進行命名';
+    }
+    setModeBadge(
+      isManualAddMode ? '➕ 手動補點模式' : `✅ 偵測完成（${candidates.length} 個候選）`,
+      isManualAddMode ? 'manual' : 'success'
+    );
+    renderCanvas();
+  }
+
+  /* ====== 中場休息：NodeCalibration 第 1/2 段結束 ====== */
+    /* ── 繪製畫布 ── */
   function redrawCanvas(){
     if(!ctx || !imageEl) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imageEl, 0, 0, displayW, displayH);
 
-    /* 繪製已標記節點 */
-    const cityById = new Map(state.cities.map(c => [c.id, c]));
-    for(const nodeId in nodes){
-      const n = nodes[nodeId];
-      if(!n || typeof n.x !== 'number' || typeof n.y !== 'number') continue;
-      const dx = n.x * displayScale;
-      const dy = n.y * displayScale;
+    /* 繪製候選標記 */
+    for(let i = 0; i < candidates.length; i++){
+      const c = candidates[i];
+      const dx = c.x * displayScale;
+      const dy = c.y * displayScale;
+      const isNamed = !!c.namedCityId;
+      const isActive = (c.id === activeCandidateId);
+      const isManual = c.source === 'manual';
+      const r = Math.max(14, (c.radius || 14) * displayScale + 6);
+
+      /* 顏色：
+         已命名 → 綠
+         手動補點 → 紫
+         待命名 → 紅
+         選中 → 藍框 (不管狀態)
+      */
+      let color = '#ff4466';
+      if(isNamed) color = '#22ff88';
+      else if(isManual) color = '#aa66ff';
+
+      /* 外框 */
       ctx.beginPath();
-      ctx.arc(dx, dy, 10, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(34,255,136,0.85)';
-      ctx.fill();
-      ctx.strokeStyle = '#0a0e17';
-      ctx.lineWidth = 2;
+      ctx.arc(dx, dy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isActive ? 3 : 2;
+      if(isActive) ctx.setLineDash([5, 3]);
       ctx.stroke();
-      ctx.font = 'bold 11px sans-serif';
+      ctx.setLineDash([]);
+
+      /* 選中額外光圈 */
+      if(isActive){
+        ctx.beginPath();
+        ctx.arc(dx, dy, r + 6, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(68,170,255,1)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      /* 編號標籤 */
+      const labelText = isNamed
+        ? `${c.namedCityName}${c.namedCityCode ? ' (' + c.namedCityCode + ')' : ''}`
+        : `#${i + 1}`;
+      const labelColor = isNamed ? 'rgba(34,255,136,.95)' : (isManual ? 'rgba(170,102,255,.95)' : 'rgba(255,68,102,.95)');
+      const labelTextColor = isNamed ? '#000' : '#fff';
+
+      ctx.font = 'bold 11px "Noto Sans TC",sans-serif';
+      const tw = ctx.measureText(labelText).width;
+      const bh = 18;
+      const bw = tw + 12;
+      const ly = dy - r - bh - 4;
+      const lx = dx - bw / 2;
+
+      ctx.fillStyle = labelColor;
+      if(ctx.roundRect){
+        ctx.beginPath();
+        ctx.roundRect(lx, ly, bw, bh, 4);
+        ctx.fill();
+      } else {
+        ctx.fillRect(lx, ly, bw, bh);
+      }
+
+      ctx.fillStyle = labelTextColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#fff';
-      ctx.fillText('✓', dx, dy);
+      ctx.fillText(labelText, dx, ly + bh / 2);
 
-      /* 標籤 */
-      const label = n.code ? `${n.name} (${n.code})` : (n.name || '');
-      if(label){
-        ctx.font = 'bold 11px "Noto Sans TC",sans-serif';
-        const tw = ctx.measureText(label).width;
-        const padX = 6, bh = 16;
-        ctx.fillStyle = 'rgba(10,14,23,0.85)';
-        ctx.strokeStyle = 'rgba(34,255,136,0.7)';
-        ctx.lineWidth = 1;
-        if(ctx.roundRect){
-          ctx.beginPath();
-          ctx.roundRect(dx - tw/2 - padX, dy - 32 - bh, tw + padX*2, bh, 4);
-          ctx.fill(); ctx.stroke();
-        } else {
-          ctx.fillRect(dx - tw/2 - padX, dy - 32 - bh, tw + padX*2, bh);
-          ctx.strokeRect(dx - tw/2 - padX, dy - 32 - bh, tw + padX*2, bh);
-        }
-        ctx.fillStyle = '#fff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, dx, dy - 32 - bh/2);
-      }
+      /* 中心點 */
+      ctx.beginPath();
+      ctx.arc(dx, dy, 2, 0, Math.PI * 2);
+      ctx.fillStyle = labelColor;
+      ctx.fill();
     }
 
-    /* 高亮 active 城池的已存標記 */
-    if(activeCityId){
-      const city = cityById.get(activeCityId);
-      if(city){
-        const nodeId = cityNodeId(city);
-        const n = nodes[nodeId];
-        if(n && typeof n.x === 'number'){
-          const dx = n.x * displayScale;
-          const dy = n.y * displayScale;
-          ctx.beginPath();
-          ctx.arc(dx, dy, 16, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(68,170,255,1)';
-          ctx.lineWidth = 3;
-          ctx.setLineDash([4, 3]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+    /* 若有節點但沒有候選 → 顯示已儲存節點 */
+    if(candidates.length === 0 && Object.keys(nodes).length > 0){
+      for(const nid in nodes){
+        const n = nodes[nid];
+        if(!n || typeof n.x !== 'number') continue;
+        const dx = n.x * displayScale;
+        const dy = n.y * displayScale;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 14, 0, Math.PI * 2);
+        ctx.strokeStyle = '#22ff88';
+        ctx.lineWidth = 2;
+        ctx.stroke();
       }
     }
   }
 
+  function renderCanvas(){ redrawCanvas(); }
+
+  /* ── 綁定事件 ── */
+  function bindEvents(){
+    /* 篩選按鈕 */
+    document.querySelectorAll('[data-nc-filter]').forEach(btn => {
+      if(btn.dataset.bound) return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => setFilter(btn.dataset.ncFilter));
+    });
+
+    /* 重掃 */
+    const btnRescan = document.getElementById('nc_btnRescan');
+    if(btnRescan && !btnRescan.dataset.bound){
+      btnRescan.dataset.bound = '1';
+      btnRescan.addEventListener('click', rescan);
+    }
+
+    /* 補點 */
+    const btnManual = document.getElementById('nc_btnManualAdd');
+    if(btnManual && !btnManual.dataset.bound){
+      btnManual.dataset.bound = '1';
+      btnManual.addEventListener('click', toggleManualAddMode);
+    }
+
+    /* 取消 */
+    const btnCancel = document.getElementById('nc_cancel');
+    if(btnCancel && !btnCancel.dataset.bound){
+      btnCancel.dataset.bound = '1';
+      btnCancel.addEventListener('click', () => {
+        if(candidates.some(c => c.namedCityId)){
+          if(!confirm('有尚未儲存的命名，確定要放棄嗎？')) return;
+        }
+        close();
+      });
+    }
+
+    /* 儲存 */
+    const btnSave = document.getElementById('nc_save');
+    if(btnSave && !btnSave.dataset.bound){
+      btnSave.dataset.bound = '1';
+      btnSave.addEventListener('click', doSave);
+    }
+
+    /* 命名面板按鈕 */
+    const closeBtn = document.getElementById('nc_namingClose');
+    if(closeBtn && !closeBtn.dataset.bound){
+      closeBtn.dataset.bound = '1';
+      closeBtn.addEventListener('click', closeNamingPopup);
+    }
+    const skipBtn = document.getElementById('nc_namingSkip');
+    if(skipBtn && !skipBtn.dataset.bound){
+      skipBtn.dataset.bound = '1';
+      skipBtn.addEventListener('click', () => {
+        goToNextPending();
+      });
+    }
+    const delBtn = document.getElementById('nc_namingDelete');
+    if(delBtn && !delBtn.dataset.bound){
+      delBtn.dataset.bound = '1';
+      delBtn.addEventListener('click', deleteActiveCandidate);
+    }
+
+    /* 命名搜尋框 */
+    const searchEl = document.getElementById('nc_namingSearch');
+    if(searchEl && !searchEl.dataset.bound){
+      searchEl.dataset.bound = '1';
+      searchEl.addEventListener('input', () => renderNamingList());
+      searchEl.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          const first = document.querySelector('.nc-naming-option:not(.used)');
+          if(first) first.click();
+        } else if(e.key === 'Escape'){
+          closeNamingPopup();
+        }
+      });
+    }
+
+    /* 畫布點擊 */
+    if(canvas && !canvas.dataset.bound){
+      canvas.dataset.bound = '1';
+      canvas.addEventListener('click', onClickCanvas);
+    }
+
+    /* 視窗大小變化 */
+    if(!window.__ncResizeBound){
+      window.__ncResizeBound = true;
+      window.addEventListener('resize', () => {
+        const modal = document.getElementById('nodeCalibrationModal');
+        if(modal && modal.classList.contains('show') && imageEl){
+          setupCanvas();
+          renderCanvas();
+        }
+      });
+    }
+  }
+
+  /* ── 畫布點擊處理 ── */
+  function onClickCanvas(e){
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+
+    /* 找點擊附近的候選 */
+    let closest = null;
+    let minDist = 30;
+    for(const c of candidates){
+      const dx = c.x * displayScale;
+      const dy = c.y * displayScale;
+      const dist = Math.hypot(dx - cx, dy - cy);
+      if(dist < minDist){ minDist = dist; closest = c; }
+    }
+
+    /* 補點模式：新增候選 */
+    if(isManualAddMode){
+      const natX = Math.round(cx / displayScale);
+      const natY = Math.round(cy / displayScale);
+      const newCand = {
+        id: 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+        x: natX,
+        y: natY,
+        w: 20,
+        h: 20,
+        radius: 14,
+        type: 'manual',
+        confidence: 1.0,
+        source: 'manual',
+      };
+      candidates.push(newCand);
+      renderStats();
+      renderCandidateList();
+      renderCanvas();
+      focusCandidate(newCand.id);
+      logSystem('➕ 已手動新增候選');
+      return;
+    }
+
+    /* 一般模式：點候選 → 開啟命名 */
+    if(closest){
+      focusCandidate(closest.id);
+    } else {
+      /* 點空白處：不做任何事（或關閉面板） */
+      closeNamingPopup();
+      activeCandidateId = '';
+      renderCandidateList();
+      renderCanvas();
+    }
+  }
+
+  /* ── 命名面板 ── */
+  function openNamingPopup(candidate){
+    const popup = document.getElementById('nc_namingPopup');
+    if(!popup || !candidate) return;
+
+    /* 設定位置（靠近候選，但不超出畫布） */
+    const px = candidate.x * displayScale;
+    const py = candidate.y * displayScale;
+    const popupW = 280;
+    const popupH = 420;
+    let left = px + 30;
+    let top = py - 40;
+
+    /* 邊界處理 */
+    if(left + popupW > displayW - 10) left = px - popupW - 30;
+    if(left < 10) left = 10;
+    if(top + popupH > displayH - 10) top = displayH - popupH - 10;
+    if(top < 10) top = 10;
+
+    popup.style.left = left + 'px';
+    popup.style.top = top + 'px';
+    popup.classList.remove('hidden');
+
+    /* 標題 */
+    const titleEl = document.getElementById('nc_namingTitle');
+    if(titleEl){
+      const idx = candidates.findIndex(c => c.id === candidate.id);
+      titleEl.textContent = `選擇城池（候選 #${idx + 1}）`;
+    }
+
+    /* 清空搜尋 */
+    const search = document.getElementById('nc_namingSearch');
+    if(search){ search.value = ''; }
+
+    /* 渲染清單 */
+    renderNamingList();
+
+    /* 聚焦搜尋框 */
+    setTimeout(() => {
+      if(search) search.focus();
+    }, 50);
+  }
+
+  function closeNamingPopup(){
+    const popup = document.getElementById('nc_namingPopup');
+    if(popup) popup.classList.add('hidden');
+  }
+
+  function renderNamingList(){
+    const listEl = document.getElementById('nc_namingList');
+    if(!listEl) return;
+    const cand = candidates.find(c => c.id === activeCandidateId);
+    if(!cand){
+      listEl.innerHTML = '<div class="text-dim" style="padding:12px;text-align:center;font-size:11px;">找不到候選</div>';
+      return;
+    }
+
+    const search = (document.getElementById('nc_namingSearch')?.value || '').trim().toLowerCase();
+
+    /* 按距離排序（最接近候選座標的優先） */
+    const sortedCities = [...state.cities].map(c => {
+      /* 若該城已有節點座標，用那個算距離；否則用無窮大 */
+      let cityX = null, cityY = null;
+      const existingNode = nodes[cityNodeId(c)];
+      if(existingNode && typeof existingNode.x === 'number'){
+        cityX = existingNode.x;
+        cityY = existingNode.y;
+      }
+      const dist = (cityX !== null && cityY !== null)
+        ? Math.hypot(cityX - cand.x, cityY - cand.y)
+        : Infinity;
+      return { city: c, dist };
+    }).sort((a, b) => a.dist - b.dist);
+
+    /* 篩選 */
+    const filtered = sortedCities.filter(({ city }) => {
+      if(!search) return true;
+      const hay = (city.name + ' ' + (city.code || '')).toLowerCase();
+      return hay.includes(search);
+    });
+
+    if(filtered.length === 0){
+      listEl.innerHTML = '<div class="text-dim" style="padding:12px;text-align:center;font-size:11px;">無符合條件的城池</div>';
+      return;
+    }
+
+    listEl.innerHTML = filtered.slice(0, 50).map(({ city, dist }) => {
+      const isUsed = usedCityIds.has(city.id) && city.id !== cand.namedCityId;
+      const isCurrent = (cand.namedCityId === city.id);
+      const cls = 'nc-naming-option' + (isUsed ? ' used' : '');
+      const codeStr = city.code ? `<span class="nc-naming-option-code">[${esc(city.code)}]</span>` : '';
+      const distStr = isFinite(dist) ? `<span class="nc-naming-option-dist">${Math.round(dist)}px</span>` : '';
+      return `<div class="${cls}" data-city-id="${esc(city.id)}">
+        <div style="flex:1;display:flex;align-items:center;gap:4px;min-width:0;">
+          <span class="nc-naming-option-name">${esc(city.name)}</span>
+          ${codeStr}
+        </div>
+        ${distStr}
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.nc-naming-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        const cityId = opt.dataset.cityId;
+        assignCandidateToCity(cand.id, cityId);
+      });
+    });
+  }
+
+  function assignCandidateToCity(candId, cityId){
+    const cand = candidates.find(c => c.id === candId);
+    if(!cand) return;
+    const city = state.cities.find(c => c.id === cityId);
+    if(!city) return;
+
+    /* 若之前有命名 → 移除舊的 usedCityIds 標記 */
+    if(cand.namedCityId && cand.namedCityId !== cityId){
+      usedCityIds.delete(cand.namedCityId);
+    }
+
+    cand.namedCityId = cityId;
+    cand.namedCityName = city.name;
+    cand.namedCityCode = city.code || '';
+    usedCityIds.add(cityId);
+
+    logSystem(`✅ 已命名：${city.name}${city.code ? ' (' + city.code + ')' : ''}`);
+
+    /* 更新 UI */
+    renderStats();
+    renderCandidateList();
+    renderCanvas();
+
+    /* 自動跳下一個未命名 */
+    setTimeout(() => {
+      goToNextPending();
+    }, 150);
+  }
+
+  function goToNextPending(){
+    /* 找下一個未命名的候選（循環） */
+    const pending = candidates.filter(c => !c.namedCityId);
+    if(pending.length === 0){
+      closeNamingPopup();
+      activeCandidateId = '';
+      renderCandidateList();
+      renderCanvas();
+      setModeBadge('✅ 全部命名完成！', 'success');
+      return;
+    }
+    /* 從當前位置往後找 */
+    const currentIdx = candidates.findIndex(c => c.id === activeCandidateId);
+    let next = null;
+    for(let i = 1; i <= candidates.length; i++){
+      const idx = (currentIdx + i) % candidates.length;
+      if(!candidates[idx].namedCityId){
+        next = candidates[idx];
+        break;
+      }
+    }
+    if(next){ focusCandidate(next.id); }
+    else { closeNamingPopup(); }
+  }
+
+  function deleteActiveCandidate(){
+    if(!activeCandidateId) return;
+    const idx = candidates.findIndex(c => c.id === activeCandidateId);
+    if(idx < 0) return;
+    const cand = candidates[idx];
+    if(!confirm(`確定刪除此候選？\n（座標：${cand.x}, ${cand.y}）`)) return;
+    /* 移除 usedCityIds 標記 */
+    if(cand.namedCityId) usedCityIds.delete(cand.namedCityId);
+    candidates.splice(idx, 1);
+    activeCandidateId = '';
+    closeNamingPopup();
+    renderStats();
+    renderCandidateList();
+    renderCanvas();
+    logSystem('🗑️ 已刪除候選');
+  }
+
+  /* ── 儲存校準結果 ── */
+  async function doSave(){
+    if(!mapId) return;
+    if(!window.SLG.canEditMapLibrary()){ alert('🔒 沒有編輯權限'); return; }
+
+    /* 收集已命名的候選 → 轉成 nodes 格式 */
+    const newNodes = {};
+    const namedList = candidates.filter(c => c.namedCityId);
+    if(namedList.length === 0){
+      if(!confirm('目前沒有任何命名的節點，確定要儲存（清空）嗎？')) return;
+    }
+    /* 保留既有節點中「未被候選對應到」的（避免誤刪） */
+    for(const nid in nodes){
+      const n = nodes[nid];
+      if(!n) continue;
+      const matched = namedList.some(c => {
+        if(c.namedCityId === n.namedCityId) return true;
+        if(c.namedCityCode && n.code && c.namedCityCode === n.code) return true;
+        return false;
+      });
+      if(!matched) newNodes[nid] = n;
+    }
+    /* 加入新命名的節點 */
+    for(const c of namedList){
+      const city = state.cities.find(x => x.id === c.namedCityId);
+      if(!city) continue;
+      const nid = cityNodeId(city);
+      newNodes[nid] = {
+        name: city.name,
+        code: city.code || '',
+        x: c.x,
+        y: c.y,
+        namedCityId: city.id,
+        source: c.source || 'auto',
+      };
+    }
+
+    if(!confirm(`確定要儲存 ${namedList.length} 個命名節點嗎？\n（會覆蓋此圖原有節點座標）`)) return;
+
+    try{
+      await window.SLG.updateMapNodes(mapId, newNodes);
+      logSystem(`💾 已儲存 ${namedList.length} 個節點`);
+      alert(`✅ 已儲存 ${namedList.length} 個節點`);
+      close();
+    }catch(e){
+      console.error('儲存失敗', e);
+      alert('❌ 儲存失敗：' + e.message);
+    }
+  }
+
+  /* ── 工具：取得城池對應的節點 ID ── */
   function cityNodeId(city){
     if(!city) return '';
     if(city.code) return city.code;
     return 'n_' + city.id;
   }
 
-  function bindEvents(){
-    if(canvas && !canvas.dataset.bound){
-      canvas.dataset.bound = '1';
-      canvas.addEventListener('click', onClickCanvas);
-    }
-    const search = document.getElementById('nc_search');
-    if(search && !search.dataset.bound){
-      search.dataset.bound = '1';
-      search.addEventListener('input', renderCityList);
-    }
-    const list = document.getElementById('nc_cityList');
-    if(list && !list.dataset.bound){
-      list.dataset.bound = '1';
-      list.addEventListener('click', (e) => {
-        const item = e.target.closest('.nc-city-item');
-        if(!item) return;
-        const cid = item.dataset.cityId;
-        if(cid){
-          activeCityId = cid;
-          renderCityList();
-          updateHint();
-          redrawCanvas();
-        }
-      });
-    }
-    const cancel = document.getElementById('nc_cancel');
-    if(cancel && !cancel.dataset.bound){
-      cancel.dataset.bound = '1';
-      cancel.addEventListener('click', () => {
-        if(!confirm('確定要放棄此次校準嗎？')) return;
-        close();
-      });
-    }
-    const save = document.getElementById('nc_save');
-    if(save && !save.dataset.bound){
-      save.dataset.bound = '1';
-      save.addEventListener('click', doSave);
-    }
-  }
-
-  function onClickCanvas(e){
-    if(!activeCityId){ alert('請先在左側選擇城池'); return; }
-    const rect = canvas.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    if(cx < 0 || cy < 0 || cx > rect.width || cy > rect.height) return;
-
-    /* 轉回原始圖座標 */
-    const natX = Math.round(cx / displayScale);
-    const natY = Math.round(cy / displayScale);
-
-    const city = state.cities.find(c => c.id === activeCityId);
-    if(!city) return;
-    const nodeId = cityNodeId(city);
-    nodes[nodeId] = { name: city.name, code: city.code || '', x: natX, y: natY };
-
-    /* 自動跳到下一個未標記 */
-    const remaining = state.cities.filter(c => {
-      const nid = cityNodeId(c);
-      return !nodes[nid];
-    });
-    if(remaining.length > 0){ activeCityId = remaining[0].id; }
-    else { activeCityId = ''; }
-
-    renderCityList();
-    updateProgress();
-    updateHint();
-    redrawCanvas();
-  }
-
-  function updateHint(){
-    const el = document.getElementById('nc_canvasHint');
-    if(!el) return;
-    if(activeCityId){
-      const city = state.cities.find(c => c.id === activeCityId);
-      if(city){
-        const codeStr = city.code ? ` (${city.code})` : '';
-        el.textContent = `📍 請點擊圖上「${city.name}${codeStr}」的位置`;
-        return;
-      }
-    }
-    const remaining = state.cities.filter(c => !nodes[cityNodeId(c)]).length;
-    if(remaining === 0) el.textContent = '✅ 全部標記完成！點「儲存校準」上傳';
-    else el.textContent = `請從左側選擇城池（剩 ${remaining} 座）`;
-  }
-
-  function renderCityList(){
-    const el = document.getElementById('nc_cityList');
-    if(!el) return;
-    const search = (document.getElementById('nc_search')?.value || '').trim().toLowerCase();
-    const list = state.cities.filter(c => {
-      if(!search) return true;
-      const hay = (c.name + ' ' + (c.code || '')).toLowerCase();
-      return hay.includes(search);
-    });
-    if(list.length === 0){
-      el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;">無城池資料</div>';
-      return;
-    }
-    const total = state.cities.length;
-    const doneCount = state.cities.filter(c => !!nodes[cityNodeId(c)]).length;
-    const totalEl = document.getElementById('nc_totalCount');
-    if(totalEl) totalEl.textContent = total;
-    el.innerHTML = list.map(c => {
-      const nid = cityNodeId(c);
-      const n = nodes[nid];
-      const done = !!n;
-      const isActive = (c.id === activeCityId);
-      const cls = 'nc-city-item' + (done ? ' done' : '') + (isActive ? ' selected' : '');
-      const codeStr = c.code ? `<span class="nc-city-code">[${esc(c.code)}]</span>` : '';
-      const coordsStr = done ? `<div class="nc-city-coords">(${n.x}, ${n.y})</div>` : '';
-      const statusIcon = done ? '✅' : '⭕';
-      return `<div class="${cls}" data-city-id="${esc(c.id)}">
-        <div style="flex:1;min-width:0;">
-          <div class="nc-city-name">${esc(c.name)}${codeStr}</div>
-          ${coordsStr}
-        </div>
-        <div class="nc-city-status">${statusIcon}</div>
-      </div>`;
-    }).join('');
-    /* 自動捲動到 active */
-    if(activeCityId){
-      const activeEl = el.querySelector(`.nc-city-item[data-city-id="${activeCityId}"]`);
-      if(activeEl) activeEl.scrollIntoView({ block: 'nearest' });
-    }
-  }
-
-  function updateProgress(){
-    const total = state.cities.length;
-    const done = state.cities.filter(c => !!nodes[cityNodeId(c)]).length;
-    const doneEl = document.getElementById('nc_doneCount');
-    if(doneEl) doneEl.textContent = done;
-    const totalEl = document.getElementById('nc_totalCount');
-    if(totalEl) totalEl.textContent = total;
-    const fill = document.getElementById('nc_progressFill');
-    if(fill) fill.style.width = (total > 0 ? Math.round(done / total * 100) : 0) + '%';
-  }
-
-  async function doSave(){
-    if(!mapId) return;
-    const cnt = Object.keys(nodes).length;
-    if(cnt === 0){ alert('尚未標記任何節點'); return; }
-    if(!confirm(`確定要儲存 ${cnt} 個節點座標嗎？\n\n（會覆蓋此圖原有節點座標）`)) return;
-    try{
-      await window.SLG.updateMapNodes(mapId, nodes);
-      alert(`✅ 已儲存 ${cnt} 個節點`);
-      close();
-    }catch(e){
-      console.error(e);
-      alert('❌ 儲存失敗：' + e.message);
-    }
-  }
-
-  return { open, close };
+  return { open, close, rescan };
 })();
-
 /* ============================================================
    FuzzyMatch — v8.8.0：模糊匹配候選 Modal
    ============================================================ */
