@@ -1571,7 +1571,8 @@ const DEPLOY = (() => {
 })();
 
 /* ============================================================
-   CityManager — 城池清單表格（v8.6.9：人數 hover 明細）
+   /* ============================================================
+   CityManager — 城池清單表格 + 批次操作 + 行內編輯 + 分級 Inline（v8.7.0）
    ============================================================ */
 const CityManager = (() => {
   let currentView = 'table';
@@ -1647,10 +1648,32 @@ const CityManager = (() => {
       });
     }
 
+    /* ★ 事件委託（v8.6.8 + v8.7.0）*/
     const tbody = document.getElementById('cityTableBody');
     if(tbody && !tbody.dataset.bound){
       tbody.dataset.bound = '1';
+
+      /* ── click ── */
       tbody.addEventListener('click', (e) => {
+        /* v8.7.0：分級面板按鈕優先處理 */
+        const tierSaveBtn = e.target.closest('[data-action="save-tier"]');
+        if(tierSaveBtn){ e.preventDefault(); e.stopPropagation(); saveTierEdit(tierSaveBtn.dataset.id); return; }
+        const tierCancelBtn = e.target.closest('[data-action="cancel-tier"]');
+        if(tierCancelBtn){ e.preventDefault(); e.stopPropagation(); cancelTierEdit(); return; }
+
+        /* v8.7.0：人數欄位 → 展開分級編輯 */
+        const memberCell = e.target.closest('.city-member-cell');
+        if(memberCell){
+          if(memberCell.classList.contains('disabled-cell')) return;
+          if(memberCell.classList.contains('tier-editing')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const cityId = memberCell.dataset.cityId;
+          if(cityId) startTierEdit(cityId);
+          return;
+        }
+
+        /* 原有行內編輯按鈕 */
         const saveBtn = e.target.closest('[data-action="save-city-inline"]');
         if(saveBtn){ e.preventDefault(); saveInlineEditCity(saveBtn.dataset.id); return; }
         const cancelBtn = e.target.closest('[data-action="cancel-city-inline"]');
@@ -1674,10 +1697,37 @@ const CityManager = (() => {
           return;
         }
       });
+
+      /* ── change ── */
       tbody.addEventListener('change', e => {
         if(e.target.classList.contains('city-cb')) updateBatchBar();
       });
+
+      /* ── input（v8.7.0：分級輸入即時預覽）── */
+      tbody.addEventListener('input', (e) => {
+        if(!e.target.matches('[data-tier-field]')) return;
+        const tr = e.target.closest('tr.tier-edit-row');
+        if(!tr) return;
+        updateTierEditPreview(tr);
+      });
+
+      /* ── keydown ── */
       tbody.addEventListener('keydown', (e) => {
+        /* v8.7.0：分級面板 Enter/Esc */
+        const tierRow = e.target.closest('tr.tier-edit-row');
+        if(tierRow){
+          const parentId = tierRow.dataset.parentId;
+          if(e.key === 'Enter'){
+            e.preventDefault();
+            saveTierEdit(parentId);
+          } else if(e.key === 'Escape'){
+            e.preventDefault();
+            cancelTierEdit();
+          }
+          return;
+        }
+
+        /* 原有行內編輯 Enter/Esc */
         if(!e.target.matches('input, select')) return;
         const tr = e.target.closest('tr.inline-editing');
         if(!tr) return;
@@ -1740,15 +1790,26 @@ const CityManager = (() => {
     });
   }
 
-  /* v8.6.9：人數欄位渲染（有分級→hover 明細） */
-  function renderMemberCell(c, isEditing){
-    if(isEditing){
-      return `<td class="col-num">—</td>`;  /* 編輯模式由分級輸入替代，這裡留空 */
+  /* ============================================================
+     v8.7.0：人數欄位渲染（可點擊）
+     ============================================================ */
+  function renderMemberCell(c, isEditingInline){
+    if(isEditingInline){
+      /* 完整行內編輯中：人數欄位顯示「—」（由分級輸入替代） */
+      return `<td class="col-num">—</td>`;
     }
-    const hasTiers = c.tierCounts && (c.tierCounts.tier1 || c.tierCounts.tier2 || c.tierCounts.tier3 || c.tierCounts.tier4);
+    const isTierEditing = (editingCityTierId === c.id);
+    const cls = `col-num city-member-cell${isTierEditing ? ' tier-editing' : ''}`;
+    const title = isTierEditing ? '編輯中' : '點擊編輯分級人數';
+
+    const hasTiers = c.tierCounts &&
+      (c.tierCounts.tier1 || c.tierCounts.tier2 || c.tierCounts.tier3 || c.tierCounts.tier4);
+
     if(!hasTiers){
-      return `<td class="col-num">${c.memberCount || '—'}</td>`;
+      return `<td class="${cls}" data-city-id="${c.id}" title="${title}">${c.memberCount || 0}</td>`;
     }
+
+    /* 有分級 → 顯示 hover 明細 */
     const tiers = state.troopTiers.tiers;
     const tc = c.tierCounts;
     const detailRows = [];
@@ -1756,17 +1817,170 @@ const CityManager = (() => {
     if(tc.tier2 > 0) detailRows.push(`<div class="row"><span>≤${tiers[1].maxLevel}級</span><b>${tc.tier2} 人</b></div>`);
     if(tc.tier3 > 0) detailRows.push(`<div class="row"><span>≤${tiers[2].maxLevel}級</span><b>${tc.tier3} 人</b></div>`);
     if(tc.tier4 > 0) detailRows.push(`<div class="row"><span>≥25級</span><b>${tc.tier4} 人</b></div>`);
-    if(detailRows.length === 0){
-      return `<td class="col-num">${c.memberCount || '—'}</td>`;
-    }
-    return `<td class="col-num city-member-cell">
+
+    return `<td class="${cls}" data-city-id="${c.id}" title="${title}">
       ${c.memberCount || 0}
-      <div class="member-detail">
-        ${detailRows.join('')}
-      </div>
+      <div class="member-detail">${detailRows.join('')}</div>
     </td>`;
   }
 
+  /* ============================================================
+     v8.7.0：分級展開列渲染
+     ============================================================ */
+  function renderTierEditRow(c){
+    const tiers = state.troopTiers.tiers;
+    const tc = c.tierCounts || { tier1: 0, tier2: 0, tier3: 0, tier4: 0 };
+    const t1 = tc.tier1 || 0;
+    const t2 = tc.tier2 || 0;
+    const t3 = tc.tier3 || 0;
+    const t4 = tc.tier4 || 0;
+    const calc = calcTeamsFromTiers({ tier1: t1, tier2: t2, tier3: t3, tier4: t4 });
+
+    const t1Teams = Math.floor(t1 * (tiers[0].teamsPerPlayer || 0));
+    const t2Teams = Math.floor(t2 * (tiers[1].teamsPerPlayer || 0));
+    const t3Teams = Math.floor(t3 * (tiers[2].teamsPerPlayer || 0));
+    const t4Teams = Math.floor(t4 * (tiers[3].teamsPerPlayer || 0));
+
+    return `<tr class="tier-edit-row" data-parent-id="${c.id}">
+      <td colspan="11">
+        <div class="tier-edit-panel">
+          <div class="tier-edit-panel-header">
+            👥 分級人數編輯：<span style="color:var(--text-primary);">${esc(c.name)}</span>
+          </div>
+          <div class="tier-edit-panel-rows">
+            <div class="tier-edit-panel-row">
+              <span class="tier-name">≤${tiers[0].maxLevel} 級</span>
+              <input type="number" data-tier-field="tier1" value="${t1}" min="0" step="1" placeholder="0">
+              <span class="tier-calc">× ${tiers[0].teamsPerPlayer} = <b data-tier-teams="1">${t1Teams}</b> 隊</span>
+            </div>
+            <div class="tier-edit-panel-row">
+              <span class="tier-name">≤${tiers[1].maxLevel} 級</span>
+              <input type="number" data-tier-field="tier2" value="${t2}" min="0" step="1" placeholder="0">
+              <span class="tier-calc">× ${tiers[1].teamsPerPlayer} = <b data-tier-teams="2">${t2Teams}</b> 隊</span>
+            </div>
+            <div class="tier-edit-panel-row">
+              <span class="tier-name">≤${tiers[2].maxLevel} 級</span>
+              <input type="number" data-tier-field="tier3" value="${t3}" min="0" step="1" placeholder="0">
+              <span class="tier-calc">× ${tiers[2].teamsPerPlayer} = <b data-tier-teams="3">${t3Teams}</b> 隊</span>
+            </div>
+            <div class="tier-edit-panel-row">
+              <span class="tier-name">≥25 級</span>
+              <input type="number" data-tier-field="tier4" value="${t4}" min="0" step="1" placeholder="0">
+              <span class="tier-calc">× ${tiers[3].teamsPerPlayer} = <b data-tier-teams="4">${t4Teams}</b> 隊</span>
+            </div>
+          </div>
+          <div class="tier-edit-panel-total">
+            <span>總人數：<b data-tier-total="members">${calc.totalMembers}</b> 人</span>
+            <span>總隊數：<b data-tier-total="teams">${calc.totalTeams}</b> 隊</span>
+          </div>
+          <div class="tier-edit-panel-actions">
+            <button class="btn btn-ghost btn-sm" data-action="cancel-tier" data-id="${c.id}">✕ 取消</button>
+            <button class="btn btn-success btn-sm" data-action="save-tier" data-id="${c.id}">💾 儲存</button>
+          </div>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  /* ============================================================
+     v8.7.0：更新分級即時預覽
+     ============================================================ */
+  function updateTierEditPreview(tr){
+    if(!tr) return;
+    const tiers = state.troopTiers.tiers;
+    const v = (n) => parseFloat(tr.querySelector(`[data-tier-field="tier${n}"]`)?.value) || 0;
+    const t1 = Math.max(0, v(1));
+    const t2 = Math.max(0, v(2));
+    const t3 = Math.max(0, v(3));
+    const t4 = Math.max(0, v(4));
+
+    const setText = (sel, val) => {
+      const el = tr.querySelector(sel);
+      if(el) el.textContent = val;
+    };
+    setText('[data-tier-teams="1"]', Math.floor(t1 * (tiers[0].teamsPerPlayer || 0)));
+    setText('[data-tier-teams="2"]', Math.floor(t2 * (tiers[1].teamsPerPlayer || 0)));
+    setText('[data-tier-teams="3"]', Math.floor(t3 * (tiers[2].teamsPerPlayer || 0)));
+    setText('[data-tier-teams="4"]', Math.floor(t4 * (tiers[3].teamsPerPlayer || 0)));
+
+    const calc = calcTeamsFromTiers({ tier1: t1, tier2: t2, tier3: t3, tier4: t4 });
+    setText('[data-tier-total="members"]', calc.totalMembers);
+    setText('[data-tier-total="teams"]', calc.totalTeams);
+  }
+
+  /* ============================================================
+     v8.7.0：開啟 / 取消 / 儲存 分級編輯
+     ============================================================ */
+  function startTierEdit(cityId){
+    if(editingCityTierId === cityId) return;
+    /* 與完整行內編輯互斥 */
+    if(editingCityRowId){ editingCityRowId = null; }
+    editingCityTierId = cityId;
+    render();
+    /* 聚焦第一個輸入框 */
+    setTimeout(() => {
+      const tr = document.querySelector(`tr.tier-edit-row[data-parent-id="${cityId}"]`);
+      if(tr){
+        const firstInput = tr.querySelector('input[data-tier-field="tier1"]');
+        if(firstInput){ firstInput.focus(); firstInput.select(); }
+      }
+    }, 0);
+  }
+
+  function cancelTierEdit(){
+    editingCityTierId = null;
+    render();
+  }
+
+  function saveTierEdit(cityId){
+    const tr = document.querySelector(`tr.tier-edit-row[data-parent-id="${cityId}"]`);
+    if(!tr) return false;
+    const city = state.cities.find(c => c.id === cityId);
+    if(!city) return false;
+
+    const v = (n) => parseFloat(tr.querySelector(`[data-tier-field="tier${n}"]`)?.value) || 0;
+    const t1 = v(1);
+    const t2 = v(2);
+    const t3 = v(3);
+    const t4 = v(4);
+
+    if(t1 < 0 || t2 < 0 || t3 < 0 || t4 < 0){
+      alert('⚠️ 人數不可為負數');
+      return false;
+    }
+
+    const tierCounts = { tier1: t1, tier2: t2, tier3: t3, tier4: t4 };
+    const calc = calcTeamsFromTiers(tierCounts);
+    const hasAnyTier = (t1 + t2 + t3 + t4) > 0;
+
+    const updated = { ...city };
+    updated.memberCount = calc.totalMembers;
+    updated.totalTeams = calc.totalTeams;
+    updated.avgPower = calc.totalTeams > 0
+      ? Math.floor((Number(city.totalPower) || 0) / calc.totalTeams)
+      : 0;
+
+    if(hasAnyTier){
+      updated.tierCounts = tierCounts;
+    } else {
+      delete updated.tierCounts;
+    }
+
+    window.SLG.upsertEntity('city', updated);
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+    editingCityTierId = null;
+    render();
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
+    window.SLG.saveState('important');
+    logSystem(`✅ 已更新「${city.name}」分級人數：${calc.totalMembers} 人 / ${calc.totalTeams} 隊`);
+    return true;
+  }
+
+  /* ============================================================
+     主渲染
+     ============================================================ */
   function render(){
     populateFilters();
     populateBatchZoneOptions();
@@ -1781,7 +1995,8 @@ const CityManager = (() => {
         tbody.innerHTML = '<tr><td colspan="11" class="city-table-empty">無城池資料</td></tr>';
       } else {
         tbody.innerHTML = list.map(c => {
-          const isEditing = (editingId === c.id);
+          const isEditingInline = (editingId === c.id);
+          const isTierEditing = (editingCityTierId === c.id);
           const zone = state.zones.find(z => z.id === c.zoneId);
           const alliance = state.alliances.find(a => a.id === c.allianceId);
           const avg = c.totalTeams > 0 ? Math.floor((Number(c.totalPower)||0) / c.totalTeams) : null;
@@ -1789,7 +2004,9 @@ const CityManager = (() => {
           const avgDisplay = avg === null || !isFinite(avg) ? '—' : formatAvgPower(avg);
           const yi = (Number(c.totalPower) || 0) / 1e8;
 
-          if(isEditing){
+          let rowHtml = '';
+
+          if(isEditingInline){
             const zoneOpts = '<option value="">（未分配）</option>' +
               state.zones.map(z => `<option value="${z.id}" ${z.id === c.zoneId ? 'selected' : ''}>${esc(z.name)}</option>`).join('');
             const allianceOpts = '<option value="">（不指定 / NPC）</option>' +
@@ -1798,7 +2015,7 @@ const CityManager = (() => {
               `<option value="${s}" ${s === c.side ? 'selected' : ''}>${sideLabel(s)}</option>`
             ).join('');
 
-            return `<tr data-city-id="${c.id}" class="inline-editing">
+            rowHtml = `<tr data-city-id="${c.id}" class="inline-editing">
               <td><input type="checkbox" class="city-cb" data-id="${c.id}" disabled></td>
               <td class="city-name"><input type="text" class="inline-name-input" data-inline-field="name" value="${esc(c.name)}" maxlength="20"></td>
               <td><input type="number" class="inline-num-input" data-inline-field="level" value="${c.level||1}" min="1" max="10" step="1"></td>
@@ -1819,28 +2036,36 @@ const CityManager = (() => {
                 <button class="btn btn-ghost btn-sm" data-action="cancel-city-inline" data-id="${c.id}" title="取消">✕</button>
               </td>
             </tr>`;
+          } else {
+            rowHtml = `<tr class="${c.isCapital ? 'row-self' : ''}" data-city-id="${c.id}">
+              <td><input type="checkbox" class="city-cb" data-id="${c.id}"></td>
+              <td class="city-name">${c.isCapital ? '👑 ' : ''}${esc(c.name)}</td>
+              <td><span class="chip" style="font-size:9px;">Lv.${c.level||1}</span></td>
+              <td>${zone ? esc(zone.name) : '<span class="text-dim">—</span>'}</td>
+              <td>${icon}${alliance ? esc(alliance.name) : '<span class="text-dim">NPC</span>'}</td>
+              <td><span class="chip ${sideClass(c.side)}" style="font-size:9px;">${sideLabel(c.side)}</span></td>
+              ${renderMemberCell(c, false)}
+              <td class="col-num">${formatPower(c.totalPower)}</td>
+              <td class="col-num">${c.totalTeams || '—'}</td>
+              <td class="col-num">${avgDisplay}</td>
+              <td>
+                <button class="btn btn-primary btn-sm" data-action="edit-city" data-id="${c.id}">✏️</button>
+                <button class="btn btn-danger btn-sm" data-action="del-city" data-id="${c.id}">🗑️</button>
+              </td>
+            </tr>`;
           }
 
-          return `<tr class="${c.isCapital ? 'row-self' : ''}" data-city-id="${c.id}">
-            <td><input type="checkbox" class="city-cb" data-id="${c.id}"></td>
-            <td class="city-name">${c.isCapital ? '👑 ' : ''}${esc(c.name)}</td>
-            <td><span class="chip" style="font-size:9px;">Lv.${c.level||1}</span></td>
-            <td>${zone ? esc(zone.name) : '<span class="text-dim">—</span>'}</td>
-            <td>${icon}${alliance ? esc(alliance.name) : '<span class="text-dim">NPC</span>'}</td>
-            <td><span class="chip ${sideClass(c.side)}" style="font-size:9px;">${sideLabel(c.side)}</span></td>
-            ${renderMemberCell(c, false)}
-            <td class="col-num">${formatPower(c.totalPower)}</td>
-            <td class="col-num">${c.totalTeams || '—'}</td>
-            <td class="col-num">${avgDisplay}</td>
-            <td>
-              <button class="btn btn-primary btn-sm" data-action="edit-city" data-id="${c.id}">✏️</button>
-              <button class="btn btn-danger btn-sm" data-action="del-city" data-id="${c.id}">🗑️</button>
-            </td>
-          </tr>`;
+          /* v8.7.0：若該城展開分級編輯，追加一行 */
+          if(isTierEditing){
+            rowHtml += renderTierEditRow(c);
+          }
+
+          return rowHtml;
         }).join('');
       }
     }
 
+    /* 行內編輯即時預覽 */
     if(tbody){
       tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
         const teamsEl = tr.querySelector('[data-inline-field="totalTeams"]');
@@ -1930,8 +2155,12 @@ const CityManager = (() => {
       </div>`;
     }).join('');
   }
+
+  /* 完整行內編輯（✏️）*/
   function startInlineEditCity(id){
     if(editingCityRowId === id) return;
+    /* 與分級編輯互斥 */
+    if(editingCityTierId){ editingCityTierId = null; }
     editingCityRowId = id;
     render();
     setTimeout(() => {
@@ -1967,7 +2196,11 @@ const CityManager = (() => {
     if(level < 1 || level > 10){ alert('等級必須在 1~10 之間'); return false; }
 
     const avgPower = totalTeams > 0 ? Math.floor(totalPower / totalTeams) : 0;
-    window.SLG.upsertEntity('city', { ...city, name, zoneId, allianceId, side, level, memberCount, totalPower, totalTeams, avgPower });
+    const updated = { ...city, name, zoneId, allianceId, side, level, memberCount, totalPower, totalTeams, avgPower };
+    /* v8.7.0：手動改了總人數/總隊數 → 移除分級明細（避免不一致）*/
+    delete updated.tierCounts;
+
+    window.SLG.upsertEntity('city', updated);
     if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
     editingCityRowId = null;
     render();
@@ -1979,7 +2212,8 @@ const CityManager = (() => {
     return true;
   }
 
-  return { init, render, startInlineEditCity, cancelInlineEditCity, saveInlineEditCity };
+  return { init, render, startInlineEditCity, cancelInlineEditCity, saveInlineEditCity,
+    startTierEdit, cancelTierEdit, saveTierEdit };
 })();
 
 /* ============================================================

@@ -233,6 +233,17 @@ function applyPermissions(){
     if(!canEditData){ b.disabled = true; b.style.pointerEvents = 'none'; b.style.opacity = '.35'; }
   });
 
+/* v8.7.0：人數欄位權限 */
+document.querySelectorAll('.city-member-cell').forEach(el => {
+  if(canEditData){
+    el.classList.remove('disabled-cell');
+    el.style.cursor = 'pointer';
+  } else {
+    el.classList.add('disabled-cell');
+    el.style.cursor = 'not-allowed';
+  }
+});
+
   if(window.SLG.updateRoomEditButton) window.SLG.updateRoomEditButton();
   if(window.SLG.updateRoomSandboxActions) window.SLG.updateRoomSandboxActions();
 }
