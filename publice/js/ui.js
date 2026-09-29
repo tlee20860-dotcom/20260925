@@ -26,6 +26,7 @@ const {
   /* v8.8.0 */
   normalizeCityName, calcSimilarity, matchCityToMapNode,
   getMapMeta, getLoadedMap, getActiveMap, setActiveMap, setMapViewMode,
+  isOnline,
 } = window.SLG;
 
 const Auth = () => window.SLG.Auth;
