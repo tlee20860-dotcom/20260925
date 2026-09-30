@@ -1,0 +1,14 @@
+name = "ya-sandbox"
+pages_build_output_dir = "publice"
+compatibility_date = "2024-09-23"
+
+# ============================================================
+# Durable Object 綁定（繞過 Gemini 地區限制）
+# ============================================================
+[[durable_objects.bindings]]
+name = "GEMINI_PROXY"
+class_name = "GeminiProxy"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["GeminiProxy"]
