@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.5</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.6</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -34,13 +34,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.5</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.6</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.5</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.6</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -93,7 +93,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.9.5</span>
+      <span class="sidebar-version">v8.9.6</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -926,7 +926,7 @@
                 <option value="all">🌐 全部</option>
               </select>
 
-              <!-- v8.9.5：三模式互斥按鈕 -->
+              <!-- v8.9.6：三模式互斥按鈕 -->
               <button class="btn btn-ghost btn-sm" id="btnMapRouteMode">🛣️ 路線：關</button>
               <button class="btn btn-ghost btn-sm" id="btnMapWarMode">⚔️ 宣戰：關</button>
               <button class="btn btn-ghost btn-sm" id="btnMapCityMode">🏙️ 城池編輯：關</button>
@@ -962,7 +962,7 @@
                 <button class="map-float-btn" id="btnMapPanDown" title="向下平移">▼</button>
               </div>
 
-              <!-- v8.9.5：統一模式提示條（取代舊的 mapWarHint） -->
+              <!-- v8.9.6：統一模式提示條（取代舊的 mapWarHint） -->
               <div class="map-mode-hint hidden" id="mapModeHint">
                 <span id="mapModeHintText">—</span>
               </div>
@@ -1218,7 +1218,7 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.9.5）</div>
+        <div class="card-title">📖 城戰計算規則（v8.9.6）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1259,7 +1259,7 @@
             <b>🔍 縮放平移</b>：滾輪 / 捏合 / 拖曳 / 右側按鈕<br>
             <b>✅ 自動去重</b>：切片邊界的重複路線自動合併
           </div>
-          <h2>六、地圖互動模式（v8.9.5）</h2>
+          <h2>六、地圖互動模式（v8.9.6）</h2>
           <div class="rule-card title">
             <b>三模式互斥</b>：<br>
             ・🛣️ <b>路線模式</b>（藍框）：點第一城 → 點第二城 → 連線<br>
@@ -1297,7 +1297,7 @@
             <li><b>管理員</b>：可停用帳號、修改 extraPerms</li>
             <li><b>幹部</b>：可創建房間、執行推演、編輯地圖庫（需授權）</li>
             <li><b>成員</b>：本機推演、加入房間</li>
-            <li><b>v8.9.5：地圖庫</b>：所有登入使用者皆可編輯</li>
+            <li><b>v8.9.6：地圖庫</b>：所有登入使用者皆可編輯</li>
           </ul>
           <h2>十一、安全架構</h2>
           <div class="rule-card warn">
@@ -1516,14 +1516,14 @@
   </div>
 </div>
 
-<!-- v8.9.5：雲端歷史版本 Modal（加入手動備份按鈕） -->
+<!-- v8.9.6：雲端歷史版本 Modal（加入手動備份按鈕） -->
 <div class="modal-overlay" id="historyModal">
   <div class="modal-box modal-lg">
     <h3>📜 雲端歷史版本</h3>
     <div class="text-dim" style="margin-bottom:10px;">
       ＊每次上傳前會自動備份前一版，最多保留 20 筆。<br>
       ＊點「↩️ 還原」可將指定版本載入到本機。<br>
-      ＊<b style="color:var(--neon-yellow);">v8.9.5：若無歷史，可按下方「手動建立備份」。</b>
+      ＊<b style="color:var(--neon-yellow);">v8.9.6：若無歷史，可按下方「手動建立備份」。</b>
     </div>
     <div class="history-list" id="historyList">
       <div class="text-dim" style="padding:20px;text-align:center;">載入中...</div>
@@ -1797,7 +1797,7 @@
           </label>
         </div>
       </div>
-      <!-- v8.9.5：新增城池時顯示座標 -->
+      <!-- v8.9.6：新增城池時顯示座標 -->
       <div class="text-dim mt-8" id="cm_coordsHint" style="display:none;color:var(--neon-green);">
         📍 座標：（—, —）
       </div>
