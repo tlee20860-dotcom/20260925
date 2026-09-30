@@ -4226,7 +4226,7 @@ if(nodeDragging){
         }).catch(err => console.warn('寫入地圖庫失敗', err));
       }
 
-      if    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
     if(window.SLG.flushPatches) window.SLG.flushPatches();
     if(window.SLG.saveState) window.SLG.saveState('important');
     logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
