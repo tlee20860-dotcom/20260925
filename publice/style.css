@@ -4356,3 +4356,191 @@ tr.tier-edit-row td{
     font-size:20px;
   }
 }
+/* ============================================================
+   v8.9.3：NodeCalibration 定點模式 + 拖曳 + 刪除按鈕
+   ============================================================ */
+
+/* 定點模式按鈕 active 狀態 */
+#nc_btnFixedPoint.active {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  border-color: #22ff88;
+  box-shadow: 0 0 16px rgba(34, 255, 136, 0.4);
+}
+
+/* 定點模式下的提示 */
+.nc-canvas-wrap-v3.fixed-point-mode {
+  cursor: crosshair;
+  border-color: var(--neon-green);
+  box-shadow: inset 0 0 30px rgba(34, 255, 136, 0.12);
+}
+
+.nc-canvas-wrap-v3.fixed-point-mode .nc-canvas-hint-v3 {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+  background: rgba(10, 30, 20, 0.95);
+  box-shadow: 0 4px 12px rgba(34, 255, 136, 0.3);
+}
+
+/* 定點模式下畫布裝飾 */
+.nc-canvas-wrap-v3.fixed-point-mode::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border: 2px dashed rgba(34, 255, 136, 0.5);
+  pointer-events: none;
+  z-index: 3;
+  animation: ncFixedPulse 1.6s ease-in-out infinite;
+}
+@keyframes ncFixedPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.15; }
+}
+
+/* 定點模式下選中的城池高亮 */
+.nc-item-v3.fixed-selected {
+  border-color: var(--neon-green) !important;
+  background: rgba(34, 255, 136, 0.12) !important;
+  box-shadow: 0 0 16px rgba(34, 255, 136, 0.3);
+}
+
+/* 清單項目的刪除按鈕 */
+.nc-item-delete {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(255, 68, 102, 0.3);
+  color: rgba(255, 68, 102, 0.6);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  line-height: 1.4;
+  margin-left: 4px;
+}
+.nc-item-delete:hover {
+  border-color: var(--neon-red);
+  color: #fff;
+  background: rgba(255, 68, 102, 0.3);
+}
+
+/* 拖曳中的節點 */
+.nc-canvas-wrap-v3.dragging-node {
+  cursor: grabbing;
+}
+
+/* 拖曳中的節點光暈 */
+.nc-node-drag-glow {
+  position: absolute;
+  pointer-events: none;
+  z-index: 6;
+  border: 2px solid var(--neon-blue);
+  border-radius: 50%;
+  box-shadow: 0 0 20px rgba(68, 170, 255, 0.6);
+  transform: translate(-50%, -50%);
+  animation: ncDragGlow 0.8s ease-in-out infinite;
+}
+@keyframes ncDragGlow {
+  0%, 100% { box-shadow: 0 0 12px rgba(68, 170, 255, 0.4); }
+  50% { box-shadow: 0 0 28px rgba(68, 170, 255, 0.9); }
+}
+
+/* 節點顏色圖例 */
+.nc-node-legend {
+  display: flex;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #0a101a;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+.nc-node-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nc-node-legend .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.nc-node-legend .dot.ai { background: #ffcc00; }
+.nc-node-legend .dot.manual { background: #3b82f6; }
+.nc-node-legend .dot.selected { background: #ffffff; border-color: #22ff88; }
+
+/* ============================================================
+   v8.9.3：底圖開關
+   ============================================================ */
+#btnMapBaseMap.active {
+  background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
+  color: var(--neon-blue);
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 12px rgba(68, 170, 255, 0.3);
+}
+
+/* 底圖關閉時的畫布裝飾 */
+.game-map-outer.base-map-off .game-map-container {
+  background: #0a0e17;
+}
+.game-map-outer.base-map-off::after {
+  content: '🖼️ 底圖已關閉';
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: rgba(10, 14, 23, 0.85);
+  padding: 3px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ============================================================
+   v8.9.3：路線改粗黑線（透過 canvas 繪製，此處為說明）
+   ============================================================ */
+/* 路線改為 10px 黑色 + 白色外框，已於 ui.js drawNormalRoute 中實作 */
+
+/* ============================================================
+   v8.9.3：宣戰模式修正的輔助樣式
+   ============================================================ */
+.map-war-hint {
+  pointer-events: none;
+}
+
+/* 手機版宣戰提示加大 */
+@media (max-width: 768px) {
+  .map-war-hint {
+    font-size: 12px;
+    padding: 8px 16px;
+    white-space: normal;
+    max-width: 90vw;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .nc-item-delete {
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  #nc_btnFixedPoint,
+  #nc_btnManualAdd {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+  .map-war-hint {
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+}
