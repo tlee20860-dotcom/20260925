@@ -1,6 +1,7 @@
 /* ============================================================================
  * ui.js — 所有渲染
- * v8.9.2：地圖宣戰模式 + 右側懸浮按鈕 + 快速建立宣戰
+ * v8.9.3：NodeCalibration 定點模式 + 拖曳節點 + 刪除標記
+ *          GameMap 底圖開關 + 宣戰 Bug 修正 + 路線粗黑線
  * ========================================================================== */
 (function(){
 'use strict';
@@ -995,8 +996,8 @@ const R = (() => {
   };
 })();
 
-/* ====== 中場休息：第 1/3 段結束 ====== */
-/* ============================================================
+/* ====== 第 1/4 段結束（DYN 模組將於第 2 段開始） ====== */
+ /* ============================================================
    DYN — 動態戰報
    ============================================================ */
 const DYN = (() => {
@@ -2191,7 +2192,8 @@ const CityManager = (() => {
     startTierEdit, cancelTierEdit, saveTierEdit };
 })();
 
-/* ============================================================
+/* ====== 第 2/4 段結束（WarManager 將於第 3 段開始） ====== */
+ /* ============================================================
    WarManager — 宣戰清單
    ============================================================ */
 const WarManager = (() => {
@@ -3178,9 +3180,8 @@ const RouteManager = (() => {
   return { init, render, openRouteEditModal, closeRouteEditModal };
 })();
 
-/* ====== 中場休息：第 2/3 段結束 ====== */
 /* ============================================================
-   GameMap — 地圖（v8.9.2：宣戰模式 + 右側懸浮按鈕）
+   GameMap — 地圖（v8.9.3）
    ============================================================ */
 const GameMap = (() => {
   let canvas, ctx, containerEl, outerEl;
@@ -3203,12 +3204,20 @@ const GameMap = (() => {
 
   /* v8.9.2：宣戰模式狀態 */
   let warMode = false;
-  let warFromCityId = '';         /* 已選出兵城（等待點目標城） */
-  let warHoverTgtId = '';         /* 宣戰模式下 hover 的目標城（預覽線） */
-  let pendingWarCount = 0;        /* 未儲存的宣戰變更數 */
+  let warFromCityId = '';
+  let warHoverTgtId = '';
+  let pendingWarCount = 0;
+
+  /* v8.9.3：宣戰模式點擊判定 */
+  let warPointerStart = null;
+  let warTouchStart = null;
+
+  /* v8.9.3：底圖開關 */
+  let baseMapVisible = true;
 
   const CANVAS_W = 2000, CANVAS_H = 2000;
   const LS_MAP_ZONE_KEY = 'slg_map_zone_v862';
+  const LS_BASE_MAP_KEY = 'slg_base_map_visible_v893';
 
   let activeMapId = '';
   let activeMapNodes = null;
@@ -3226,6 +3235,8 @@ const GameMap = (() => {
     canvas.style.width = CANVAS_W + 'px';
     canvas.style.height = CANVAS_H + 'px';
     loadZoneFilter();
+    loadBaseMapPref();
+    applyBaseMapUI();
     containerEl.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
@@ -3237,7 +3248,6 @@ const GameMap = (() => {
     containerEl.addEventListener('touchend', onTouchEnd, { passive: false });
     containerEl.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
-    /* 編輯路線模式按鈕 */
     const btnEdit = document.getElementById('btnMapEditRoute');
     if(btnEdit && !btnEdit.dataset.bound){
       btnEdit.dataset.bound = '1';
@@ -3250,7 +3260,6 @@ const GameMap = (() => {
       });
     }
 
-    /* v8.9.2：宣戰模式按鈕 */
     const btnWar = document.getElementById('btnMapWarMode');
     if(btnWar && !btnWar.dataset.bound){
       btnWar.dataset.bound = '1';
@@ -3259,6 +3268,13 @@ const GameMap = (() => {
         btnWar.textContent = warMode ? '⚔️ 宣戰模式：開' : '⚔️ 宣戰模式：關';
         btnWar.classList.toggle('active', warMode);
       });
+    }
+
+    /* v8.9.3：底圖開關按鈕 */
+    const btnBaseMap = document.getElementById('btnMapBaseMap');
+    if(btnBaseMap && !btnBaseMap.dataset.bound){
+      btnBaseMap.dataset.bound = '1';
+      btnBaseMap.addEventListener('click', toggleBaseMap);
     }
 
     const btnRelayout = document.getElementById('btnMapRelayout');
@@ -3283,7 +3299,6 @@ const GameMap = (() => {
       btnExportPDF.addEventListener('click', exportAsPDF);
     }
 
-    /* v8.9.2：右側懸浮按鈕 */
     bindFloatButtons();
 
     const mapZoneSel = document.getElementById('mapZoneSelect');
@@ -3302,7 +3317,6 @@ const GameMap = (() => {
     onMapLibraryChanged();
   }
 
-  /* v8.9.2：右側懸浮按鈕綁定 */
   function bindFloatButtons(){
     const bind = (id, fn) => {
       const el = document.getElementById(id);
@@ -3320,13 +3334,10 @@ const GameMap = (() => {
       applyView();
       render();
     });
-    /* 左右上下平移按鈕：每次平移約 1/3 螢幕寬 */
     bind('btnMapPanLeft',  () => panBy(-1, 0));
     bind('btnMapPanRight', () => panBy( 1, 0));
     bind('btnMapPanUp',    () => panBy( 0, -1));
     bind('btnMapPanDown',  () => panBy( 0,  1));
-
-    /* v8.9.2：儲存宣戰按鈕 */
     bind('mapWarSaveBtn', saveWarChanges);
   }
 
@@ -3353,11 +3364,12 @@ const GameMap = (() => {
     containerEl.scrollTop += dirY * stepY;
   }
 
-  /* ── 宣戰模式切換 ── */
   function setWarMode(on){
     warMode = !!on;
     warFromCityId = '';
     warHoverTgtId = '';
+    warPointerStart = null;
+    warTouchStart = null;
     updateWarHint();
     if(outerEl) outerEl.classList.toggle('war-mode', warMode);
     applyCursor();
@@ -3417,6 +3429,32 @@ const GameMap = (() => {
   function saveZoneFilter(){
     try{ localStorage.setItem(LS_MAP_ZONE_KEY, currentZoneFilter); }catch(e){}
   }
+  function loadBaseMapPref(){
+    try{
+      const saved = localStorage.getItem(LS_BASE_MAP_KEY);
+      if(saved === '0') baseMapVisible = false;
+      else if(saved === '1') baseMapVisible = true;
+    }catch(e){}
+  }
+  function saveBaseMapPref(){
+    try{ localStorage.setItem(LS_BASE_MAP_KEY, baseMapVisible ? '1' : '0'); }catch(e){}
+  }
+  function applyBaseMapUI(){
+    const btnBaseMap = document.getElementById('btnMapBaseMap');
+    if(btnBaseMap){
+      btnBaseMap.textContent = baseMapVisible ? '🖼️ 底圖：開' : '🖼️ 底圖：關';
+      btnBaseMap.classList.toggle('active', !baseMapVisible);
+    }
+    if(outerEl) outerEl.classList.toggle('base-map-off', !baseMapVisible);
+  }
+  function toggleBaseMap(){
+    baseMapVisible = !baseMapVisible;
+    saveBaseMapPref();
+    applyBaseMapUI();
+    render();
+    logSystem(baseMapVisible ? '🖼️ 底圖：開' : '🖼️ 底圖：關');
+  }
+
   function getZoneFilter(){ return currentZoneFilter; }
   function setZoneFilter(zoneId){
     currentZoneFilter = zoneId || 'all';
@@ -3484,6 +3522,7 @@ const GameMap = (() => {
   }
   function touchDist(t1, t2){ return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY); }
   function touchCenter(t1, t2){ return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
+
   function onTouchStart(e){
     if(e.touches.length === 2){
       e.preventDefault();
@@ -3493,6 +3532,14 @@ const GameMap = (() => {
       dragging = false; nodeDragging = null; routeDragFrom = null;
     } else if(e.touches.length === 1){
       const t = e.touches[0];
+
+      /* v8.9.3：宣戰模式優先處理 */
+      if(warMode){
+        warTouchStart = { x: t.clientX, y: t.clientY, moved: false };
+        e.preventDefault();
+        return;
+      }
+
       const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
       const city = pickCity(worldPos);
       if(!warMode && city){
@@ -3507,6 +3554,7 @@ const GameMap = (() => {
       }
     }
   }
+
   function onTouchMove(e){
     if(e.touches.length === 2 && pinchStartDist > 0){
       e.preventDefault();
@@ -3526,6 +3574,16 @@ const GameMap = (() => {
     }
     if(e.touches.length === 1){
       const t = e.touches[0];
+
+      /* v8.9.3：宣戰模式：僅記錄移動，不拖曳畫布 */
+      if(warMode && warTouchStart){
+        const dx = Math.abs(t.clientX - warTouchStart.x);
+        const dy = Math.abs(t.clientY - warTouchStart.y);
+        if(dx > 5 || dy > 5) warTouchStart.moved = true;
+        e.preventDefault();
+        return;
+      }
+
       const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
       if(nodeDragging){
         e.preventDefault();
@@ -3543,14 +3601,21 @@ const GameMap = (() => {
       }
     }
   }
+
   function onTouchEnd(e){
     if(e.touches.length < 2){ pinchStartDist = 0; pinchStartCenter = null; }
     if(e.touches.length === 0){
-      /* 宣戰模式：觸控時視為點擊 */
-      if(warMode && !touchPanStart && !nodeDragging && !routeDragFrom){
-        const t = e.changedTouches[0];
-        if(t) handleWarTap(t.clientX, t.clientY);
+      /* v8.9.3：宣戰模式：判定點擊 */
+      if(warMode && warTouchStart){
+        if(!warTouchStart.moved){
+          const t = e.changedTouches[0];
+          if(t) handleWarTap(t.clientX, t.clientY);
+        }
+        warTouchStart = null;
+        e.preventDefault();
+        return;
       }
+
       if(routeDragFrom){
         const t = e.changedTouches[0];
         const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
@@ -3571,6 +3636,7 @@ const GameMap = (() => {
       applyCursor();
     }
   }
+
   function getWorldPos(e){ return getWorldPosFromClient(e.clientX, e.clientY); }
   function getWorldPosFromClient(clientX, clientY){
     const rect = containerEl.getBoundingClientRect();
@@ -3593,13 +3659,17 @@ const GameMap = (() => {
     if(currentZoneFilter === 'all') return true;
     return (city.zoneId || '__none__') === currentZoneFilter;
   }
+
   function onPointerDown(e){
     if(e.pointerType === 'touch') return;
-    const worldPos = getWorldPos(e);
+
+    /* v8.9.3：宣戰模式：記錄起始位置，等待 pointerup 判定點擊 */
     if(warMode){
-      /* 宣戰模式：不允許拖曳節點/平移（除右鍵），由 click 事件處理 */
+      warPointerStart = { x: e.clientX, y: e.clientY, moved: false };
       return;
     }
+
+    const worldPos = getWorldPos(e);
     if(editRouteMode){
       const city = pickCity(worldPos);
       if(city){ routeDragFrom = city; routeDragEnd = worldPos; return; }
@@ -3614,13 +3684,30 @@ const GameMap = (() => {
     dragStart = { x: e.clientX, y: e.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
     canvas.style.cursor = 'grabbing';
   }
+
   function onPointerMove(e){
     if(e.pointerType === 'touch') return;
+
+    /* v8.9.3：宣戰模式：記錄移動 */
+    if(warMode && warPointerStart){
+      const dx = Math.abs(e.clientX - warPointerStart.x);
+      const dy = Math.abs(e.clientY - warPointerStart.y);
+      if(dx > 5 || dy > 5) warPointerStart.moved = true;
+
+      /* 更新 hover 預覽 */
+      const worldPos = getWorldPos(e);
+      const city = pickCity(worldPos);
+      if(warFromCityId){
+        warHoverTgtId = (city && city.id !== warFromCityId) ? city.id : '';
+        render();
+      }
+      return;
+    }
+
     const worldPos = getWorldPos(e);
     const city = pickCity(worldPos);
     hoveredCityId = city ? city.id : null;
 
-    /* 宣戰模式：更新 hover 目標（預覽線） */
     if(warMode && warFromCityId){
       warHoverTgtId = (city && city.id !== warFromCityId) ? city.id : '';
       render();
@@ -3641,8 +3728,19 @@ const GameMap = (() => {
     }
     if(state.cities.length > 0) render();
   }
+
   function onPointerUp(e){
     if(e.pointerType === 'touch') return;
+
+    /* v8.9.3：宣戰模式：判定點擊 */
+    if(warMode && warPointerStart){
+      if(!warPointerStart.moved){
+        handleWarTap(e.clientX, e.clientY);
+      }
+      warPointerStart = null;
+      return;
+    }
+
     if(nodeDragging){ nodeDragging = null; applyCursor(); return; }
     if(routeDragFrom){
       const worldPos = getWorldPos(e);
@@ -3662,14 +3760,12 @@ const GameMap = (() => {
     if(dragging){ dragging = false; applyCursor(); }
   }
 
-  /* v8.9.2：處理宣戰模式下的點擊（含觸控） */
   function handleWarTap(clientX, clientY){
     const worldPos = getWorldPosFromClient(clientX, clientY);
     const city = pickCity(worldPos);
     if(!city) return;
 
     if(!warFromCityId){
-      /* 第一步：選出兵城 */
       warFromCityId = city.id;
       warHoverTgtId = '';
       updateWarHint();
@@ -3677,9 +3773,7 @@ const GameMap = (() => {
       return;
     }
 
-    /* 第二步：選目標城 */
     if(city.id === warFromCityId){
-      /* 點同一城 → 取消選擇 */
       warFromCityId = '';
       warHoverTgtId = '';
       updateWarHint();
@@ -3687,12 +3781,10 @@ const GameMap = (() => {
       return;
     }
 
-    /* 開啟快速面板 */
     const fromCity = state.cities.find(c => c.id === warFromCityId);
     const toCity = city;
     if(fromCity && toCity && window.SLG.WarQuickPanel){
       window.SLG.WarQuickPanel.open(fromCity, toCity, () => {
-        /* 建立後重設狀態 */
         warFromCityId = '';
         warHoverTgtId = '';
         updateWarHint();
@@ -3701,7 +3793,6 @@ const GameMap = (() => {
     }
   }
 
-  /* v8.9.2：建立宣戰後的累積（供 WarQuickPanel 呼叫） */
   function accumulateWarChange(){
     pendingWarCount++;
     const btn = document.getElementById('mapWarSaveBtn');
@@ -3827,6 +3918,7 @@ const GameMap = (() => {
     }
     layoutDirty = false;
   }
+
   function fitView(){
     if(nodePositions.size === 0){ view = { x: 0, y: 0, scale: 1 }; return; }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -3858,6 +3950,7 @@ const GameMap = (() => {
     view.x = Math.max(0, minX - 100);
     view.y = Math.max(0, minY - 100);
   }
+
   function applyView(){
     if(!canvas) return;
     canvas.style.transform = `scale(${view.scale})`;
@@ -3867,6 +3960,7 @@ const GameMap = (() => {
       containerEl.scrollTop = view.y * view.scale;
     }
   }
+
   function drawCrossZoneEdge(fromPos, toPos, visRect, color, dashed){
     if(!visRect) return;
     const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y;
@@ -3886,6 +3980,7 @@ const GameMap = (() => {
     ctx.stroke();
     if(dashed) ctx.setLineDash([]);
   }
+
   function drawCrossZoneArrow(fromPos, toPos, visRect, isAttack, targetName){
     if(!visRect) return;
     const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y;
@@ -3937,17 +4032,27 @@ const GameMap = (() => {
     ctx.textBaseline = 'middle';
     ctx.fillText(labelText, clampedLx, clampedLy);
   }
+
+  /* v8.9.3：路線改粗黑線 + 白色外框 */
   function drawNormalRoute(a, b, isHi){
-    if(isHi){ ctx.strokeStyle = 'rgba(34,255,136,0.9)'; ctx.lineWidth = 6; }
-    else { ctx.strokeStyle = 'rgba(160,160,160,0.45)'; ctx.lineWidth = 3; }
+    /* 白色外框 */
+    ctx.strokeStyle = isHi ? 'rgba(34,255,136,0.9)' : 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 16;
     ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+
+    /* 黑色主線 */
+    ctx.strokeStyle = isHi ? '#22ff88' : '#000000';
+    ctx.lineWidth = 10;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
 
-  /* v8.9.2：繪製宣戰箭頭（僅宣戰模式） */
   function drawWarArrows(){
     if(!warMode) return;
     const NODE_RADIUS = 30;
@@ -3987,7 +4092,6 @@ const GameMap = (() => {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        /* 箭頭 */
         const angle = Math.atan2(uy, ux);
         const ah = 12;
         ctx.beginPath();
@@ -4009,7 +4113,6 @@ const GameMap = (() => {
       }
     }
 
-    /* 預覽線（已選出兵城 + hover 目標） */
     if(warFromCityId && warHoverTgtId){
       const fromP = nodePositions.get(warFromCityId);
       const toP = nodePositions.get(warHoverTgtId);
@@ -4032,10 +4135,10 @@ const GameMap = (() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if(activeMapImageEl){
+    /* v8.9.3：底圖開關 */
+    if(activeMapImageEl && baseMapVisible){
       try{
         ctx.drawImage(activeMapImageEl, 0, 0, canvas.width, canvas.height);
-        /* 宣戰模式下稍微調暗底圖 */
         if(warMode){
           ctx.fillStyle = 'rgba(0,0,0,0.15)';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -4136,7 +4239,6 @@ const GameMap = (() => {
       }
     }
 
-    /* v8.9.2：宣戰箭頭 */
     drawWarArrows();
 
     if(routeDragFrom && routeDragEnd){
@@ -4243,11 +4345,13 @@ const GameMap = (() => {
       }
     }
   }
+
   function activate(){
     if(!containerEl) return;
     refreshZoneSelector();
     onMapLibraryChanged();
   }
+
   function reset(){
     nodePositions.clear();
     layoutDirty = true;
@@ -4257,6 +4361,7 @@ const GameMap = (() => {
     refreshZoneSelector();
     onMapLibraryChanged();
   }
+
   function setHighlight(h){ highlight = h; render(); }
 
   async function exportAsPDF(){
@@ -4338,7 +4443,6 @@ const GameMap = (() => {
     init, render, activate, reset, fitView, setHighlight,
     getZoneFilter, setZoneFilter, refreshZoneSelector,
     exportAsPDF, onMapLibraryChanged,
-    /* v8.9.2 */
     setWarMode: (on) => {
       setWarMode(on);
       const btn = document.getElementById('btnMapWarMode');
@@ -4351,11 +4455,14 @@ const GameMap = (() => {
     accumulateWarChange,
     saveWarChanges,
     getPendingWarCount: () => pendingWarCount,
+    isBaseMapVisible: () => baseMapVisible,
+    toggleBaseMap,
   };
 })();
 
-/* ============================================================
-   WarQuickPanel — v8.9.2：快速建立宣戰
+/* ====== 第 3/4 段結束（WarQuickPanel / MapLibrary / NodeCalibration 將於第 4 段交付） ====== */
+ /* ============================================================
+   WarQuickPanel — 快速建立宣戰
    ============================================================ */
 const WarQuickPanel = (() => {
   let fromCity = null;
@@ -4368,8 +4475,7 @@ const WarQuickPanel = (() => {
   function open(from, to, onCreatedCb){
     if(!from || !to || from.id === to.id) return;
 
-    /* ── 驗證：規則檢查 ── */
-    const type = 'attack';  /* 預設進攻 */
+    const type = 'attack';
     const validation = validateWar(from, to, type);
     if(!validation.ok){
       alert('⚠️ ' + validation.msg);
@@ -4386,25 +4492,21 @@ const WarQuickPanel = (() => {
     const modal = document.getElementById('warQuickModal');
     if(!modal) return;
 
-    /* 顯示來源與目標 */
     document.getElementById('warQuickFromName').textContent =
       `${from.name}${from.code ? ' [' + from.code + ']' : ''}`;
     document.getElementById('warQuickToName').textContent =
       `${to.name}${to.code ? ' [' + to.code + ']' : ''}`;
 
-    /* 重設類型按鈕 */
     document.querySelectorAll('.war-quick-type-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.warType === 'attack');
     });
 
-    /* 重設百分比按鈕 */
     document.querySelectorAll('.war-quick-pct-btn').forEach(btn => {
       btn.classList.toggle('active',
         parseInt(btn.dataset.pre, 10) === 50 && parseInt(btn.dataset.post, 10) === 50
       );
     });
 
-    /* 時間欄位 */
     const timeField = document.getElementById('warQuickTimeField');
     const timeInput = document.getElementById('warQuickStartTime');
     if(timeField) timeField.classList.remove('hidden');
@@ -4431,13 +4533,11 @@ const WarQuickPanel = (() => {
     const cancelBtn = document.getElementById('warQuickCancel');
     if(cancelBtn) cancelBtn.addEventListener('click', close);
 
-    /* 類型切換 */
     document.querySelectorAll('.war-quick-type-btn').forEach(btn => {
       btn.addEventListener('click', function(){
         selectedType = this.dataset.warType;
         document.querySelectorAll('.war-quick-type-btn').forEach(b => b.classList.remove('active'));
         this.classList.add('active');
-        /* 協防隱藏時間欄位 */
         const timeField = document.getElementById('warQuickTimeField');
         if(timeField){
           if(selectedType === 'assist') timeField.classList.add('hidden');
@@ -4446,7 +4546,6 @@ const WarQuickPanel = (() => {
       });
     });
 
-    /* 百分比快速選項 */
     document.querySelectorAll('.war-quick-pct-btn').forEach(btn => {
       btn.addEventListener('click', function(){
         selectedPre = parseInt(this.dataset.pre, 10);
@@ -4456,23 +4555,22 @@ const WarQuickPanel = (() => {
       });
     });
 
-    /* 詳細編輯 */
     const detailBtn = document.getElementById('warQuickDetail');
     if(detailBtn){
       detailBtn.addEventListener('click', () => {
         if(!fromCity || !toCity) return;
+        const fromId = fromCity.id;
+        const fromName = fromCity.name;
         close();
-        /* 走既有「城池數據 → 宣戰」清單新增流程 */
         if(typeof window.SLG.openCityModal === 'function'){
-          window.SLG.openCityModal(fromCity.id);
+          window.SLG.openCityModal(fromId);
         }
         setTimeout(() => {
-          alert('已為您開啟「' + fromCity.name + '」的編輯視窗。\n\n請於「城池數據 → 宣戰」中設定此宣戰指示。');
+          alert('已為您開啟「' + fromName + '」的編輯視窗。\n\n請於「城池數據 → 宣戰」中設定此宣戰指示。');
         }, 200);
       });
     }
 
-    /* 建立 */
     const confirmBtn = document.getElementById('warQuickConfirm');
     if(confirmBtn){
       confirmBtn.addEventListener('click', () => {
@@ -4483,7 +4581,6 @@ const WarQuickPanel = (() => {
   }
 
   function doCreate(){
-    /* 再次驗證 */
     const validation = validateWar(fromCity, toCity, selectedType);
     if(!validation.ok){ alert('⚠️ ' + validation.msg); return; }
 
@@ -4497,7 +4594,6 @@ const WarQuickPanel = (() => {
 
     const existingIdx = fromCity[arr].findIndex(t => t.cityId === toCity.id);
     if(existingIdx >= 0){
-      /* 更新既有 */
       const route = fromCity[arr][existingIdx];
       route.preWarPercent = selectedPre;
       route.postRevivePercent = selectedPost;
@@ -4512,18 +4608,15 @@ const WarQuickPanel = (() => {
       });
     }
 
-    /* 標記 dirty（但不立即 saveState，等使用者按儲存）*/
     state.entityRev.city[fromCity.id] = (state.entityRev.city[fromCity.id] || 0) + 1;
     if(window.SLG.markDirty) window.SLG.markDirty('city', fromCity.id);
     if(window.SLG.tickLamport) window.SLG.tickLamport();
     if(window.SLG.flushPatches) window.SLG.flushPatches();
 
-    /* 累計變更數 */
     if(window.SLG.GameMap && window.SLG.GameMap.accumulateWarChange){
       window.SLG.GameMap.accumulateWarChange();
     }
 
-    /* 重新渲染宣戰清單（讓城池數據同步顯示） */
     if(window.SLG.WarManager) window.SLG.WarManager.render();
 
     logSystem(`⚔️ 已建立：${fromCity.name} → ${toCity.name}（${selectedType === 'attack' ? '進攻' : '協防'}）`);
@@ -4537,16 +4630,11 @@ const WarQuickPanel = (() => {
     if(!from || !to) return { ok: false, msg: '缺少城池' };
     if(from.id === to.id) return { ok: false, msg: '出兵城與目標城不能相同' };
 
-    /* 檢查是否已存在 */
     const arr = type === 'attack' ? 'attackTargets' : 'defendTargets';
     if((from[arr] || []).some(t => t.cityId === to.id)){
       return { ok: false, msg: `「${from.name}」→「${to.name}」已有${type === 'attack' ? '進攻' : '協防'}指示` };
     }
-    /* 反向檢查（避免同時有 A→B 和 B→A 同類型的重複？這裡允許不同類型的互打，但檢查同類型反向） */
-    const otherArr = type === 'attack' ? 'defendTargets' : 'attackTargets';
-    /* 不阻擋（不同類型可以共存） */
 
-    /* 陣營規則 */
     if(type === 'attack'){
       const allowed = ATTACK_RULES[from.side || 'npc'] || [];
       if(!allowed.includes(to.side)){
@@ -4562,7 +4650,6 @@ const WarQuickPanel = (() => {
       }
     }
 
-    /* 戰區規則 */
     if(!state.settings.crossZoneWarAllowed){
       const zFrom = from.zoneId || '__none__';
       const zTo = to.zoneId || '__none__';
@@ -4571,13 +4658,11 @@ const WarQuickPanel = (() => {
       }
     }
 
-    /* 進攻需要路線接觸 */
     if(type === 'attack' && state.settings.attackRequireRoute){
       if(!window.SLG.findRoute(from.id, to.id)){
         return { ok: false, msg: '此規則要求進攻需有路線接觸' };
       }
     }
-    /* 協防需要路線接觸 */
     if(type === 'assist'){
       if(!window.SLG.findRoute(from.id, to.id)){
         return { ok: false, msg: '協防需要路線上必須有接觸' };
@@ -4591,7 +4676,7 @@ const WarQuickPanel = (() => {
 })();
 
 /* ============================================================
-   MapLibrary — 地圖庫（v8.9.1 保持）
+   MapLibrary — 地圖庫
    ============================================================ */
 const MapLibrary = (() => {
   let uploading = false;
@@ -4931,7 +5016,8 @@ const MapLibrary = (() => {
 })();
 
 /* ============================================================
-   NodeCalibration — v8.9.1 保持（AI 辨識 + 縮放 + 混合模式）
+   NodeCalibration — v8.9.3 大改
+   新增：定點模式 + 拖曳節點 + 刪除標記
    ============================================================ */
 const NodeCalibration = (() => {
   let mapId = '';
@@ -4948,6 +5034,8 @@ const NodeCalibration = (() => {
   let isDragging = false;
   let dragStart = null;
   let isManualMode = false;
+  let isFixedPointMode = false;
+  let fixedPointCityId = '';
   let isAiScanning = false;
   let aiAborted = false;
   let displayW = 0, displayH = 0;
@@ -4955,6 +5043,11 @@ const NodeCalibration = (() => {
   let pinchStartZoom = 1;
   let pinchStartCenter = null;
   let clickPopupTarget = null;
+
+  /* v8.9.3：拖曳節點 */
+  let draggingNodeId = null;
+  let nodeDragOffset = { x: 0, y: 0 };
+  let nodeDragMoved = false;
 
   async function open(id){
     if(!window.SLG.canEditMapLibrary()){ alert('🔒 您沒有地圖庫編輯權限'); return; }
@@ -4986,6 +5079,7 @@ const NodeCalibration = (() => {
       fitToWindow();
       renderAll();
       updateProgress();
+      updateModeUI();
     }catch(e){
       console.error('校準開啟失敗', e);
       alert('❌ 開啟校準失敗：' + e.message);
@@ -5004,9 +5098,14 @@ const NodeCalibration = (() => {
     isDragging = false;
     dragStart = null;
     isManualMode = false;
+    isFixedPointMode = false;
+    fixedPointCityId = '';
     isAiScanning = false;
     aiAborted = false;
     clickPopupTarget = null;
+    draggingNodeId = null;
+    nodeDragOffset = { x: 0, y: 0 };
+    nodeDragMoved = false;
   }
 
   function close(){
@@ -5119,6 +5218,12 @@ const NodeCalibration = (() => {
       btnManual.dataset.bound = '1';
       btnManual.addEventListener('click', toggleManualMode);
     }
+    /* v8.9.3：定點模式按鈕 */
+    const btnFixed = document.getElementById('nc_btnFixedPoint');
+    if(btnFixed && !btnFixed.dataset.bound){
+      btnFixed.dataset.bound = '1';
+      btnFixed.addEventListener('click', toggleFixedPointMode);
+    }
     const btnClearAll = document.getElementById('nc_btnClearAll');
     if(btnClearAll && !btnClearAll.dataset.bound){
       btnClearAll.dataset.bound = '1';
@@ -5128,6 +5233,7 @@ const NodeCalibration = (() => {
         routes = [];
         activeCityId = '';
         activeRouteIdx = -1;
+        fixedPointCityId = '';
         renderAll();
         updateProgress();
       });
@@ -5168,6 +5274,11 @@ const NodeCalibration = (() => {
     if(canvas && !canvas.dataset.bound){
       canvas.dataset.bound = '1';
       canvas.addEventListener('click', onClickCanvas);
+      /* v8.9.3：拖曳節點 */
+      canvas.addEventListener('pointerdown', onCanvasPointerDown);
+      canvas.addEventListener('pointermove', onCanvasPointerMove);
+      canvas.addEventListener('pointerup', onCanvasPointerUp);
+      canvas.addEventListener('pointercancel', onCanvasPointerUp);
     }
     if(wrapEl && !wrapEl.dataset.wheelBound){
       wrapEl.dataset.wheelBound = '1';
@@ -5180,6 +5291,7 @@ const NodeCalibration = (() => {
       }, { passive: false });
       wrapEl.addEventListener('mousedown', (e) => {
         if(e.target !== canvas && e.target !== wrapEl) return;
+        if(draggingNodeId) return;
         isDragging = true;
         dragStart = { x: e.clientX, y: e.clientY, sx: wrapEl.scrollLeft, sy: wrapEl.scrollTop };
         wrapEl.classList.add('dragging');
@@ -5250,22 +5362,107 @@ const NodeCalibration = (() => {
     }
   }
 
+  /* v8.9.3：切換 AI 補點模式 */
   function toggleManualMode(){
     isManualMode = !isManualMode;
+    if(isManualMode){ isFixedPointMode = false; fixedPointCityId = ''; }
+    updateModeUI();
+  }
+
+  /* v8.9.3：切換定點模式 */
+  function toggleFixedPointMode(){
+    isFixedPointMode = !isFixedPointMode;
+    if(isFixedPointMode){
+      isManualMode = false;
+      const next = findNextUnmarkedCity();
+      fixedPointCityId = next ? next.id : '';
+      activeCityId = fixedPointCityId;
+    } else {
+      fixedPointCityId = '';
+    }
+    updateModeUI();
+    renderCityList();
+    renderAll();
+  }
+
+  function updateModeUI(){
     if(wrapEl){
       wrapEl.classList.toggle('manual-mode', isManualMode);
+      wrapEl.classList.toggle('fixed-point-mode', isFixedPointMode);
     }
-    const btn = document.getElementById('nc_btnManualAdd');
-    if(btn){
-      btn.textContent = isManualMode ? '✖️ 取消補點' : '➕ 手動補點';
-      btn.classList.toggle('btn-warning', !isManualMode);
+    const btnManual = document.getElementById('nc_btnManualAdd');
+    if(btnManual){
+      btnManual.textContent = isManualMode ? '✖️ 取消 AI 補點' : '🤖 AI 補點';
+      btnManual.classList.toggle('btn-warning', !isManualMode);
+    }
+    const btnFixed = document.getElementById('nc_btnFixedPoint');
+    if(btnFixed){
+      btnFixed.textContent = isFixedPointMode ? '✖️ 取消定點' : '🎯 定點模式';
+      btnFixed.classList.toggle('active', isFixedPointMode);
     }
     const hint = document.getElementById('nc_canvasHint');
     if(hint){
-      hint.textContent = isManualMode
-        ? '🎯 點圖上位置，AI 將辨識該區域'
-        : '🖱️ 滾輪縮放、拖曳平移、點擊位置辨識';
+      if(isFixedPointMode){
+        const city = state.cities.find(c => c.id === fixedPointCityId);
+        hint.textContent = city
+          ? `🎯 請點圖上「${city.name}」的正確位置`
+          : '🎯 請從左側選擇城池，再點圖上位置';
+      } else if(isManualMode){
+        hint.textContent = '🎯 點圖上位置，AI 將辨識該區域';
+      } else {
+        hint.textContent = '🖱️ 滾輪縮放、拖曳平移、點擊位置辨識';
+      }
     }
+  }
+
+  function findNextUnmarkedCity(){
+    for(const city of state.cities){
+      const nid = cityNodeId(city);
+      if(!nodes[nid]) return city;
+    }
+    return null;
+  }
+
+  /* v8.9.3：畫布上的節點拖曳 */
+  function onCanvasPointerDown(e){
+    if(e.pointerType === 'touch') return;
+    if(isFixedPointMode || isManualMode) return;
+    const imgPos = clientToImage(e.clientX, e.clientY);
+    const hit = findNodeAt(imgPos.x, imgPos.y);
+    if(hit){
+      draggingNodeId = hit.nodeId;
+      nodeDragOffset = { x: imgPos.x - hit.node.x, y: imgPos.y - hit.node.y };
+      nodeDragMoved = false;
+      try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }
+
+  function onCanvasPointerMove(e){
+    if(!draggingNodeId) return;
+    const imgPos = clientToImage(e.clientX, e.clientY);
+    const node = nodes[draggingNodeId];
+    if(node){
+      node.x = Math.round(imgPos.x - nodeDragOffset.x);
+      node.y = Math.round(imgPos.y - nodeDragOffset.y);
+      nodeDragMoved = true;
+      redrawCanvas();
+    }
+  }
+
+  function onCanvasPointerUp(e){
+    if(!draggingNodeId) return;
+    const node = nodes[draggingNodeId];
+    if(node && nodeDragMoved){
+      node.source = 'manual';
+    }
+    draggingNodeId = null;
+    nodeDragMoved = false;
+    renderAll();
+    updateProgress();
+    try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
+    e.stopPropagation();
   }
 
   async function startAiScan(){
@@ -5274,7 +5471,7 @@ const NodeCalibration = (() => {
       alert('❌ AI 辨識模組未載入，請重新整理頁面');
       return;
     }
-    if(!confirm('確定要執行 AI 全圖辨識嗎？\n\n這會花 30~90 秒，並消耗 Gemini API 額度。')){
+    if(!confirm('確定要執行 AI 全圖辨識嗎？\n\n這會花 30~90 秒，並消耗智譜 API 額度。')){
       return;
     }
 
@@ -5354,6 +5551,8 @@ const NodeCalibration = (() => {
   }
 
   async function onClickCanvas(e){
+    if(draggingNodeId) return;
+
     const imgPos = clientToImage(e.clientX, e.clientY);
     const hit = findNodeAt(imgPos.x, imgPos.y);
     if(hit){
@@ -5364,6 +5563,43 @@ const NodeCalibration = (() => {
       renderAll();
       return;
     }
+
+    /* v8.9.3：定點模式 */
+    if(isFixedPointMode){
+      if(!fixedPointCityId){
+        alert('請先從左側選擇一座城池');
+        return;
+      }
+      const city = state.cities.find(c => c.id === fixedPointCityId);
+      if(!city) return;
+      applyNodeForCity(fixedPointCityId, imgPos.x, imgPos.y, 'manual');
+      /* 自動跳下一個未標記城池 */
+      const next = findNextUnmarkedCity();
+      if(next){
+        fixedPointCityId = next.id;
+        activeCityId = next.id;
+        renderCityList();
+        updateModeUI();
+        setTimeout(() => {
+          const items = document.querySelectorAll('#nc_cityList .nc-item-v3');
+          for(const item of items){
+            if(item.dataset.cityId === next.id){
+              item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              break;
+            }
+          }
+        }, 50);
+      } else {
+        fixedPointCityId = '';
+        activeCityId = '';
+        updateModeUI();
+        alert('🎉 所有城池都已標記完成！');
+      }
+      renderAll();
+      return;
+    }
+
+    /* AI 補點模式 */
     if(isManualMode){
       await handleClickDetect(imgPos.x, imgPos.y, e.clientX, e.clientY);
       return;
@@ -5598,29 +5834,39 @@ const NodeCalibration = (() => {
       if(!n || typeof n.x !== 'number') continue;
       const dx = n.x * zoom;
       const dy = n.y * zoom;
-      const isSelected = (n.namedCityId === activeCityId);
+      const isSelected = (n.namedCityId === activeCityId) || (n.namedCityId === fixedPointCityId);
       const isManual = (n.source === 'manual');
-      const isAi = (n.source === 'ai' || n.source === 'ai-click');
+      const isDraggingThis = (draggingNodeId === nid);
 
-      let color = '#22ff88';
+      /* v8.9.3：AI = 黃色，手動 = 藍色，選中 = 白色外框 */
+      let color = '#ffcc00';
       if(isManual) color = '#3b82f6';
-      if(isSelected) color = '#ffcc00';
 
       const radius = Math.max(8, Math.min(14, 14 * Math.min(1, zoom)));
       ctx.beginPath();
       ctx.arc(dx, dy, radius, 0, Math.PI * 2);
       ctx.fillStyle = color + 'cc';
       ctx.fill();
-      ctx.strokeStyle = isSelected ? '#fff' : 'rgba(0,0,0,.7)';
-      ctx.lineWidth = isSelected ? 3 : 1.5;
+      ctx.strokeStyle = isDraggingThis ? '#22ff88' : (isSelected ? '#ffffff' : 'rgba(0,0,0,.7)');
+      ctx.lineWidth = isDraggingThis ? 4 : (isSelected ? 3 : 1.5);
       ctx.stroke();
+
+      if(isDraggingThis){
+        ctx.beginPath();
+        ctx.arc(dx, dy, radius + 6, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(68,170,255,0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       ctx.beginPath();
       ctx.arc(dx, dy, 2, 0, Math.PI * 2);
       ctx.fillStyle = '#000';
       ctx.fill();
 
-      if(isSelected && zoom > 0.5){
+      if(isSelected && zoom > 0.5 && !draggingNodeId){
         const label = n.code ? `${n.name} (${n.code})` : n.name;
         ctx.font = `bold ${Math.max(11, Math.min(16, 14 * zoom))}px "Noto Sans TC",sans-serif`;
         const tw = ctx.measureText(label).width;
@@ -5662,18 +5908,24 @@ const NodeCalibration = (() => {
 
     el.innerHTML = list.map(({ city, node }) => {
       const isNamed = !!node;
-      const isSelected = (activeCityId === city.id);
+      const isSelected = (activeCityId === city.id) || (fixedPointCityId === city.id);
       const isManual = node && node.source === 'manual';
       const isAiClick = node && node.source === 'ai-click';
+      const isFixedSel = (fixedPointCityId === city.id);
       const cls = 'nc-item-v3'
         + (isNamed ? ' named' : ' unnamed')
         + (isManual || isAiClick ? ' manual' : '')
+        + (isFixedSel ? ' fixed-selected' : '')
         + (isSelected ? ' selected' : '');
       const icon = isNamed ? '✅' : '⭕';
       const codeStr = city.code ? `<span class="nc-item-code">${esc(city.code)}</span>` : '';
       const coordStr = node ? `(${node.x}, ${node.y})` : '';
       const sourceStr = node
         ? (node.source === 'ai' ? 'AI' : node.source === 'ai-click' ? 'AI點擊' : '手動')
+        : '';
+      /* v8.9.3：刪除按鈕 */
+      const deleteBtn = node
+        ? `<button class="nc-item-delete" data-delete-city="${esc(city.id)}" title="刪除標記">🗑️</button>`
         : '';
       return `<div class="${cls}" data-city-id="${esc(city.id)}">
         <span class="nc-item-icon">${icon}</span>
@@ -5684,13 +5936,19 @@ const NodeCalibration = (() => {
             ${sourceStr ? `<span>${sourceStr}</span>` : ''}
           </div>
         </div>
+        ${deleteBtn}
       </div>`;
     }).join('');
 
     el.querySelectorAll('.nc-item-v3').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
+        if(e.target.closest('.nc-item-delete')) return;
         const cityId = item.dataset.cityId;
         activeCityId = cityId;
+        if(isFixedPointMode){
+          fixedPointCityId = cityId;
+          updateModeUI();
+        }
         activeRouteIdx = -1;
         renderCityList();
         renderRouteList();
@@ -5708,6 +5966,26 @@ const NodeCalibration = (() => {
             });
           }
         }
+      });
+    });
+
+    /* v8.9.3：刪除標記按鈕 */
+    el.querySelectorAll('[data-delete-city]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cityId = btn.dataset.deleteCity;
+        const city = state.cities.find(c => c.id === cityId);
+        if(!city) return;
+        const nid = cityNodeId(city);
+        if(!nodes[nid]) return;
+        if(!confirm(`確定刪除「${city.name}」的標記嗎？`)) return;
+        delete nodes[nid];
+        if(fixedPointCityId === cityId){
+          fixedPointCityId = cityId;
+        }
+        renderAll();
+        updateProgress();
+        logSystem(`🗑️ 已刪除標記：${city.name}`);
       });
     });
   }
@@ -5831,7 +6109,7 @@ const NodeCalibration = (() => {
 })();
 
 /* ============================================================
-   FuzzyMatch — 模糊匹配候選 Modal（v8.8.0 保持）
+   FuzzyMatch — 模糊匹配候選 Modal
    ============================================================ */
 const FuzzyMatch = (() => {
   let queue = [];
@@ -6706,5 +6984,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui.js 結束（v8.9.2）
+ * ui.js 結束（v8.9.3）
  * ========================================================================== */
