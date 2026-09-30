@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.2</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.3</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -34,13 +34,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.2</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.3</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.2</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.3</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -93,7 +93,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.9.2</span>
+      <span class="sidebar-version">v8.9.3</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -927,6 +927,8 @@
               </select>
               <button class="btn btn-ghost btn-sm" id="btnMapEditRoute">✏️ 編輯路線：關</button>
               <button class="btn btn-ghost btn-sm" id="btnMapWarMode">⚔️ 宣戰模式：關</button>
+              <!-- v8.9.3：底圖開關 -->
+              <button class="btn btn-ghost btn-sm" id="btnMapBaseMap">🖼️ 底圖：開</button>
               <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
               <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
               <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
@@ -934,13 +936,11 @@
               <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點</span>
             </div>
 
-            <!-- v8.9.2：地圖主容器（含右側懸浮按鈕） -->
             <div class="game-map-outer" id="gameMapOuter">
               <div class="game-map-container" id="gameMapContainer">
                 <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
               </div>
 
-              <!-- 右側垂直按鈕組 -->
               <div class="map-float-btns" id="mapFloatBtns">
                 <button class="map-float-btn" id="btnMapZoomIn" title="放大">＋</button>
                 <button class="map-float-btn" id="btnMapZoomOut" title="縮小">－</button>
@@ -953,12 +953,10 @@
                 <button class="map-float-btn" id="btnMapPanDown" title="向下平移">▼</button>
               </div>
 
-              <!-- 宣戰模式提示 -->
               <div class="map-war-hint hidden" id="mapWarHint">
                 <span id="mapWarHintText">⚔️ 請點選出兵城</span>
               </div>
 
-              <!-- 宣戰儲存浮動按鈕（有未儲存變更時顯示） -->
               <button class="map-war-save-btn hidden" id="mapWarSaveBtn" title="儲存宣戰變更">
                 💾 儲存宣戰 <span class="map-war-save-count" id="mapWarSaveCount">0</span>
               </button>
@@ -1204,7 +1202,7 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.9.2）</div>
+        <div class="card-title">📖 城戰計算規則（v8.9.3）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1238,12 +1236,14 @@
           <h2>五、地圖庫與 AI 節點校準</h2>
           <div class="rule-card title">
             <b>🗺️ 地圖庫</b>：底圖存 Cloudinary，座標存 Firebase<br>
-            <b>🤖 AI 全圖辨識</b>：地圖切 3×3，Gemini 辨識城池 + 路線<br>
-            <b>🎯 手動點擊</b>：點圖上位置 → AI 辨識該區域<br>
+            <b>🤖 AI 全圖辨識</b>：地圖切 3×3，智譜 GLM 辨識城池 + 路線<br>
+            <b>🎯 定點模式</b>：點左側城池名稱 → 高亮 → 點地圖正確位置 → 記錄座標<br>
+            <b>🖱️ 拖曳節點</b>：直接拖曳畫布上的節點微調位置<br>
+            <b>🗑️ 刪除標記</b>：清單中點 🗑️ 可刪除該城池標記<br>
             <b>🔍 縮放平移</b>：滾輪 / 捏合 / 拖曳 / 右側按鈕<br>
             <b>✅ 自動去重</b>：切片邊界的重複路線自動合併
           </div>
-          <h2>六、地圖宣戰模式（v8.9.2）</h2>
+          <h2>六、地圖宣戰模式（v8.9.3）</h2>
           <div class="rule-card title">
             <b>🖱️ 點 A → 點 B 建立宣戰</b>：<br>
             1. 點「⚔️ 宣戰模式」開啟<br>
@@ -1256,7 +1256,8 @@
             ・🔴 紅色 = 進攻<br>
             ・🟢 綠色 = 協防<br>
             <br>
-            <b>儲存</b>：建立後需按「💾 儲存宣戰」才同步到雲端。
+            <b>儲存</b>：建立後需按「💾 儲存宣戰」才同步到雲端。<br>
+            <b>底圖開關</b>：可關閉底圖，只顯示節點與路線。
           </div>
           <h2>七、宣戰清單</h2>
           <ul>
@@ -1284,7 +1285,7 @@
           </ul>
           <h2>十一、安全架構</h2>
           <div class="rule-card warn">
-            <b>Gemini API Key 儲存於 Cloudflare Pages Functions 環境變數</b>，前端完全接觸不到 Key。<br>
+            <b>智譜 API Key 儲存於 Cloudflare Pages Functions 環境變數</b>，前端完全接觸不到 Key。<br>
             所有 AI 請求經過 <code>/api/ocr</code> 代理。
           </div>
         </div>
@@ -1294,10 +1295,6 @@
     </div>
   </main>
 </div>
-
-<!-- ============================================================
-     v8.9.2：地圖庫相關 Modal
-     ============================================================ -->
 
 <!-- 上傳地圖 Modal -->
 <div class="modal-overlay" id="mapUploadModal">
@@ -1333,7 +1330,7 @@
   </div>
 </div>
 
-<!-- 節點校準 Modal（v8.9.1 保持） -->
+<!-- 節點校準 Modal（v8.9.3） -->
 <div class="modal-overlay" id="nodeCalibrationModal">
   <div class="modal-box modal-lg" style="max-width:1400px;max-height:95vh;">
     <h3 style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
@@ -1349,7 +1346,9 @@
       <span class="nc-zoom-display" id="nc_zoomLevel">100%</span>
       <span class="nc-toolbar-sep">│</span>
       <button class="btn btn-primary btn-sm" id="nc_btnAiScan" title="AI 全圖辨識">🤖 AI 辨識全圖</button>
-      <button class="btn btn-warning btn-sm" id="nc_btnManualAdd" title="手動補點模式">➕ 手動補點</button>
+      <!-- v8.9.3：AI 補點 / 定點模式 切換 -->
+      <button class="btn btn-warning btn-sm" id="nc_btnManualAdd" title="AI 補點模式：點圖上位置讓 AI 辨識">🤖 AI 補點</button>
+      <button class="btn btn-success btn-sm" id="nc_btnFixedPoint" title="定點模式：點城池名 → 點圖上位置">🎯 定點模式</button>
       <button class="btn btn-ghost btn-sm" id="nc_btnClearAll" title="清空所有標記">🗑️ 清空</button>
     </div>
 
@@ -1396,7 +1395,7 @@
   </div>
 </div>
 
-<!-- v8.9.2：宣戰快速面板 -->
+<!-- 宣戰快速面板 -->
 <div class="modal-overlay" id="warQuickModal">
   <div class="modal-box modal-lg" style="max-width:420px;">
     <h3 style="display:flex;justify-content:space-between;align-items:center;">
@@ -1464,7 +1463,7 @@
   </div>
 </div>
 
-<!-- 其他 Modal（保留原有） -->
+<!-- 其他 Modal -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box">
     <h3 id="modalTitle">⚠️ 確認操作</h3>
