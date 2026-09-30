@@ -4809,3 +4809,11 @@ body.map-fullscreen .game-map-outer.fullscreen-mode{
 body.map-fullscreen{
   overflow: hidden !important;
 }
+/* v8.9.7：孤兒節點樣式 */
+.nc-item-v3.orphan {
+  border-color: rgba(255, 204, 0, 0.5);
+  background: rgba(255, 204, 0, 0.05);
+}
+.nc-item-v3.orphan .nc-item-icon {
+  color: var(--neon-yellow);
+}
