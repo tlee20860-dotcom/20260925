@@ -1,10 +1,11 @@
 /* ============================================================================
- * geminiOcr.js — v8.9.1
- * Gemini AI 辨識封裝（透過 Cloudflare Pages Function /api/ocr 呼叫）
+ * geminiOcr.js — v8.9.4
+ * AI 辨識封裝（透過 Cloudflare Pages Function /api/ocr 呼叫）
  *  - 全圖辨識（3×3 切片）
  *  - 單點辨識（點擊裁切）
  *  - 自動去重
  *  - 座標換算
+ *  - v8.9.4：加入速率限制保護（排隊 + 節流 + 429 自動重試）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -19,6 +20,13 @@ const GEMINI_SLICE_N = 3;                  /* 3×3 切片 */
 const GEMINI_SLICE_OVERLAP = 0.10;         /* 切片重疊比例（10%）*/
 const GEMINI_REQUEST_TIMEOUT = 60000;      /* 60 秒 */
 const GEMINI_MAX_IMAGE_SIZE = 4 * 1024 * 1024;  /* 單次上傳 ≤ 4 MB */
+const GEMINI_MIN_INTERVAL = 1500;          /* v8.9.4：每次請求至少間隔 1.5 秒 */
+
+/* ============================================================
+   v8.9.4：速率限制保護（智譜免費模型 QPS 低）
+   ============================================================ */
+let _geminiLastCallTime = 0;
+let _geminiBusy = false;
 
 /* ============================================================
    工具：圖片轉 base64（去掉 data:image/... 前綴）
@@ -42,14 +50,11 @@ function sleep(ms){
 function parseAiJson(text){
   if(!text) return null;
   let s = String(text).trim();
-  /* 移除 markdown code fence */
   s = s.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
   s = s.replace(/^```\s*/, '').replace(/\s*```$/, '');
-  /* 嘗試直接 parse */
   try{
     return JSON.parse(s);
   }catch(e){}
-  /* 嘗試抓第一個 { ... } 或 [ ... ] */
   const firstBrace = s.indexOf('{');
   const firstBracket = s.indexOf('[');
   let start = -1;
@@ -57,7 +62,6 @@ function parseAiJson(text){
   else if(firstBrace >= 0) start = firstBrace;
   else if(firstBracket >= 0) start = firstBracket;
   if(start < 0) return null;
-  /* 找對應的結尾 */
   const isObj = s[start] === '{';
   const endChar = isObj ? '}' : ']';
   const end = s.lastIndexOf(endChar);
@@ -70,23 +74,66 @@ function parseAiJson(text){
 }
 
 /* ============================================================
-   核心：呼叫 Cloudflare Pages Function
+   核心：呼叫 Cloudflare Pages Function（含速率保護）
+   v8.9.4：加入排隊 + 節流 + 429 自動重試
    ============================================================ */
 async function callGeminiProxy(imageBase64, prompt, mimeType, timeoutMs){
+  /* ── 若已有請求進行中，排隊等待 ── */
+  while(_geminiBusy){
+    await sleep(200);
+  }
+
+  /* ── 距上次請求 < GEMINI_MIN_INTERVAL → 等待 ── */
+  const now = Date.now();
+  const wait = GEMINI_MIN_INTERVAL - (now - _geminiLastCallTime);
+  if(wait > 0){
+    await sleep(wait);
+  }
+
+  _geminiBusy = true;
+  _geminiLastCallTime = Date.now();
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs || GEMINI_REQUEST_TIMEOUT);
+
+  const doFetch = (signal) => fetch(GEMINI_OCR_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      imageBase64,
+      prompt,
+      mimeType: mimeType || 'image/jpeg',
+    }),
+    signal: signal,
+  });
+
   try{
-    const resp = await fetch(GEMINI_OCR_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageBase64,
-        prompt,
-        mimeType: mimeType || 'image/jpeg',
-      }),
-      signal: controller.signal,
-    });
+    let resp = await doFetch(controller.signal);
     clearTimeout(timeout);
+
+    /* ── 429 速率限制 → 等 3 秒重試 1 次 ── */
+    if(resp.status === 429){
+      console.warn('[OCR] 觸發速率限制（429），等 3 秒重試...');
+      await sleep(3000);
+      resp = await doFetch();
+      if(!resp.ok){
+        let t = '';
+        try{
+          const j = await resp.json();
+          t = j.error || j.detail || JSON.stringify(j);
+        }catch(e){
+          t = await resp.text();
+        }
+        throw new Error(`HTTP ${resp.status}：${t}`);
+      }
+      const data = await resp.json();
+      if(data.error){
+        throw new Error(data.error + (data.detail ? '：' + data.detail : ''));
+      }
+      return data;
+    }
+
+    /* ── 其他錯誤 ── */
     if(!resp.ok){
       let errText = '';
       try{
@@ -97,17 +144,21 @@ async function callGeminiProxy(imageBase64, prompt, mimeType, timeoutMs){
       }
       throw new Error(`HTTP ${resp.status}：${errText}`);
     }
+
     const data = await resp.json();
     if(data.error){
       throw new Error(data.error + (data.detail ? '：' + data.detail : ''));
     }
     return data;
+
   }catch(e){
     clearTimeout(timeout);
     if(e.name === 'AbortError'){
       throw new Error('AI 請求逾時（超過 ' + Math.round((timeoutMs || GEMINI_REQUEST_TIMEOUT)/1000) + ' 秒）');
     }
     throw e;
+  }finally{
+    _geminiBusy = false;
   }
 }
 
@@ -169,23 +220,36 @@ function buildFullMapPrompt(sliceIndex, totalSlices, bounds){
 
 /**
  * 單點辨識 Prompt（點擊位置裁切）
+ * v8.9.4：優化 Prompt，給範例 + 強調繁體 + 強調編號格式
  */
 function buildClickPrompt(){
-  return `這是一張三國城戰地圖的一小塊區域。
+  return `這是一張三國城戰地圖的局部放大圖。
 
-請辨識圖中顯示的城池名稱與編號。
+圖中有一個城池的名稱標籤，格式通常是：
+[菱形圖示] [城池名稱] ([編號])
+
+例如：
+- 「南秦 (L98)」
+- 「都夢南 (L86)」
+- 「且蘭東 (L77)」
+- 「句町西 (L95)」
+
+請辨識圖中的「城池名稱」與「編號」。
 
 回傳 JSON 格式：
 {
-  "name": "朱提",
-  "code": "N39",
+  "name": "都夢南",
+  "code": "L86",
   "confidence": 0.95
 }
 
-規則：
-1. 若圖中有多個城池，只回傳最中心的那一個
-2. 若圖中沒有城池，回傳 {"name": null, "code": null, "confidence": 0}
-3. 只回傳 JSON，不要任何其他文字`;
+重要規則：
+1. 只辨識「最中心」的城池標籤
+2. 名稱必須是繁體中文（如「夢」不是「梦」）
+3. 編號是大寫英文字母 + 數字（如 L86、M12、N39）
+4. 若圖中沒有清楚的城池標籤，回傳：{"name": null, "code": null, "confidence": 0}
+5. 只回傳 JSON，不要任何解釋或 markdown 標記
+6. 不要臆測，看不清就回傳 null`;
 }
 
 /* ============================================================
@@ -243,7 +307,6 @@ async function detectFullMap(source, onProgress, shouldAbort){
       let base64 = canvasToBase64(canvas, 'image/jpeg', 0.85);
       let mime = 'image/jpeg';
 
-      /* 若太大，降品質 */
       let quality = 0.85;
       while(base64.length * 0.75 > GEMINI_MAX_IMAGE_SIZE && quality > 0.4){
         quality -= 0.15;
@@ -262,7 +325,6 @@ async function detectFullMap(source, onProgress, shouldAbort){
         result = await callGeminiProxy(base64, prompt, mime, GEMINI_REQUEST_TIMEOUT);
       }catch(e){
         console.warn(`[切片 ${idx + 1}] AI 辨識失敗`, e);
-        /* 單切片失敗不中斷整個流程 */
         continue;
       }
 
@@ -302,10 +364,7 @@ async function detectFullMap(source, onProgress, shouldAbort){
 
       sliceIndex++;
 
-      /* ── 避免觸發速率限制，小延遲 ── */
-      if(idx < totalSlices - 1){
-        await sleep(300);
-      }
+      /* v8.9.4：切片間已由 callGeminiProxy 自動節流，這裡不需額外延遲 */
     }
   }
 
@@ -324,6 +383,7 @@ async function detectFullMap(source, onProgress, shouldAbort){
 
 /* ============================================================
    單點辨識（點擊位置）
+   v8.9.4：加大裁切半徑 + 放大 2x + 提高品質
    ============================================================ */
 /**
  * @param {HTMLImageElement|HTMLCanvasElement} source - 原始底圖
@@ -335,7 +395,7 @@ async function detectFullMap(source, onProgress, shouldAbort){
 async function detectAtPoint(source, centerX, centerY, radius){
   const natW = source.naturalWidth || source.width || 0;
   const natH = source.naturalHeight || source.height || 0;
-  const R = radius || 120;
+  const R = radius || 200;
 
   const x0 = Math.max(0, centerX - R);
   const y0 = Math.max(0, centerY - R);
@@ -344,16 +404,20 @@ async function detectAtPoint(source, centerX, centerY, radius){
   const w = x1 - x0;
   const h = y1 - y0;
 
+  /* v8.9.4：裁切後放大 2x，提升文字清晰度 */
+  const UPSCALE = 2;
   const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = w * UPSCALE;
+  canvas.height = h * UPSCALE;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(source, x0, y0, w, h, 0, 0, w, h);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, x0, y0, w, h, 0, 0, w * UPSCALE, h * UPSCALE);
 
-  let base64 = canvasToBase64(canvas, 'image/jpeg', 0.9);
-  let quality = 0.9;
-  while(base64.length * 0.75 > GEMINI_MAX_IMAGE_SIZE && quality > 0.5){
-    quality -= 0.15;
+  let base64 = canvasToBase64(canvas, 'image/jpeg', 0.95);
+  let quality = 0.95;
+  while(base64.length * 0.75 > GEMINI_MAX_IMAGE_SIZE && quality > 0.6){
+    quality -= 0.1;
     base64 = canvasToBase64(canvas, 'image/jpeg', quality);
   }
 
@@ -381,7 +445,6 @@ function dedupeCities(cities){
   const DEDUPE_DIST = 40;  /* 40 px 內視為同一座城 */
 
   for(const c of cities){
-    /* 用「名稱」或「編號」作為主要 key */
     const nameKey = c.name || '';
     const codeKey = c.code || '';
     const mainKey = codeKey ? `c:${codeKey}` : `n:${nameKey}`;
@@ -391,13 +454,11 @@ function dedupeCities(cities){
       byKey.set(mainKey, c);
       continue;
     }
-    /* 若信心度更高，替換 */
     if((c.confidence || 0) > (existing.confidence || 0)){
       byKey.set(mainKey, c);
     }
   }
 
-  /* 二次去重：不同 key 但座標很接近的，合併（保留信心高者）*/
   const list = [...byKey.values()];
   const merged = [];
   const used = new Set();
@@ -410,7 +471,6 @@ function dedupeCities(cities){
       const a = list[i], b = list[j];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       if(dist < DEDUPE_DIST){
-        /* 同名 → 合併 */
         if(a.name === b.name && a.code === b.code){
           used.add(j);
           if((b.confidence || 0) > (best.confidence || 0)) best = b;
@@ -435,7 +495,6 @@ function dedupeRoutes(routes){
     const a = r.fromName || '';
     const b = r.toName || '';
     if(!a || !b || a === b) continue;
-    /* 排序後作為 key（無向）*/
     const key = [a, b].sort().join('|');
     if(seen.has(key)) continue;
     seen.add(key);
@@ -487,6 +546,7 @@ Object.assign(window.SLG, {
   GEMINI_SLICE_N,
   GEMINI_SLICE_OVERLAP,
   GEMINI_MAX_IMAGE_SIZE,
+  GEMINI_MIN_INTERVAL,
   callGeminiProxy,
   buildFullMapPrompt,
   buildClickPrompt,
