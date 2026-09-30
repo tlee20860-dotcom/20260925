@@ -3234,6 +3234,10 @@ let isFullscreen = false;
 let activeMapNodes = null;
 let activeMapImageEl = null;
 let lastActiveMapId = '';   // ⭐ v8.9.7：記錄上次地圖 ID
+/* v8.9.8：長按刪除節點 */
+let longPressTimer = null;
+let longPressStart = null;
+let longPressTriggered = false;
 
   /* ── 初始化 ── */
   function init(){
@@ -3285,6 +3289,20 @@ let lastActiveMapId = '';   // ⭐ v8.9.7：記錄上次地圖 ID
       btnBaseMap.addEventListener('click', toggleBaseMap);
     }
 
+/* v8.9.8：同步節點到地圖庫 */
+const btnSyncNodes = document.getElementById('btnMapSyncNodes');
+if(btnSyncNodes && !btnSyncNodes.dataset.bound){
+  btnSyncNodes.dataset.bound = '1';
+  btnSyncNodes.addEventListener('click', syncNodesToMapLibrary);
+}
+
+const btnRelayout = document.getElementById('btnMapRelayout');
+if(btnRelayout) btnRelayout.addEventListener('click', () => {
+  layoutDirty = true;
+  view = { x: 0, y: 0, scale: 1 };
+  applyView();
+  render();
+});
 
     const btnRelayout = document.getElementById('btnMapRelayout');
     if(btnRelayout) btnRelayout.addEventListener('click', () => {
@@ -3579,7 +3597,109 @@ function toggleFullscreen(){
     }
   }, 150);
 }
+/* ══════════════════════════════════════════════════════
+   v8.9.8：長按刪除節點
+   ══════════════════════════════════════════════════════ */
+function showNodeDeleteConfirm(cityId){
+  const city = state.cities.find(c => c.id === cityId);
+  if(!city) return;
 
+  const ok = confirm(
+    `確定刪除「${city.name}」的節點嗎？\n\n` +
+    `這會從地圖庫與沙盤移除座標，但城池資料不會被刪除。`
+  );
+  if(!ok){
+    longPressTriggered = false;
+    longPressStart = null;
+    return;
+  }
+
+  const nodeId = city.code || ('n_' + city.id);
+
+  /* ① 刪 city.mapNode */
+  if(city.mapNode){
+    delete city.mapNode;
+    state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+  }
+
+  /* ② 刪 activeMapNodes（記憶體快取）*/
+  if(activeMapNodes && activeMapNodes[nodeId]){
+    delete activeMapNodes[nodeId];
+  }
+
+  /* ③ 刪 Firebase 地圖庫 */
+  if(state.mapLibrary.activeMapId && window.SLG.removeNodeFromMapLibrary){
+    window.SLG.removeNodeFromMapLibrary(state.mapLibrary.activeMapId, nodeId)
+      .catch(err => console.warn('刪除 Firebase 節點失敗', err));
+  }
+
+  if(window.SLG.tickLamport) window.SLG.tickLamport();
+  if(window.SLG.flushPatches) window.SLG.flushPatches();
+  if(window.SLG.saveState) window.SLG.saveState('important');
+
+  /* ④ 節點消失 → 重算佈局（用 hash 臨時座標）*/
+  layoutDirty = true;
+  nodePositions.clear();
+  render();
+
+  logSystem(`🗑️ 已刪除節點：${city.name}`);
+  alert(`✅ 已刪除「${city.name}」的節點`);
+}
+
+/* ══════════════════════════════════════════════════════
+   v8.9.8：同步所有節點到地圖庫
+   ══════════════════════════════════════════════════════ */
+async function syncNodesToMapLibrary(){
+  const mapId = state.mapLibrary.activeMapId;
+  if(!mapId){ alert('請先選擇一張地圖'); return; }
+  if(!state.auth.signedIn){ alert('請先登入'); return; }
+  if(!window.SLG.isOnline || !window.SLG.isOnline()){ alert('離線中，無法同步'); return; }
+
+  /* 收集所有 city.mapNode */
+  const nodesToSync = {};
+  let count = 0;
+  for(const c of state.cities){
+    if(!c.mapNode || typeof c.mapNode.x !== 'number' || typeof c.mapNode.y !== 'number') continue;
+    const nodeId = c.code || ('n_' + c.id);
+    nodesToSync[nodeId] = {
+      name: c.name,
+      code: c.code || '',
+      x: Math.round(c.mapNode.x),
+      y: Math.round(c.mapNode.y),
+      namedCityId: c.id,
+      source: c.mapNode.method || 'manual',
+    };
+    count++;
+  }
+
+  if(count === 0){ alert('沒有任何節點可同步'); return; }
+
+  const ok = confirm(
+    `確定同步 ${count} 個節點到地圖庫嗎？\n\n` +
+    `這會覆蓋地圖庫中已有的同名節點。\n` +
+    `同步後，節點校準與主地圖的節點數量會一致。`
+  );
+  if(!ok) return;
+
+  const btn = document.getElementById('btnMapSyncNodes');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ 同步中...'; }
+
+  try{
+    if(window.SLG.updateMapNodes){
+      await window.SLG.updateMapNodes(mapId, nodesToSync);
+      logSystem(`🔄 已同步 ${count} 個節點到地圖庫`);
+      alert(`✅ 已同步 ${count} 個節點到地圖庫！\n\n現在節點校準也會看到這些節點。`);
+    } else {
+      alert('❌ 同步功能未載入');
+    }
+  }catch(e){
+    console.error(e);
+    alert('❌ 同步失敗：' + e.message);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '🔄 同步節點'; }
+  }
+}
   function getZoneFilter(){ return currentZoneFilter; }
   function setZoneFilter(zoneId){
     currentZoneFilter = zoneId || 'all';
@@ -3893,6 +4013,18 @@ function onPointerDown(e){
     if(mapMode !== 'none'){
       modePointerStart = { x: e.clientX, y: e.clientY, moved: true };
     }
+
+    /* ⭐ v8.9.8：啟動長按計時器（500ms 後觸發刪除） */
+    longPressStart = { x: e.clientX, y: e.clientY, cityId: city.id };
+    longPressTriggered = false;
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      if(longPressStart && !longPressTriggered && nodeDragging){
+        longPressTriggered = true;
+        showNodeDeleteConfirm(longPressStart.cityId);
+      }
+    }, 500);
+
     e.preventDefault();
     return;
   }
@@ -3912,20 +4044,29 @@ function onPointerDown(e){
 function onPointerMove(e){
   if(e.pointerType === 'touch') return;
 
-  // ⭐ 1. 節點拖曳（最高優先）
+  /* 1. 節點拖曳 */
   if(nodeDragging){
+    /* v8.9.8：移動超過 5px → 取消長按 */
+    if(longPressStart){
+      const dx = Math.abs(e.clientX - longPressStart.x);
+      const dy = Math.abs(e.clientY - longPressStart.y);
+      if(dx > 5 || dy > 5){
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    }
+
     const worldPos = getWorldPos(e);
     const p = nodePositions.get(nodeDragging.cityId);
     if(p){
       p.x = worldPos.x - nodeDragging.offsetX;
       p.y = worldPos.y - nodeDragging.offsetY;
     }
-    // 直接重繪，不重算佈局
     render();
     return;
   }
 
-  // 2. 模式中的 hover 預覽
+  /* 2. 模式中 hover */
   if(mapMode !== 'none' && modePointerStart){
     const dx = Math.abs(e.clientX - modePointerStart.x);
     const dy = Math.abs(e.clientY - modePointerStart.y);
@@ -3940,7 +4081,7 @@ function onPointerMove(e){
     return;
   }
 
-  // 3. 畫布平移
+  /* 3. 畫布平移 */
   if(dragging){
     const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
     containerEl.scrollLeft = dragStart.sx - dx;
@@ -3948,7 +4089,7 @@ function onPointerMove(e){
     return;
   }
 
-  // hover 效果
+  /* hover 效果 */
   const worldPos = getWorldPos(e);
   const city = pickCity(worldPos);
   hoveredCityId = city ? city.id : null;
@@ -3958,8 +4099,23 @@ function onPointerMove(e){
 function onPointerUp(e){
   if(e.pointerType === 'touch') return;
 
-  // ⭐ 1. 結束節點拖曳 → 儲存座標
+  /* 1. 節點拖曳結束 */
   if(nodeDragging){
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+
+    /* 若已觸發長按 → 不儲存座標 */
+    if(longPressTriggered){
+      longPressTriggered = false;
+      longPressStart = null;
+      nodeDragging = null;
+      modePointerStart = null;
+      applyCursor();
+      render();
+      return;
+    }
+
+    /* 正常儲存座標 */
     const city = state.cities.find(c => c.id === nodeDragging.cityId);
     const p = nodePositions.get(nodeDragging.cityId);
     if(city && p){
@@ -3967,7 +4123,6 @@ function onPointerUp(e){
       const newX = Math.round(p.x);
       const newY = Math.round(p.y);
 
-      // ① 寫入 city.mapNode（沙盤）
       city.mapNode = {
         mapId: state.mapLibrary.activeMapId || '',
         nodeId: nodeId,
@@ -3978,7 +4133,6 @@ function onPointerUp(e){
       state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
       if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
 
-      // ② 同步寫入 activeMapNodes（讓 NodeCalibration 也看得到）
       if(activeMapNodes){
         activeMapNodes[nodeId] = {
           name: city.name,
@@ -3990,7 +4144,6 @@ function onPointerUp(e){
         };
       }
 
-      // ③ 同步推送到 Firebase 地圖庫
       if(state.mapLibrary.activeMapId && window.SLG.writeNodeToMapLibrary){
         window.SLG.writeNodeToMapLibrary(state.mapLibrary.activeMapId, nodeId, {
           name: city.name,
@@ -4004,9 +4157,10 @@ function onPointerUp(e){
       if(window.SLG.tickLamport) window.SLG.tickLamport();
       if(window.SLG.flushPatches) window.SLG.flushPatches();
       if(window.SLG.saveState) window.SLG.saveState('important');
-
       logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
     }
+
+    longPressStart = null;
     nodeDragging = null;
     modePointerStart = null;
     applyCursor();
@@ -4014,7 +4168,7 @@ function onPointerUp(e){
     return;
   }
 
-  // 2. 模式中：判定點擊
+  /* 2. 模式點擊 */
   if(mapMode !== 'none' && modePointerStart){
     if(!modePointerStart.moved){
       handleModeTap(e.clientX, e.clientY);
@@ -4023,7 +4177,7 @@ function onPointerUp(e){
     return;
   }
 
-  // 3. 結束畫布平移
+  /* 3. 畫布平移結束 */
   if(dragging){ dragging = false; applyCursor(); }
 }
 
@@ -4998,9 +5152,12 @@ function onPointerUp(e){
   getPendingWarCount: () => pendingWarCount,
   isBaseMapVisible: () => baseMapVisible,
   toggleBaseMap,
-  /* v8.9.6 */
   toggleFullscreen,
   isFullscreen: () => isFullscreen,
+  /* v8.9.8 */
+  syncNodesToMapLibrary,
+  showNodeDeleteConfirm,
+  getActiveMapNodes: () => activeMapNodes,
 };
 })();
 
@@ -6552,36 +6709,81 @@ function renderCityList(){
     });
   });
 
-  /* 綁定刪除按鈕 */
-  el.querySelectorAll('[data-delete-id]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const delId = btn.dataset.deleteId;
-      const isOrphan = btn.dataset.isOrphan === 'true';
-      
-      if(isOrphan){
-        /* 孤兒節點：直接用 nid 刪除 */
-        if(!nodes[delId]) return;
-        if(!confirm(`確定刪除「${nodes[delId].name || '未匹配節點'}」的標記嗎？`)) return;
-        delete nodes[delId];
-        logSystem(`🗑️ 已刪除孤兒節點：${delId}`);
-      } else {
-        /* 正常城池：用 cityId 刪除 */
-        const city = state.cities.find(c => c.id === delId);
-        if(!city) return;
-        const nid = cityNodeId(city);
-        if(!nodes[nid]) return;
-        if(!confirm(`確定刪除「${city.name}」的標記嗎？`)) return;
-        delete nodes[nid];
-        if(fixedPointCityId === delId){
-          fixedPointCityId = '';
-        }
-        logSystem(`🗑️ 已刪除標記：${city.name}`);
+/* 綁定刪除按鈕 */
+el.querySelectorAll('[data-delete-id]').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const delId = btn.dataset.deleteId;
+    const isOrphan = btn.dataset.isOrphan === 'true';
+
+    if(isOrphan){
+      /* 孤兒節點：直接用 nid 刪除 */
+      if(!nodes[delId]) return;
+      if(!confirm(`確定刪除「${nodes[delId].name || '未匹配節點'}」的標記嗎？`)) return;
+      delete nodes[delId];
+
+      /* ⭐ 同步刪 Firebase */
+      if(state.mapLibrary.activeMapId && window.SLG.removeNodeFromMapLibrary){
+        window.SLG.removeNodeFromMapLibrary(state.mapLibrary.activeMapId, delId)
+          .catch(err => console.warn('刪除 Firebase 失敗', err));
       }
-      renderAll();
-      updateProgress();
-    });
+
+      /* ⭐ 同步刪 GameMap 的 activeMapNodes */
+      if(window.SLG.GameMap && window.SLG.GameMap.getActiveMapNodes){
+        const amn = window.SLG.GameMap.getActiveMapNodes();
+        if(amn && amn[delId]) delete amn[delId];
+      }
+
+      logSystem(`🗑️ 已刪除孤兒節點：${delId}`);
+    } else {
+      /* 正常城池：用 cityId 刪除 */
+      const city = state.cities.find(c => c.id === delId);
+      if(!city) return;
+      const nid = cityNodeId(city);
+      if(!nodes[nid]) return;
+      if(!confirm(`確定刪除「${city.name}」的標記嗎？`)) return;
+
+      delete nodes[nid];
+
+      /* ⭐ 同步刪 city.mapNode */
+      if(city.mapNode){
+        delete city.mapNode;
+        state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+        if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+      }
+
+      /* ⭐ 同步刪 Firebase */
+      if(state.mapLibrary.activeMapId && window.SLG.removeNodeFromMapLibrary){
+        window.SLG.removeNodeFromMapLibrary(state.mapLibrary.activeMapId, nid)
+          .catch(err => console.warn('刪除 Firebase 失敗', err));
+      }
+
+      /* ⭐ 同步刪 GameMap 的 activeMapNodes */
+      if(window.SLG.GameMap && window.SLG.GameMap.getActiveMapNodes){
+        const amn = window.SLG.GameMap.getActiveMapNodes();
+        if(amn && amn[nid]) delete amn[nid];
+      }
+
+      if(fixedPointCityId === delId){
+        fixedPointCityId = '';
+      }
+      logSystem(`🗑️ 已刪除標記：${city.name}`);
+    }
+
+    /* ⭐ 統一儲存 + 重繪主地圖 */
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState('important');
+
+    if(window.SLG.GameMap && window.SLG.GameMap.invalidateLayout){
+      window.SLG.GameMap.invalidateLayout();
+    }
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+
+    renderAll();
+    updateProgress();
   });
+});
 }
 
   function renderRouteList(){

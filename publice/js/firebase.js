@@ -1329,6 +1329,40 @@ async function saveMapRoutes(mapId, routes){
   logSystem(`💾 已儲存 ${(routes || []).length} 條路線`);
 }
 
+/**
+ * v8.9.8：從地圖庫刪除單一節點
+ * @param {string} mapId
+ * @param {string} nodeId
+ */
+async function removeNodeFromMapLibrary(mapId, nodeId){
+  if(!fbDb || !mapId || !nodeId) throw new Error('缺少 mapId 或 nodeId');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  if(!isOnline()) throw new Error('離線中，無法刪除');
+
+  const now = Date.now();
+  const updates = {};
+  updates[`mapLibrary/${mapId}/nodes/${nodeId}`] = null;
+  updates[`mapLibrary/${mapId}/updatedAt`] = now;
+  updates[`mapLibrary/${mapId}/updatedBy`] = state.auth.accountUid || '';
+  updates[`mapLibrary/${mapId}/updatedByName`] = state.auth.displayName || '';
+
+  /* 更新索引的 nodeCount */
+  try{
+    const snap = await mapRef(mapId).child('nodes').once('value');
+    const allNodes = snap.val() || {};
+    delete allNodes[nodeId];
+    const count = Object.keys(allNodes).length;
+    updates[`mapLibraryIndex/${mapId}/nodeCount`] = count;
+    updates[`mapLibraryIndex/${mapId}/updatedAt`] = now;
+    updates[`mapLibraryIndex/${mapId}/updatedByName`] = state.auth.displayName || '';
+  }catch(e){
+    console.warn('更新索引失敗', e);
+  }
+
+  await fbDb.ref().update(updates);
+  logSystem(`🗑️ 已從地圖庫刪除節點：${nodeId}`);
+}
+
 async function deleteMapLibraryMap(mapId){
   if(!fbDb || !mapId) throw new Error('缺少 mapId');
   if(!state.auth.signedIn) throw new Error('請先登入');
@@ -1511,6 +1545,7 @@ Object.assign(window.SLG, {
   /* v8.9.5：座標同步工具 */
 syncMapNodesToCities,
 clearStaleMapNodes,
+removeNodeFromMapLibrary,
 });
 
 })();
