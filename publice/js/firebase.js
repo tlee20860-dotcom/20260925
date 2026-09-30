@@ -1167,6 +1167,28 @@ async function updateMapNodes(mapId, nodes, meta){
 }
 
 /**
+ * v8.9.1：儲存地圖路線（獨立節點）
+ * @param {string} mapId
+ * @param {Array} routes - [{ fromName, toName, type, color, source }]
+ */
+async function saveMapRoutes(mapId, routes){
+  if(!fbDb || !mapId) throw new Error('缺少 mapId');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  if(!canEditMapLibrary()) throw new Error('您沒有地圖庫編輯權限');
+  if(!isOnline()) throw new Error('離線中，無法儲存');
+
+  const now = Date.now();
+  const updates = {};
+  updates[`mapLibrary/${mapId}/routes`] = routes || [];
+  updates[`mapLibrary/${mapId}/routesUpdatedAt`] = now;
+  updates[`mapLibraryIndex/${mapId}/routeCount`] = (routes || []).length;
+  updates[`mapLibraryIndex/${mapId}/updatedAt`] = now;
+
+  await fbDb.ref().update(updates);
+  logSystem(`💾 已儲存 ${(routes || []).length} 條路線`);
+}
+
+/**
  * 刪除整張地圖
  * @param {string} mapId
  */
@@ -1348,6 +1370,7 @@ Object.assign(window.SLG, {
   fetchMapLibraryMap,
   saveMapLibraryMap,
   updateMapNodes,
+  saveMapRoutes,              // ← 新增這行
   deleteMapLibraryMap,
   startMapLibraryIndexWatcher,
   stopMapLibraryIndexWatcher,

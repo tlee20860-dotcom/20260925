@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.9.0：地圖庫事件綁定 + 菱形偵測載入檢查 + 版本號更新
+ * v8.9.2：地圖宣戰模式 + 右側懸浮按鈕 + WarQuickPanel 檢查
  * ========================================================================== */
 (function(){
 'use strict';
@@ -181,6 +181,15 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnMapFit'), true, '');
   togglePerm(document.getElementById('btnMapClearHighlight'), true, '');
 
+  /* v8.9.2：宣戰模式按鈕權限 */
+  togglePerm(document.getElementById('btnMapWarMode'), canEditData, '需要編輯資料權限');
+
+  /* v8.9.2：右側懸浮按鈕（僅瀏覽用，不需要權限） */
+  ['btnMapZoomIn','btnMapZoomOut','btnMapZoomFitBtn','btnMapZoomReset',
+   'btnMapPanLeft','btnMapPanRight','btnMapPanUp','btnMapPanDown'].forEach(id => {
+    togglePerm(document.getElementById(id), true, '');
+  });
+
   togglePerm(document.getElementById('btnAddWarLine'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnWarAddManual'), canEditData, '需要編輯資料權限');
   const warAddSrcEl = document.getElementById('warAddSrc');
@@ -201,7 +210,7 @@ function applyPermissions(){
   const chatInputEl = document.getElementById('chatInput');
   if(chatInputEl) chatInputEl.disabled = !signedIn;
 
-  /* v8.9.0：地圖庫按鈕權限 */
+  /* 地圖庫按鈕權限 */
   const canEditMapLib = effectiveCanEditMapLibrary();
   togglePerm(document.getElementById('btnMapUpload'), signedIn && canEditMapLib, '需要地圖庫編輯權限');
   togglePerm(document.getElementById('btnMapCalibrate'), signedIn && canEditMapLib, '需要地圖庫編輯權限');
@@ -895,9 +904,22 @@ function initListPrefs(){
    地圖庫事件綁定
    ============================================================ */
 function bindMapLibraryUI(){
-  /* v8.9.0：確認 circleDetect 已載入 */
+  /* 確認 geminiOcr.js 已載入 */
+  if(typeof window.SLG.detectFullMap !== 'function'){
+    console.warn('[v8.9.2] geminiOcr.js 未載入，AI 辨識功能無法使用');
+  } else {
+    console.log('%c[Gemini OCR] 已就緒（端點：' + (window.SLG.GEMINI_OCR_ENDPOINT || '/api/ocr') + '）',
+                'color:#22ff88;font-size:11px');
+  }
+  /* 舊版 circleDetect.js 檢查（作為備援）*/
   if(typeof window.SLG.detectFromImage !== 'function'){
-    console.warn('[v8.9.0] circleDetect.js 未載入，節點校準將無法自動偵測');
+    console.warn('[v8.9.2] circleDetect.js 未載入（此為選用，不影響 AI 辨識）');
+  }
+  /* v8.9.2：確認 WarQuickPanel 已載入 */
+  if(typeof window.SLG.WarQuickPanel !== 'object'){
+    console.warn('[v8.9.2] WarQuickPanel 未載入，地圖宣戰模式將無法使用');
+  } else {
+    console.log('%c[宣戰模式] WarQuickPanel 已就緒', 'color:#22ff88;font-size:11px');
   }
 
   if(MapLibrary()) MapLibrary().init();
@@ -1026,8 +1048,6 @@ function bindUI(){
 
   bindSyncSettingsUI();
   bindTroopTierUI();
-
-  /* v8.9.0：地圖庫 UI */
   bindMapLibraryUI();
 
   const btnLogout = document.getElementById('btnLogout');
@@ -1945,12 +1965,15 @@ function boot(){
     }
   })();
 
-  /* v8.9.0：啟動訊息 */
-  console.log('%c[沙盤 v8.9.0] 地圖庫 + 菱形偵測 + 智慧命名就緒', 'color:#22ff88;font-weight:bold;font-size:14px');
+  /* v8.9.2：啟動訊息 */
+  console.log('%c[沙盤 v8.9.2] 地圖宣戰模式 + AI 辨識就緒', 'color:#22ff88;font-weight:bold;font-size:14px');
   console.log('%c  · Cloudinary 上傳：' + (typeof window.SLG.uploadMapImageToCloudinary === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · 菱形偵測：' + (typeof window.SLG.detectFromImage === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  console.log('%c  · Gemini AI 辨識：' + (typeof window.SLG.detectFullMap === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  console.log('%c  · AI 端點：' + (window.SLG.GEMINI_OCR_ENDPOINT || '/api/ocr'), 'color:#94a3b8;font-size:12px');
   console.log('%c  · 節點校準：' + (typeof window.SLG.NodeCalibration === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
   console.log('%c  · 模糊匹配：' + (typeof window.SLG.FuzzyMatch === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  console.log('%c  · 宣戰模式：' + (typeof window.SLG.WarQuickPanel === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  console.log('%c  · 舊版圓形偵測：' + (typeof window.SLG.detectFromImage === 'function' ? '✅（備援）' : '❌（未載入）'), 'color:#94a3b8;font-size:12px');
 }
 
 /* ============================================================
