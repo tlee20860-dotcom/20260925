@@ -3787,37 +3787,38 @@ function onTouchStart(e){
     const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
     const city = pickCity(worldPos);
 
-    // ⭐ 2-1. 節點拖曳優先（不論什麼模式）
-    if(city){
-      nodeDragging = {
-        cityId: city.id,
-        offsetX: worldPos.x - nodePositions.get(city.id).x,
-        offsetY: worldPos.y - nodePositions.get(city.id).y,
-        moved: false,
-        startX: t.clientX,
-        startY: t.clientY
-      };
-      if(mapMode !== 'none'){
-        modeTouchStart = { x: t.clientX, y: t.clientY, moved: true };
-      }
+// ⭐ 2-1. 節點拖曳優先（不論什麼模式）
+if(city){
+  nodeDragging = {
+    cityId: city.id,
+    offsetX: worldPos.x - nodePositions.get(city.id).x,
+    offsetY: worldPos.y - nodePositions.get(city.id).y,
+    moved: false,
+    startX: t.clientX,
+    startY: t.clientY
+  };
+  /* ⭐ v8.9.8-hotfix：初始 moved=false，讓 touchend 判斷「點擊」vs「拖曳」 */
+  if(mapMode !== 'none'){
+    modeTouchStart = { x: t.clientX, y: t.clientY, moved: false };
+  }
 
-      /* ⭐ v8.9.8：啟動長按計時器（500ms） */
-      longPressStart = { x: t.clientX, y: t.clientY, cityId: city.id };
-      longPressTriggered = false;
-      clearTimeout(longPressTimer);
-      longPressTimer = setTimeout(() => {
-        if(longPressStart && !longPressTriggered && nodeDragging && !nodeDragging.moved){
-          longPressTriggered = true;
-          const cityId = longPressStart.cityId;
-          nodeDragging = null;
-          modeTouchStart = null;
-          showNodeDeleteConfirm(cityId);
-        }
-      }, 500);
-
-      e.preventDefault();
-      return;
+  /* ⭐ v8.9.8：啟動長按計時器（500ms） */
+  longPressStart = { x: t.clientX, y: t.clientY, cityId: city.id };
+  longPressTriggered = false;
+  clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(() => {
+    if(longPressStart && !longPressTriggered && nodeDragging && !nodeDragging.moved){
+      longPressTriggered = true;
+      const cityId = longPressStart.cityId;
+      nodeDragging = null;
+      modeTouchStart = null;
+      showNodeDeleteConfirm(cityId);
     }
+  }, 500);
+
+  e.preventDefault();
+  return;
+}
 
     // 2-2. 模式中（點空白）：記錄起始位置，等待判定
     if(mapMode !== 'none'){
@@ -3862,29 +3863,30 @@ function onTouchMove(e){
   if(e.touches.length === 1){
     const t = e.touches[0];
 
-    // ⭐ 2-1. 節點拖曳（最高優先）
-    if(nodeDragging){
-      e.preventDefault();
-      const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
-      const p = nodePositions.get(nodeDragging.cityId);
+// ⭐ 2-1. 節點拖曳（最高優先）
+if(nodeDragging){
+  e.preventDefault();
+  const dx = Math.abs(t.clientX - nodeDragging.startX);
+  const dy = Math.abs(t.clientY - nodeDragging.startY);
+  if(dx > 5 || dy > 5){
+    nodeDragging.moved = true;
+    if(modeTouchStart) modeTouchStart.moved = true;
+    /* ⭐ v8.9.8：移動超過 5px → 取消長按 */
+    if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
+    longPressStart = null;
+  }
 
-      // 判斷是否真的移動（超過 5px 才算拖曳）
-      const dx = Math.abs(t.clientX - nodeDragging.startX);
-      const dy = Math.abs(t.clientY - nodeDragging.startY);
-      if(dx > 5 || dy > 5){
-        nodeDragging.moved = true;
-        /* ⭐ v8.9.8：移動超過 5px → 取消長按 */
-        if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
-        longPressStart = null;
-      }
-
-      if(p){
-        p.x = worldPos.x - nodeDragging.offsetX;
-        p.y = worldPos.y - nodeDragging.offsetY;
-      }
-      render();
-      return;
+  if(nodeDragging.moved){
+    const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
+    const p = nodePositions.get(nodeDragging.cityId);
+    if(p){
+      p.x = worldPos.x - nodeDragging.offsetX;
+      p.y = worldPos.y - nodeDragging.offsetY;
     }
+    render();
+  }
+  return;
+}
     
     // 2-2. 模式中：僅記錄是否移動
     if(mapMode !== 'none' && modeTouchStart){
@@ -3920,25 +3922,28 @@ function onTouchEnd(e){
   // 全部手指放開
   if(e.touches.length === 0){
 
-    // ⭐ 1. 結束節點拖曳 → 儲存座標
-    if(nodeDragging){
-      /* ⭐ v8.9.8：若已觸發長按 → 不儲存座標，不繼續拖曳邏輯 */
-      if(longPressTriggered){
-        longPressTriggered = false;
-        longPressStart = null;
-        nodeDragging = null;
-        modeTouchStart = null;
-        touchPanStart = null;
-        applyCursor();
-        render();
-        return;
-      }
+// ⭐ 1. 結束節點拖曳 → 儲存座標
+if(nodeDragging){
+  const wasMoved = nodeDragging.moved;
+  const dragCityId = nodeDragging.cityId;
+  const city = state.cities.find(c => c.id === dragCityId);
+  const p = nodePositions.get(dragCityId);
 
-      const wasMoved = nodeDragging.moved;
-      const city = state.cities.find(c => c.id === nodeDragging.cityId);
-      const p = nodePositions.get(nodeDragging.cityId);
+  /* ⭐ v8.9.8-hotfix：未移動 + 模式中 → 觸發模式點擊 */
+  if(!wasMoved && mapMode !== 'none'){
+    const t = e.changedTouches[0];
+    nodeDragging = null;
+    longPressStart = null;
+    modeTouchStart = null;
+    touchPanStart = null;
+    if(t) handleModeTap(t.clientX, t.clientY);
+    applyCursor();
+    render();
+    return;
+  }
 
-      if(city && p && wasMoved){
+
+  if(city && p && wasMoved){
         const nodeId = city.code || ('n_' + city.id);
         const newX = Math.round(p.x);
         const newY = Math.round(p.y);
@@ -4041,31 +4046,37 @@ function onPointerDown(e){
 
   // ⭐ 節點拖曳優先（不論什麼模式）
   if(city){
-    nodeDragging = {
-      cityId: city.id,
-      offsetX: worldPos.x - nodePositions.get(city.id).x,
-      offsetY: worldPos.y - nodePositions.get(city.id).y
-    };
-    canvas.style.cursor = 'grabbing';
-    // 標記「已移動」避免觸發模式點擊
-    if(mapMode !== 'none'){
-      modePointerStart = { x: e.clientX, y: e.clientY, moved: true };
-    }
-
-    /* ⭐ v8.9.8：啟動長按計時器（500ms 後觸發刪除） */
-    longPressStart = { x: e.clientX, y: e.clientY, cityId: city.id };
-    longPressTriggered = false;
-    clearTimeout(longPressTimer);
-    longPressTimer = setTimeout(() => {
-      if(longPressStart && !longPressTriggered && nodeDragging){
-        longPressTriggered = true;
-        showNodeDeleteConfirm(longPressStart.cityId);
-      }
-    }, 500);
-
-    e.preventDefault();
-    return;
+  nodeDragging = {
+    cityId: city.id,
+    offsetX: worldPos.x - nodePositions.get(city.id).x,
+    offsetY: worldPos.y - nodePositions.get(city.id).y,
+    startClientX: e.clientX,
+    startClientY: e.clientY,
+    moved: false
+  };
+  canvas.style.cursor = 'grabbing';
+  /* ⭐ v8.9.8-hotfix：初始 moved=false，讓 pointerup 判斷「點擊」vs「拖曳」 */
+  if(mapMode !== 'none'){
+    modePointerStart = { x: e.clientX, y: e.clientY, moved: false };
   }
+
+  /* ⭐ v8.9.8：啟動長按計時器（500ms 後觸發刪除） */
+  longPressStart = { x: e.clientX, y: e.clientY, cityId: city.id };
+  longPressTriggered = false;
+  clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(() => {
+    if(longPressStart && !longPressTriggered && nodeDragging && !nodeDragging.moved){
+      longPressTriggered = true;
+      const cityId = longPressStart.cityId;
+      nodeDragging = null;
+      modePointerStart = null;
+      showNodeDeleteConfirm(cityId);
+    }
+  }, 500);
+
+  e.preventDefault();
+  return;
+}
 
   // 模式中（點空白）：記錄起始位置
   if(mapMode !== 'none'){
@@ -4082,18 +4093,19 @@ function onPointerDown(e){
 function onPointerMove(e){
   if(e.pointerType === 'touch') return;
 
-  /* 1. 節點拖曳 */
-  if(nodeDragging){
+/* 1. 節點拖曳 */
+if(nodeDragging){
+  const dx = Math.abs(e.clientX - nodeDragging.startClientX);
+  const dy = Math.abs(e.clientY - nodeDragging.startClientY);
+  if(dx > 5 || dy > 5){
+    nodeDragging.moved = true;
+    if(modePointerStart) modePointerStart.moved = true;
     /* v8.9.8：移動超過 5px → 取消長按 */
-    if(longPressStart){
-      const dx = Math.abs(e.clientX - longPressStart.x);
-      const dy = Math.abs(e.clientY - longPressStart.y);
-      if(dx > 5 || dy > 5){
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-    }
+    if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
+    longPressStart = null;
+  }
 
+  if(nodeDragging.moved){
     const worldPos = getWorldPos(e);
     const p = nodePositions.get(nodeDragging.cityId);
     if(p){
@@ -4101,9 +4113,9 @@ function onPointerMove(e){
       p.y = worldPos.y - nodeDragging.offsetY;
     }
     render();
-    return;
   }
-
+  return;
+}
   /* 2. 模式中 hover */
   if(mapMode !== 'none' && modePointerStart){
     const dx = Math.abs(e.clientX - modePointerStart.x);
@@ -4137,14 +4149,41 @@ function onPointerMove(e){
 function onPointerUp(e){
   if(e.pointerType === 'touch') return;
 
-  /* 1. 節點拖曳結束 */
-  if(nodeDragging){
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
+/* 1. 節點拖曳結束 */
+if(nodeDragging){
+  clearTimeout(longPressTimer);
+  longPressTimer = null;
 
-    /* 若已觸發長按 → 不儲存座標 */
-    if(longPressTriggered){
-      longPressTriggered = false;
+  /* 若已觸發長按 → 不儲存座標 */
+  if(longPressTriggered){
+    longPressTriggered = false;
+    longPressStart = null;
+    nodeDragging = null;
+    modePointerStart = null;
+    applyCursor();
+    render();
+    return;
+  }
+
+  const wasMoved = nodeDragging.moved;
+  const dragCityId = nodeDragging.cityId;
+
+  /* ⭐ v8.9.8-hotfix：未移動 + 模式中 → 觸發模式點擊 */
+  if(!wasMoved && mapMode !== 'none'){
+    nodeDragging = null;
+    longPressStart = null;
+    modePointerStart = null;
+    handleModeTap(e.clientX, e.clientY);
+    applyCursor();
+    render();
+    return;
+  }
+
+  /* 有移動 → 儲存座標 */
+  if(wasMoved){
+    const city = state.cities.find(c => c.id === dragCityId);
+    const p = nodePositions.get(dragCityId);
+    if(!city || !p){
       longPressStart = null;
       nodeDragging = null;
       modePointerStart = null;
@@ -4152,14 +4191,9 @@ function onPointerUp(e){
       render();
       return;
     }
-
-    /* 正常儲存座標 */
-    const city = state.cities.find(c => c.id === nodeDragging.cityId);
-    const p = nodePositions.get(nodeDragging.cityId);
-    if(city && p){
-      const nodeId = city.code || ('n_' + city.id);
-      const newX = Math.round(p.x);
-      const newY = Math.round(p.y);
+    const nodeId = city.code || ('n_' + city.id);
+    const newX = Math.round(p.x);
+    const newY = Math.round(p.y);
 
       city.mapNode = {
         mapId: state.mapLibrary.activeMapId || '',
@@ -4192,19 +4226,19 @@ function onPointerUp(e){
         }).catch(err => console.warn('寫入地圖庫失敗', err));
       }
 
-      if(window.SLG.tickLamport) window.SLG.tickLamport();
-      if(window.SLG.flushPatches) window.SLG.flushPatches();
-      if(window.SLG.saveState) window.SLG.saveState('important');
-      logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
-    }
-
-    longPressStart = null;
-    nodeDragging = null;
-    modePointerStart = null;
-    applyCursor();
-    render();
-    return;
+      if    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState('important');
+    logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
   }
+
+  longPressStart = null;
+  nodeDragging = null;
+  modePointerStart = null;
+  applyCursor();
+  render();
+  return;
+}
 
   /* 2. 模式點擊 */
   if(mapMode !== 'none' && modePointerStart){
