@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.0</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.2</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -34,13 +34,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.0</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.2</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.0</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.2</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -93,7 +93,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.9.0</span>
+      <span class="sidebar-version">v8.9.2</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -926,21 +926,47 @@
                 <option value="all">🌐 全部</option>
               </select>
               <button class="btn btn-ghost btn-sm" id="btnMapEditRoute">✏️ 編輯路線：關</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapWarMode">⚔️ 宣戰模式：關</button>
               <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
               <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
               <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
               <button class="btn btn-ghost btn-sm" id="btnMapExportPDF">📄 匯出 PDF</button>
-              <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點、編輯模式下拖曳城池連線</span>
+              <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點</span>
             </div>
-            <div class="game-map-container" id="gameMapContainer">
-              <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
+
+            <!-- v8.9.2：地圖主容器（含右側懸浮按鈕） -->
+            <div class="game-map-outer" id="gameMapOuter">
+              <div class="game-map-container" id="gameMapContainer">
+                <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
+              </div>
+
+              <!-- 右側垂直按鈕組 -->
+              <div class="map-float-btns" id="mapFloatBtns">
+                <button class="map-float-btn" id="btnMapZoomIn" title="放大">＋</button>
+                <button class="map-float-btn" id="btnMapZoomOut" title="縮小">－</button>
+                <button class="map-float-btn" id="btnMapZoomFitBtn" title="適合視窗">⛶</button>
+                <button class="map-float-btn" id="btnMapZoomReset" title="重置視圖">🔄</button>
+                <div class="map-float-sep"></div>
+                <button class="map-float-btn" id="btnMapPanLeft" title="向左平移">◀</button>
+                <button class="map-float-btn" id="btnMapPanRight" title="向右平移">▶</button>
+                <button class="map-float-btn" id="btnMapPanUp" title="向上平移">▲</button>
+                <button class="map-float-btn" id="btnMapPanDown" title="向下平移">▼</button>
+              </div>
+
+              <!-- 宣戰模式提示 -->
+              <div class="map-war-hint hidden" id="mapWarHint">
+                <span id="mapWarHintText">⚔️ 請點選出兵城</span>
+              </div>
+
+              <!-- 宣戰儲存浮動按鈕（有未儲存變更時顯示） -->
+              <button class="map-war-save-btn hidden" id="mapWarSaveBtn" title="儲存宣戰變更">
+                💾 儲存宣戰 <span class="map-war-save-count" id="mapWarSaveCount">0</span>
+              </button>
             </div>
           </div>
 
           <div id="mapGalleryView" style="display:none;">
-            <div class="map-gallery-grid" id="mapGalleryGrid">
-              <!-- 動態生成地圖卡片 -->
-            </div>
+            <div class="map-gallery-grid" id="mapGalleryGrid"></div>
           </div>
         </div>
 
@@ -1178,7 +1204,7 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.9.0）</div>
+        <div class="card-title">📖 城戰計算規則（v8.9.2）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1200,82 +1226,67 @@
             <b>每 30 秒結算一次對撞</b>，每分鐘抽取一次消耗值。<br>
             <b>消耗抽取</b>：每條路線獨立，在 <code>[最小, 最大]</code> 之間抽取。
           </div>
-          <h2>四、城池輸入</h2>
-          <ul>
-            <li>城池名稱：必填</li>
-            <li>城池編號：選填（如 L98、M28）</li>
-            <li>所屬戰區：可留空</li>
-            <li>所屬盟：預設 NPC</li>
-            <li>等級：1~10</li>
-            <li><b>防守開始時間：由宣戰推算</b></li>
-          </ul>
-          <h2>五、隊數分級</h2>
+          <h2>四、隊數分級</h2>
           <div class="rule-card title">
             <b>城池「總隊數」可由分級人數自動計算。</b><br>
             預設分級：<br>
             ・≤ 17 級：每人 3 隊<br>
             ・18~20 級：每人 4 隊<br>
             ・21~24 級：每人 5 隊<br>
-            ・≥ 25 級：每人 6 隊<br><br>
-            <b>可於 ⚙️ 參數設定自訂門檻與隊數。</b>
+            ・≥ 25 級：每人 6 隊
           </div>
-          <h2>六、行軍模型</h2>
-          <ul>
-            <li>戰敗後行軍回母城，抵達時才開始冷卻。</li>
-            <li>防守方原地留守，不受行軍影響。</li>
-          </ul>
-          <h2>七、城牆與淪陷</h2>
-          <ul>
-            <li>城牆每 30 秒結算一次。</li>
-            <li>城牆歸零 → 城池淪陷。</li>
-          </ul>
-          <h2>八、地圖路線</h2>
-          <ul>
-            <li><b>定義</b>：兩城之間是否有「接觸」，無向圖。</li>
-            <li><b>匯入格式</b>：<code>城池A-城池B</code>（一行一條）。</li>
-            <li><b>節點顯示「城池名 (編號)」</b></li>
-            <li><b>支援匯出 PDF 圖檔</b></li>
-          </ul>
-          <h2>九、地圖庫（v8.8.0）</h2>
-          <ul>
-            <li><b>雲端儲存</b>：底圖存 Cloudinary，座標存 Firebase</li>
-            <li><b>支援多張地圖</b>：可上傳、切換、刪除</li>
-            <li><b>節點校準</b>：手動標記城池位置</li>
-            <li><b>模糊匹配</b>：匯入城池時自動匹配節點</li>
-          </ul>
-          <h2>十、節點校準（v8.9.0）</h2>
+          <h2>五、地圖庫與 AI 節點校準</h2>
           <div class="rule-card title">
-            <b>自動偵測</b>：上傳地圖後，系統自動找出「彩色菱形/圓形」<br>
-            <b>智慧命名</b>：點紅框 → 選城池（按距離排序）<br>
-            <b>手動補點</b>：漏偵測時可手動新增候選<br>
-            <b>篩選</b>：全部 / 待命名 / 已命名 / 手動補點
+            <b>🗺️ 地圖庫</b>：底圖存 Cloudinary，座標存 Firebase<br>
+            <b>🤖 AI 全圖辨識</b>：地圖切 3×3，Gemini 辨識城池 + 路線<br>
+            <b>🎯 手動點擊</b>：點圖上位置 → AI 辨識該區域<br>
+            <b>🔍 縮放平移</b>：滾輪 / 捏合 / 拖曳 / 右側按鈕<br>
+            <b>✅ 自動去重</b>：切片邊界的重複路線自動合併
           </div>
-          <h2>十一、宣戰清單</h2>
+          <h2>六、地圖宣戰模式（v8.9.2）</h2>
+          <div class="rule-card title">
+            <b>🖱️ 點 A → 點 B 建立宣戰</b>：<br>
+            1. 點「⚔️ 宣戰模式」開啟<br>
+            2. 點出兵城（高亮）<br>
+            3. 點目標城（彈出快速面板）<br>
+            4. 選類型（進攻 / 協防）+ 快速 % <br>
+            5. 按「✅ 建立」<br>
+            <br>
+            <b>箭頭顏色</b>：<br>
+            ・🔴 紅色 = 進攻<br>
+            ・🟢 綠色 = 協防<br>
+            <br>
+            <b>儲存</b>：建立後需按「💾 儲存宣戰」才同步到雲端。
+          </div>
+          <h2>七、宣戰清單</h2>
           <ul>
             <li><b>進攻</b>：需指定「開始時間」= 目標城防守開始時間。</li>
             <li><b>協防</b>：需與出兵城同一盟、且路線上必須有接觸。</li>
             <li><b>跨戰區限制</b>：預設只能同戰區宣戰。</li>
           </ul>
-          <h2>十二、Excel 匯入模式</h2>
+          <h2>八、Excel 匯入模式</h2>
           <div class="rule-card title">
             <b>🔄 合併</b>：同名的更新、新的加入、其他保留。<br>
             <b>➕ 新增</b>：同名的跳過、新的加入、其他保留。<br>
-            <b>💥 覆蓋</b>：清空後重建。<br><br>
-            <b>城池表支援分級欄位</b>：<br>
-            <code>人≤17 / 人18-20 / 人21-24 / 人≥25</code>
+            <b>💥 覆蓋</b>：清空後重建。
           </div>
-          <h2>十三、協作模式</h2>
+          <h2>九、協作模式</h2>
           <ul>
-            <li><b>個人雲端沙盤</b>：登入時下載、定時上傳、重要操作立即上傳、保留 20 筆歷史</li>
+            <li><b>個人雲端沙盤</b>：登入時下載、定時上傳、保留 20 筆歷史</li>
             <li><b>房間雲端沙盤</b>：房主/幹部手動上載</li>
           </ul>
-          <h2>十四、帳號與權限</h2>
+          <h2>十、帳號與權限</h2>
           <ul>
-            <li><b>超級管理員</b>：最高權限，可刪除地圖</li>
+            <li><b>超級管理員</b>：最高權限</li>
             <li><b>管理員</b>：可停用帳號、修改 extraPerms</li>
-            <li><b>幹部</b>：可創建房間、執行推演、上載沙盤、編輯地圖庫（需授權）</li>
-            <li><b>成員</b>：本機推演、加入房間、管理自己帳號</li>
+            <li><b>幹部</b>：可創建房間、執行推演、編輯地圖庫（需授權）</li>
+            <li><b>成員</b>：本機推演、加入房間</li>
           </ul>
+          <h2>十一、安全架構</h2>
+          <div class="rule-card warn">
+            <b>Gemini API Key 儲存於 Cloudflare Pages Functions 環境變數</b>，前端完全接觸不到 Key。<br>
+            所有 AI 請求經過 <code>/api/ocr</code> 代理。
+          </div>
         </div>
       </div>
     </section>
@@ -1285,7 +1296,7 @@
 </div>
 
 <!-- ============================================================
-     v8.9.0：地圖庫相關 Modal
+     v8.9.2：地圖庫相關 Modal
      ============================================================ -->
 
 <!-- 上傳地圖 Modal -->
@@ -1322,83 +1333,116 @@
   </div>
 </div>
 
-<!-- 節點校準 Modal（v8.9.0：菱形偵測 + 智慧命名） -->
+<!-- 節點校準 Modal（v8.9.1 保持） -->
 <div class="modal-overlay" id="nodeCalibrationModal">
-  <div class="modal-box modal-lg" style="max-width:1200px;max-height:95vh;">
-    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+  <div class="modal-box modal-lg" style="max-width:1400px;max-height:95vh;">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
       <span>🎯 節點校準：<span id="nc_mapName">—</span></span>
-      <span class="nc-mode-badge" id="nc_modeBadge">準備中...</span>
+      <span class="nc-progress-inline">進度：<b id="nc_doneCount">0</b> / <b id="nc_totalCount">0</b></span>
     </h3>
-    <div class="nc-layout-v2">
-      <div class="nc-sidebar-v2">
-        <div class="nc-scan-panel" id="nc_scanPanel">
-          <div class="nc-scan-title">🔍 自動偵測中...</div>
-          <div class="nc-scan-progress">
-            <div class="nc-scan-progress-bar" id="nc_scanProgressBar"></div>
-          </div>
-          <div class="nc-scan-hint" id="nc_scanHint">正在分析圖片像素...</div>
-        </div>
 
-        <div class="nc-stats-panel" id="nc_statsPanel" style="display:none;">
-          <div class="nc-stat-row">
-            <span class="nc-stat-label">🎯 偵測候選</span>
-            <span class="nc-stat-value" id="nc_statTotal">0</span>
-          </div>
-          <div class="nc-stat-row">
-            <span class="nc-stat-label">✅ 已命名</span>
-            <span class="nc-stat-value nc-stat-ok" id="nc_statNamed">0</span>
-          </div>
-          <div class="nc-stat-row">
-            <span class="nc-stat-label">🔴 待命名</span>
-            <span class="nc-stat-value nc-stat-warn" id="nc_statPending">0</span>
-          </div>
-          <div class="nc-stat-row">
-            <span class="nc-stat-label">➕ 手動補點</span>
-            <span class="nc-stat-value nc-stat-manual" id="nc_statManual">0</span>
-          </div>
-        </div>
+    <div class="nc-toolbar-v3">
+      <button class="btn btn-ghost btn-sm" id="nc_btnZoomIn" title="放大">🔍＋</button>
+      <button class="btn btn-ghost btn-sm" id="nc_btnZoomOut" title="縮小">🔍－</button>
+      <button class="btn btn-ghost btn-sm" id="nc_btnZoomReset" title="重置縮放">🔄 重置</button>
+      <button class="btn btn-ghost btn-sm" id="nc_btnZoomFit" title="適合視窗">⛶ 適合</button>
+      <span class="nc-zoom-display" id="nc_zoomLevel">100%</span>
+      <span class="nc-toolbar-sep">│</span>
+      <button class="btn btn-primary btn-sm" id="nc_btnAiScan" title="AI 全圖辨識">🤖 AI 辨識全圖</button>
+      <button class="btn btn-warning btn-sm" id="nc_btnManualAdd" title="手動補點模式">➕ 手動補點</button>
+      <button class="btn btn-ghost btn-sm" id="nc_btnClearAll" title="清空所有標記">🗑️ 清空</button>
+    </div>
 
-        <div class="nc-filter-bar" id="nc_filterBar" style="display:none;">
-          <button class="nc-filter-btn active" data-nc-filter="all">🌐 全部</button>
-          <button class="nc-filter-btn" data-nc-filter="pending">🔴 待命名</button>
-          <button class="nc-filter-btn" data-nc-filter="named">✅ 已命名</button>
-          <button class="nc-filter-btn" data-nc-filter="manual">➕ 手動補點</button>
+    <div class="nc-layout-v3">
+      <div class="nc-sidebar-v3">
+        <div class="nc-tabs-v3">
+          <button class="nc-tab-v3 active" data-nc-tab="cities">🏰 城池 <span class="nc-tab-count" id="nc_cityCount">0</span></button>
+          <button class="nc-tab-v3" data-nc-tab="routes">🛣️ 路線 <span class="nc-tab-count" id="nc_routeCount">0</span></button>
         </div>
-
-        <div class="nc-candidate-list" id="nc_candidateList" style="display:none;">
-          <!-- 動態生成 -->
-        </div>
-
-        <div class="nc-actions-v2">
-          <button class="btn btn-ghost btn-sm" id="nc_btnRescan" title="重新掃描">🔄 重掃</button>
-          <button class="btn btn-warning btn-sm" id="nc_btnManualAdd" title="手動新增候選">➕ 補點</button>
+        <div class="nc-list-v3" id="nc_cityList"></div>
+        <div class="nc-list-v3" id="nc_routeList" style="display:none;"></div>
+        <div class="nc-actions-v3">
           <button class="btn btn-ghost btn-sm" id="nc_cancel">取消</button>
           <button class="btn btn-primary btn-sm" id="nc_save">💾 儲存</button>
         </div>
       </div>
 
-      <div class="nc-canvas-wrap-v2" id="nc_canvasWrap">
+      <div class="nc-canvas-wrap-v3" id="nc_canvasWrap">
         <canvas id="nc_canvas"></canvas>
-        <div class="nc-canvas-hint-v2" id="nc_canvasHint">
-          請點選紅框進行命名
+        <div class="nc-canvas-hint-v3" id="nc_canvasHint">
+          🖱️ 滾輪縮放、拖曳平移
         </div>
-        <div class="nc-naming-popup hidden" id="nc_namingPopup">
-          <div class="nc-naming-header">
-            <span id="nc_namingTitle">選擇城池</span>
-            <button class="nc-naming-close" id="nc_namingClose">✕</button>
+
+        <div class="nc-ai-progress" id="nc_aiProgress" style="display:none;">
+          <div class="nc-ai-progress-inner">
+            <div class="nc-ai-progress-icon">🤖</div>
+            <div class="nc-ai-progress-title">AI 辨識中...</div>
+            <div class="nc-ai-progress-bar"><div class="nc-ai-progress-fill" id="nc_aiProgressFill"></div></div>
+            <div class="nc-ai-progress-text" id="nc_aiProgressText">準備中</div>
           </div>
-          <div class="nc-naming-body">
-            <input type="text" id="nc_namingSearch" placeholder="🔍 搜尋城池名稱 / 編號..." maxlength="20">
-            <div class="nc-naming-list" id="nc_namingList">
-              <!-- 動態生成城池選項 -->
-            </div>
+        </div>
+
+        <div class="nc-click-popup hidden" id="nc_clickPopup">
+          <div class="nc-click-popup-header">
+            <span>🤖 AI 辨識結果</span>
+            <button class="nc-click-popup-close" id="nc_clickPopupClose">✕</button>
           </div>
-          <div class="nc-naming-footer">
-            <button class="btn btn-ghost btn-sm" id="nc_namingSkip">跳過</button>
-            <button class="btn btn-danger btn-sm" id="nc_namingDelete">🗑️ 刪除此候選</button>
+          <div class="nc-click-popup-body" id="nc_clickPopupBody">
+            <div class="text-dim">辨識中...</div>
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- v8.9.2：宣戰快速面板 -->
+<div class="modal-overlay" id="warQuickModal">
+  <div class="modal-box modal-lg" style="max-width:420px;">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+      <span>⚔️ 建立宣戰</span>
+      <button class="nc-naming-close" id="warQuickClose" style="background:transparent;border:none;color:var(--text-dim);font-size:16px;cursor:pointer;">✕</button>
+    </h3>
+    <div class="modal-scroll">
+      <div class="war-quick-route">
+        <div class="war-quick-city">
+          <span class="war-quick-label">🏰 出兵城</span>
+          <span class="war-quick-name" id="warQuickFromName">—</span>
+        </div>
+        <div class="war-quick-arrow">→</div>
+        <div class="war-quick-city">
+          <span class="war-quick-label">🎯 目標城</span>
+          <span class="war-quick-name" id="warQuickToName">—</span>
+        </div>
+      </div>
+
+      <div class="section-label">類型</div>
+      <div class="war-quick-type-row">
+        <button class="war-quick-type-btn active" data-war-type="attack">⚔️ 進攻</button>
+        <button class="war-quick-type-btn" data-war-type="assist">🛡️ 協防</button>
+      </div>
+
+      <div class="section-label">快速選項（戰前% / 復活%）</div>
+      <div class="war-quick-pct-row">
+        <button class="war-quick-pct-btn" data-pre="50" data-post="50">50 / 50</button>
+        <button class="war-quick-pct-btn" data-pre="33" data-post="67">33 / 67</button>
+        <button class="war-quick-pct-btn" data-pre="17" data-post="83">17 / 83</button>
+        <button class="war-quick-pct-btn" data-pre="84" data-post="100">84 / 100</button>
+      </div>
+
+      <div class="war-quick-field" id="warQuickTimeField">
+        <label>開始時間</label>
+        <input type="time" id="warQuickStartTime" value="19:00">
+      </div>
+
+      <div class="text-dim mt-8" style="font-size:10px;line-height:1.5;">
+        ＊建立後需按地圖上的「💾 儲存宣戰」才會同步到雲端。
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="warQuickCancel">取消</button>
+      <button class="btn btn-warning" id="warQuickDetail">⚙️ 詳細編輯</button>
+      <button class="btn btn-primary" id="warQuickConfirm">✅ 建立</button>
     </div>
   </div>
 </div>
@@ -1411,9 +1455,7 @@
       <div class="text-dim" style="margin-bottom:10px;">
         系統找不到完全符合的節點，請選擇要匹配的目標：
       </div>
-      <div class="fm-candidates" id="fm_candidates">
-        <!-- 動態生成 -->
-      </div>
+      <div class="fm-candidates" id="fm_candidates"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="fm_skipAll">全部跳過</button>
@@ -1422,7 +1464,7 @@
   </div>
 </div>
 
-<!-- 其他 Modal -->
+<!-- 其他 Modal（保留原有） -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box">
     <h3 id="modalTitle">⚠️ 確認操作</h3>
@@ -1657,12 +1699,10 @@
   <div class="modal-box modal-lg">
     <h3 id="cityModalTitle">🏰 新增城池</h3>
     <div class="modal-scroll">
-
       <div class="form-row">
         <div><label>所屬戰區（可留空）</label><select id="cm_zone"></select></div>
         <div><label>城池名稱 <span style="color:var(--neon-red);">*</span></label><input type="text" id="cm_name" placeholder="必填" maxlength="20"></div>
       </div>
-
       <div class="form-row">
         <div><label>所屬盟</label><select id="cm_alliance"></select></div>
         <div><label>所屬陣營</label>
@@ -1676,7 +1716,6 @@
         </div>
         <div><label>等級（1-10）</label><input type="number" id="cm_level" value="1" min="1" max="10" step="1"></div>
       </div>
-
       <div class="section-label">👥 人數分級（自動計算隊數）</div>
       <div class="city-tier-panel">
         <div class="city-tier-row">
@@ -1704,7 +1743,6 @@
           <span>總隊數：<b id="cm_tierTotalTeams">0</b> 隊</span>
         </div>
       </div>
-
       <div class="section-label">⚔️ 兵力數據（可留空）</div>
       <div class="form-row">
         <div><label>總戰力</label>
@@ -1715,13 +1753,11 @@
         </div>
         <div><label>平均戰力（自動）</label><input type="text" id="cm_avgPower" readonly value="—"></div>
       </div>
-
       <div class="section-label">🏰 城池屬性</div>
       <div class="form-row">
         <div><label>冷卻復活（分鐘）</label><input type="number" id="cm_cooldownMin" value="5" min="0" step="0.5"></div>
         <div><label>城牆耐久（分鐘）</label><input type="number" id="cm_wallMin" value="30" min="0" step="0.5"></div>
       </div>
-
       <div class="form-row">
         <div style="display:flex;align-items:flex-end;padding-bottom:2px;">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;padding:8px 0;">
@@ -1730,10 +1766,8 @@
           </label>
         </div>
       </div>
-
       <div class="text-dim mt-8">
-        ＊「防守開始時間」由宣戰指示推算（取最早開始時間）。<br>
-        ＊路線設定請至「🛣️ 路線」與「⚔️ 宣戰」子 Tab。
+        ＊「防守開始時間」由宣戰指示推算（取最早開始時間）。
       </div>
     </div>
     <div class="modal-actions">
@@ -1784,6 +1818,7 @@
   </div>
 </div>
 
+<script src="js/geminiOcr.js"></script>
 <script src="js/circleDetect.js"></script>
 <script src="js/simulation.js"></script>
 <script src="js/core.js"></script>
