@@ -4643,3 +4643,175 @@ tr.tier-edit-row td{
     padding: 6px 12px;
   }
 }
+/* ============================================================
+   v8.9.6：地圖全螢幕模式
+   ============================================================ */
+
+/* 全螢幕地圖容器 */
+.game-map-outer.fullscreen-mode{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: #0a0e17;
+  border-radius: 0;
+  border: none;
+}
+
+/* 全螢幕模式下，地圖容器也滿版 */
+.game-map-outer.fullscreen-mode .game-map-container{
+  width: 100vw;
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+}
+
+/* 全螢幕模式：隱藏其他 UI */
+body.map-fullscreen .app-layout > .sidebar,
+body.map-fullscreen .app-layout > .main-content > .mobile-header,
+body.map-fullscreen .app-layout > .main-content > .mode-bar,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-library-toolbar,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-toolbar,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-view-tabs,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .card-title{
+  display: none !important;
+}
+
+/* 全螢幕模式：容器不限制寬度 */
+body.map-fullscreen .app-layout > .main-content > .main-container{
+  padding: 0;
+  max-width: none;
+}
+
+/* 全螢幕模式：卡片去邊框 */
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card{
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+
+/* 全螢幕模式：隱藏其他 Tab 內容 */
+body.map-fullscreen #tab-map .card > .map-view-tabs,
+body.map-fullscreen #tab-map .map-library-toolbar,
+body.map-fullscreen #tab-map .map-toolbar{
+  display: none !important;
+}
+
+/* ============================================================
+   全螢幕退出按鈕
+   ============================================================ */
+.map-fullscreen-exit{
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 10001;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  border: 2px solid #fff;
+  border-radius: 20px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 4px 16px rgba(255, 68, 102, 0.5);
+  display: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.15s;
+  letter-spacing: 0.5px;
+}
+.map-fullscreen-exit:hover{
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(255, 68, 102, 0.7);
+}
+.map-fullscreen-exit:active{
+  transform: scale(0.95);
+}
+
+/* 全螢幕模式啟動時，顯示退出按鈕 */
+body.map-fullscreen .map-fullscreen-exit{
+  display: flex;
+}
+
+/* 全螢幕模式下，右側浮動按鈕置中 */
+body.map-fullscreen .map-float-btns{
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+}
+
+/* 全螢幕模式下，模式提示條置頂 */
+body.map-fullscreen .map-mode-hint{
+  top: 14px;
+}
+
+/* ============================================================
+   方案 C：手機版地圖高度改善
+   ============================================================ */
+
+/* 平板（≤1024px） */
+@media (max-width: 1024px){
+  .game-map-outer{
+    height: calc(100vh - 320px);
+    min-height: 360px;
+  }
+}
+
+/* 手機（≤768px） */
+@media (max-width: 768px){
+  .game-map-outer{
+    height: calc(100vh - 260px);
+    min-height: 340px;
+  }
+  .map-fullscreen-exit{
+    top: 10px;
+    right: 10px;
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+}
+
+/* 小手機（≤480px） */
+@media (max-width: 480px){
+  .game-map-outer{
+    height: calc(100vh - 240px);
+    min-height: 300px;
+  }
+  .map-fullscreen-exit{
+    top: 8px;
+    right: 8px;
+    padding: 7px 12px;
+    font-size: 11px;
+  }
+}
+
+/* 全螢幕模式下，不受媒體查詢高度限制 */
+body.map-fullscreen .game-map-outer,
+body.map-fullscreen .game-map-outer.fullscreen-mode{
+  height: 100vh !important;
+  min-height: 100vh !important;
+}
+
+/* ============================================================
+   全螢幕按鈕 active 狀態
+   ============================================================ */
+#btnMapFullscreen.active{
+  background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
+  color: var(--neon-blue);
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 12px rgba(68, 170, 255, 0.3);
+}
+
+/* ============================================================
+   全螢幕模式下，避免 body 滾動
+   ============================================================ */
+body.map-fullscreen{
+  overflow: hidden !important;
+}

@@ -934,15 +934,21 @@
               <button class="btn btn-ghost btn-sm" id="btnMapBaseMap">🖼️ 底圖：開</button>
               <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
               <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
+<button class="btn btn-ghost btn-sm" id="btnMapFullscreen">🖥️ 全螢幕</button>
               <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
               <button class="btn btn-ghost btn-sm" id="btnMapExportPDF">📄 匯出 PDF</button>
               <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點</span>
             </div>
 
-            <div class="game-map-outer" id="gameMapOuter">
-              <div class="game-map-container" id="gameMapContainer">
-                <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
-              </div>
+            <<div class="game-map-outer" id="gameMapOuter">
+  <div class="game-map-container" id="gameMapContainer">
+    <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
+  </div>
+
+  <!-- v8.9.6：退出全螢幕按鈕 -->
+  <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
+    ✖️ 退出全螢幕
+  </button>
 
               <div class="map-float-btns" id="mapFloatBtns">
                 <button class="map-float-btn" id="btnMapZoomIn" title="放大">＋</button>
