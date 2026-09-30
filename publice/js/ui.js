@@ -3995,58 +3995,175 @@ const GameMap = (() => {
   }
 
   /* ── 節點佈局 ── */
-  function resolveCityMapNode(city, mapNodes){
-    if(!city || !mapNodes) return null;
-    if(city.mapNode && city.mapNode.nodeId && mapNodes[city.mapNode.nodeId]){
-      return mapNodes[city.mapNode.nodeId];
-    }
-    if(city.code){
-      for(const nid in mapNodes){
-        if(mapNodes[nid].code === city.code) return mapNodes[nid];
+ function resolveCityMapNode(city, mapNodes){
+  if(!city || !mapNodes) return null;
+
+  const currentMapId = state.mapLibrary.activeMapId;
+
+  /* ⭐ v8.9.5：優先 ① city.mapNode.nodeId（含 mapId 檢查） */
+  if(city.mapNode && city.mapNode.nodeId){
+    /* 若 mapNode 有 mapId，必須與當前地圖一致才使用 */
+    if(!city.mapNode.mapId || city.mapNode.mapId === currentMapId){
+      if(mapNodes[city.mapNode.nodeId]){
+        return mapNodes[city.mapNode.nodeId];
       }
     }
-    if(city.name){
-      for(const nid in mapNodes){
-        if(mapNodes[nid].name === city.name) return mapNodes[nid];
-      }
-    }
-    return null;
   }
 
-  function computeLayout(){
-    const cities = state.cities;
-    if(cities.length === 0){ nodePositions.clear(); return; }
-
-    /* v8.9.4：優先順序：city.mapNode.x/y > 地圖庫節點 > 力導向 */
-    if(activeMapNodes && Object.keys(activeMapNodes).length > 0){
-      nodePositions.clear();
-      const unplaced = [];
-      for(const c of cities){
-        /* ① 優先：city.mapNode 直接指定座標 */
-        if(c.mapNode && typeof c.mapNode.x === 'number' && typeof c.mapNode.y === 'number'){
-          nodePositions.set(c.id, { x: c.mapNode.x, y: c.mapNode.y });
-          continue;
-        }
-        /* ② 次之：從地圖庫節點解析 */
-        const n = resolveCityMapNode(c, activeMapNodes);
-        if(n){
-          nodePositions.set(c.id, { x: Number(n.x) || 0, y: Number(n.y) || 0 });
-        } else {
-          unplaced.push(c);
-        }
+  /* ② code 精確匹配 */
+  if(city.code){
+    for(const nid in mapNodes){
+      if(mapNodes[nid].code === city.code){
+        return mapNodes[nid];
       }
-      /* ③ 未匹配的城池：力導向自動佈局（臨時座標，不寫回） */
-      if(unplaced.length > 0){
-        const W = CANVAS_W, H = CANVAS_H;
-        unplaced.forEach((c, i) => {
-          const ang = (i / unplaced.length) * Math.PI * 2 - Math.PI / 2;
-          const r = 250 + (i % 3) * 100;
-          nodePositions.set(c.id, { x: W/2 + Math.cos(ang) * r, y: H/2 + Math.sin(ang) * r });
-        });
-      }
-      layoutDirty = false;
-      return;
     }
+  }
+
+  /* ③ name 精確匹配 */
+  if(city.name){
+    for(const nid in mapNodes){
+      if(mapNodes[nid].name === city.name){
+        return mapNodes[nid];
+      }
+    }
+  }
+
+  /* ④ name 正規化匹配（去後綴） */
+  if(city.name && window.SLG.normalizeCityName){
+    const nCity = window.SLG.normalizeCityName(city.name);
+    for(const nid in mapNodes){
+      const nNode = window.SLG.normalizeCityName(mapNodes[nid].name || '');
+      if(nNode && nNode === nCity){
+        return mapNodes[nid];
+      }
+    }
+  }
+
+  return null;
+}
+
+  function computeLayout(){
+  const cities = state.cities;
+  if(cities.length === 0){ nodePositions.clear(); return; }
+
+  const currentMapId = state.mapLibrary.activeMapId;
+
+  /* v8.9.4：優先順序：city.mapNode.x/y > 地圖庫節點 > 力導向 */
+  if(activeMapNodes && Object.keys(activeMapNodes).length > 0){
+    nodePositions.clear();
+    const unplaced = [];
+    for(const c of cities){
+      /* ⭐ v8.9.5：① 優先：city.mapNode 直接指定座標（含 mapId 檢查） */
+      const mapNodeUsable = c.mapNode && 
+                            typeof c.mapNode.x === 'number' && 
+                            typeof c.mapNode.y === 'number' &&
+                            (!c.mapNode.mapId || c.mapNode.mapId === currentMapId);
+      if(mapNodeUsable){
+        nodePositions.set(c.id, { x: c.mapNode.x, y: c.mapNode.y });
+        continue;
+      }
+      /* ② 次之：從地圖庫節點解析 */
+      const n = resolveCityMapNode(c, activeMapNodes);
+      if(n){
+        nodePositions.set(c.id, { x: Number(n.x) || 0, y: Number(n.y) || 0 });
+      } else {
+        unplaced.push(c);
+      }
+    }
+
+    /* ③ 未匹配的城池：力導向自動佈局（臨時座標，不寫回） */
+    if(unplaced.length > 0){
+      const W = CANVAS_W, H = CANVAS_H;
+      /* v8.9.5：使用確定性座標（避免每次 render 位置飄移） */
+      unplaced.forEach((c, i) => {
+        /* 用 hash(cityId) 決定角度，確保同一城池每次位置相同 */
+        const hash = (str) => {
+          let h = 0;
+          for(let k = 0; k < str.length; k++){
+            h = ((h << 5) - h) + str.charCodeAt(k);
+            h |= 0;
+          }
+          return Math.abs(h);
+        };
+        const h = hash(c.id);
+        const ang = (h % 3600) / 3600 * Math.PI * 2;
+        const r = 400 + (h % 300);
+        nodePositions.set(c.id, { 
+          x: W/2 + Math.cos(ang) * r, 
+          y: H/2 + Math.sin(ang) * r 
+        });
+      });
+      if(unplaced.length > 0){
+        console.warn(`[GameMap] ${unplaced.length} 座城池未匹配地圖節點，使用臨時座標：`, unplaced.map(c => c.name));
+      }
+    }
+    layoutDirty = false;
+    return;
+  }
+
+  /* 無地圖庫：完全力導向 */
+  if(!layoutDirty && nodePositions.size === cities.length) return;
+  nodePositions.clear();
+  const W = CANVAS_W, H = CANVAS_H, PAD = 200;
+  const N = cities.length;
+  const area = (W - PAD * 2) * (H - PAD * 2);
+  const k = Math.sqrt(area / Math.max(N, 1)) * 0.55;
+  cities.forEach((c, i) => {
+    const ang = (i / N) * Math.PI * 2 - Math.PI / 2;
+    const r = 200 + (i % 4) * 80;
+    nodePositions.set(c.id, { x: W/2 + Math.cos(ang) * r, y: H/2 + Math.sin(ang) * r });
+  });
+  const edges = [];
+  for(const r of (state.routes || [])){
+    if(nodePositions.has(r.cityAId) && nodePositions.has(r.cityBId)) edges.push([r.cityAId, r.cityBId]);
+  }
+  const iterations = N > 60 ? 150 : 300;
+  let temp = W / 10;
+  const cool = temp / (iterations + 1);
+  for(let iter = 0; iter < iterations; iter++){
+    const disp = new Map();
+    cities.forEach(c => disp.set(c.id, { x: 0, y: 0 }));
+    for(let i = 0; i < N; i++){
+      for(let j = i + 1; j < N; j++){
+        const a = nodePositions.get(cities[i].id);
+        const b = nodePositions.get(cities[j].id);
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d = Math.hypot(dx, dy);
+        if(d < 0.01){ dx = (Math.random()-0.5)*10; dy = (Math.random()-0.5)*10; d = Math.hypot(dx, dy) || 0.01; }
+        const force = (k * k) / d;
+        const fx = (dx / d) * force, fy = (dy / d) * force;
+        const da = disp.get(cities[i].id), db = disp.get(cities[j].id);
+        da.x += fx; da.y += fy;
+        db.x -= fx; db.y -= fy;
+      }
+    }
+    for(const [aId, bId] of edges){
+      const pa = nodePositions.get(aId), pb = nodePositions.get(bId);
+      let dx = pa.x - pb.x, dy = pa.y - pb.y;
+      let d = Math.hypot(dx, dy);
+      if(d < 0.01) d = 0.01;
+      const force = (d * d) / k * 1.2;
+      const fx = (dx / d) * force, fy = (dy / d) * force;
+      const da = disp.get(aId), db = disp.get(bId);
+      da.x -= fx; da.y -= fy;
+      db.x += fx; db.y += fy;
+    }
+    cities.forEach(c => {
+      const d = disp.get(c.id);
+      const p = nodePositions.get(c.id);
+      const len = Math.hypot(d.x, d.y);
+      if(len > 0){
+        const limit = Math.min(len, temp);
+        p.x += (d.x / len) * limit;
+        p.y += (d.y / len) * limit;
+      }
+      p.x = Math.max(PAD, Math.min(W - PAD, p.x));
+      p.y = Math.max(PAD, Math.min(H - PAD, p.y));
+    });
+    temp = Math.max(temp - cool, 0.5);
+  }
+  layoutDirty = false;
+}
 
     /* 無地圖庫：完全力導向 */
     if(!layoutDirty && nodePositions.size === cities.length) return;
@@ -6275,41 +6392,85 @@ const NodeCalibration = (() => {
   }
 
   async function doSave(){
-    if(!mapId) return;
-    /* v8.9.4：所有人皆可編輯 */
-    if(!state.auth.signedIn){ alert('請先登入'); return; }
+  if(!mapId) return;
+  /* v8.9.4：所有人皆可編輯 */
+  if(!state.auth.signedIn){ alert('請先登入'); return; }
 
-    const nodeCount = Object.keys(nodes).length;
-    const routeCount = routes.length;
+  const nodeCount = Object.keys(nodes).length;
+  const routeCount = routes.length;
 
-    if(nodeCount === 0 && routeCount === 0){
-      if(!confirm('目前沒有任何標記，確定要儲存（清空）嗎？')) return;
-    }
-
-    const msg = `確定要儲存嗎？\n\n` +
-      `城池節點：${nodeCount} 個\n` +
-      `路線：${routeCount} 條\n\n` +
-      `（會覆蓋此圖原有的節點與路線資料）`;
-
-    if(!confirm(msg)) return;
-
-    try{
-      await window.SLG.updateMapNodes(mapId, nodes);
-      if(routeCount > 0 && window.SLG.saveMapRoutes){
-        try{
-          await window.SLG.saveMapRoutes(mapId, routes);
-        }catch(e){
-          console.warn('路線儲存失敗（不影響節點）', e);
-        }
-      }
-      logSystem(`💾 已儲存 ${nodeCount} 節點 / ${routeCount} 路線`);
-      alert(`✅ 已儲存 ${nodeCount} 個節點${routeCount > 0 ? ` / ${routeCount} 條路線` : ''}`);
-      close();
-    }catch(e){
-      console.error('儲存失敗', e);
-      alert('❌ 儲存失敗：' + e.message);
-    }
+  if(nodeCount === 0 && routeCount === 0){
+    if(!confirm('目前沒有任何標記，確定要儲存（清空）嗎？')) return;
   }
+
+  const msg = `確定要儲存嗎？\n\n` +
+    `城池節點：${nodeCount} 個\n` +
+    `路線：${routeCount} 條\n\n` +
+    `（會覆蓋此圖原有的節點與路線資料）`;
+
+  if(!confirm(msg)) return;
+
+  try{
+    await window.SLG.updateMapNodes(mapId, nodes);
+    if(routeCount > 0 && window.SLG.saveMapRoutes){
+      try{
+        await window.SLG.saveMapRoutes(mapId, routes);
+      }catch(e){
+        console.warn('路線儲存失敗（不影響節點）', e);
+      }
+    }
+
+    /* ⭐ v8.9.5：同步寫入 city.mapNode（含 mapId 綁定） */
+    let syncCount = 0;
+    let syncFailed = 0;
+    for(const nid in nodes){
+      const node = nodes[nid];
+      if(!node) continue;
+
+      /* 用多種方式找對應城池：namedCityId > code > name */
+      let city = null;
+      if(node.namedCityId){
+        city = state.cities.find(c => c.id === node.namedCityId);
+      }
+      if(!city && node.code){
+        city = state.cities.find(c => c.code && c.code === node.code);
+      }
+      if(!city && node.name){
+        city = state.cities.find(c => c.name === node.name);
+      }
+      if(!city){ syncFailed++; continue; }
+
+      city.mapNode = {
+        mapId: mapId,                     /* ⭐ v8.9.5：綁定地圖 */
+        nodeId: nid,
+        x: node.x,
+        y: node.y,
+        method: node.source || 'manual',
+      };
+      state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+      window.SLG.markDirty('city', city.id);
+      syncCount++;
+    }
+
+    if(syncCount > 0){
+      window.SLG.tickLamport();
+      window.SLG.flushPatches();
+      window.SLG.saveState('important');
+      if(window.SLG.GameMap){
+        if(window.SLG.GameMap.invalidateLayout) window.SLG.GameMap.invalidateLayout();
+        window.SLG.GameMap.render();
+      }
+      logSystem(`📍 已同步 ${syncCount} 個節點座標到城池${syncFailed > 0 ? `（${syncFailed} 個找不到對應城池）` : ''}`);
+    }
+
+    logSystem(`💾 已儲存 ${nodeCount} 節點 / ${routeCount} 路線${syncCount > 0 ? ` / 同步 ${syncCount} 城` : ''}`);
+    alert(`✅ 已儲存 ${nodeCount} 個節點${routeCount > 0 ? ` / ${routeCount} 條路線` : ''}${syncCount > 0 ? `\n📍 已同步 ${syncCount} 個城池座標` : ''}`);
+    close();
+  }catch(e){
+    console.error('儲存失敗', e);
+    alert('❌ 儲存失敗：' + e.message);
+  }
+}
 
   return {
     open,
@@ -7185,15 +7346,16 @@ async function saveCityFromModal(){
   if(existingCity && existingCity.code) entity.code = existingCity.code;
   if(existingCity && existingCity.mapNode) entity.mapNode = existingCity.mapNode;
 
-  /* v8.9.4：新增城池時寫入座標 */
-  if(!existingCity && pendingMapNode){
-    entity.mapNode = {
-      x: pendingMapNode.x,
-      y: pendingMapNode.y,
-      method: 'manual',
-      nodeId: entity.code ? entity.code : ('n_' + id),
-    };
-  }
+/* v8.9.4 + v8.9.5：新增城池時寫入座標（含 mapId 綁定） */
+if(!existingCity && pendingMapNode){
+  entity.mapNode = {
+    mapId: state.mapLibrary.activeMapId || '',   /* ⭐ v8.9.5 */
+    x: pendingMapNode.x,
+    y: pendingMapNode.y,
+    method: 'manual',
+    nodeId: entity.code ? entity.code : ('n_' + id),
+  };
+}
 
   window.SLG.upsertEntity('city', entity);
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);

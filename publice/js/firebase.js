@@ -1186,6 +1186,90 @@ async function updateMapNodes(mapId, nodes, meta){
 }
 
 /**
+ * v8.9.5：從地圖庫同步節點座標到城池的 mapNode
+ * 用於手動修復、或全域校準後批次同步
+ * @param {string} mapId
+ * @returns {Promise<{synced:number, failed:number}>}
+ */
+async function syncMapNodesToCities(mapId){
+  if(!fbDb) throw new Error('Firebase 未就緒');
+  if(!state.auth.signedIn) throw new Error('請先登入');
+  if(!mapId) throw new Error('缺少 mapId');
+  if(!isOnline()) throw new Error('離線中，無法同步');
+
+  const mapData = state.mapLibrary.loaded[mapId];
+  if(!mapData || !mapData.nodes){
+    throw new Error('地圖尚未載入，請先選擇地圖');
+  }
+  const nodes = mapData.nodes;
+
+  let synced = 0;
+  let failed = 0;
+  for(const nid in nodes){
+    const node = nodes[nid];
+    if(!node) continue;
+
+    /* 找對應城池 */
+    let city = null;
+    if(node.namedCityId){
+      city = state.cities.find(c => c.id === node.namedCityId);
+    }
+    if(!city && node.code){
+      city = state.cities.find(c => c.code && c.code === node.code);
+    }
+    if(!city && node.name){
+      city = state.cities.find(c => c.name === node.name);
+    }
+    if(!city){ failed++; continue; }
+
+    city.mapNode = {
+      mapId: mapId,
+      nodeId: nid,
+      x: node.x,
+      y: node.y,
+      method: node.source || 'manual',
+    };
+    state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+    synced++;
+  }
+
+  if(synced > 0){
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState('important');
+  }
+
+  logSystem(`🔄 已從地圖庫同步 ${synced} 個城池座標${failed > 0 ? `（${failed} 個找不到對應）` : ''}`);
+  return { synced, failed };
+}
+
+/**
+ * v8.9.5：清除城池中所有「非當前地圖」的 mapNode
+ * 用於換地圖時，避免舊座標干擾
+ * @param {string} currentMapId
+ * @returns {number} 清除數量
+ */
+function clearStaleMapNodes(currentMapId){
+  let cleared = 0;
+  for(const city of state.cities){
+    if(city.mapNode && city.mapNode.mapId && city.mapNode.mapId !== currentMapId){
+      delete city.mapNode;
+      state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+      if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+      cleared++;
+    }
+  }
+  if(cleared > 0){
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState('important');
+    logSystem(`🧹 已清除 ${cleared} 個過期 mapNode`);
+  }
+  return cleared;
+}
+
+/**
  * v8.9.4：寫入單一節點到地圖庫（用於新增城池時帶座標）
  * @param {string} mapId
  * @param {string} nodeId  - 節點 ID（通常為城池編號或 n_<cityId>）
@@ -1424,6 +1508,9 @@ Object.assign(window.SLG, {
   loadMapImageElement,
   ensureMapLoaded,
   mapIndexRef, mapRef,
+  /* v8.9.5：座標同步工具 */
+syncMapNodesToCities,
+clearStaleMapNodes,
 });
 
 })();
