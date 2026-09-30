@@ -3628,99 +3628,114 @@ function toggleFullscreen(){
   function touchDist(t1, t2){ return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY); }
   function touchCenter(t1, t2){ return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
 
-  function onTouchStart(e){
-    if(e.touches.length === 2){
+function onTouchStart(e){
+  if(e.touches.length === 2){
+    e.preventDefault();
+    pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+    pinchStartScale = view.scale;
+    pinchStartCenter = touchCenter(e.touches[0], e.touches[1]);
+    dragging = false; nodeDragging = null; touchPanStart = null;
+  } else if(e.touches.length === 1){
+    const t = e.touches[0];
+    const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
+    const city = pickCity(worldPos);
+
+    /* 優先判定節點拖曳（無論什麼模式都允許） */
+    if(city){
+      nodeDragging = { cityId: city.id, offsetX: worldPos.x - nodePositions.get(city.id).x, offsetY: worldPos.y - nodePositions.get(city.id).y };
+      if(mapMode !== 'none') modeTouchStart = { moved: true };
       e.preventDefault();
-      pinchStartDist = touchDist(e.touches[0], e.touches[1]);
-      pinchStartScale = view.scale;
-      pinchStartCenter = touchCenter(e.touches[0], e.touches[1]);
-      dragging = false; nodeDragging = null; touchPanStart = null;
-    } else if(e.touches.length === 1){
-      const t = e.touches[0];
-
-      /* 模式啟動中：僅記錄移動，等待 touchend 判定 */
-      if(mapMode !== 'none'){
-        modeTouchStart = { x: t.clientX, y: t.clientY, moved: false };
-        e.preventDefault();
-        return;
-      }
-
-      /* 無模式：可以拖曳節點 / 平移 */
-      const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
-      const city = pickCity(worldPos);
-      if(city){
-        nodeDragging = { cityId: city.id, offsetX: worldPos.x - nodePositions.get(city.id).x, offsetY: worldPos.y - nodePositions.get(city.id).y };
-        e.preventDefault();
-      } else {
-        touchPanStart = { x: t.clientX, y: t.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
-      }
-    }
-  }
-
-  function onTouchMove(e){
-    if(e.touches.length === 2 && pinchStartDist > 0){
-      e.preventDefault();
-      const dist = touchDist(e.touches[0], e.touches[1]);
-      const center = touchCenter(e.touches[0], e.touches[1]);
-      const factor = dist / pinchStartDist;
-      const newScale = Math.max(0.2, Math.min(3, pinchStartScale * factor));
-      const rect = containerEl.getBoundingClientRect();
-      const cx = (center.x - rect.left + containerEl.scrollLeft) / view.scale;
-      const cy = (center.y - rect.top + containerEl.scrollTop) / view.scale;
-      view.x = cx - (center.x - rect.left + containerEl.scrollLeft) / newScale;
-      view.y = cy - (center.y - rect.top + containerEl.scrollTop) / newScale;
-      view.scale = newScale;
-      applyView();
-      render();
       return;
     }
-    if(e.touches.length === 1){
-      const t = e.touches[0];
 
-      /* 模式中：僅記錄是否移動 */
-      if(mapMode !== 'none' && modeTouchStart){
-        const dx = Math.abs(t.clientX - modeTouchStart.x);
-        const dy = Math.abs(t.clientY - modeTouchStart.y);
-        if(dx > 5 || dy > 5) modeTouchStart.moved = true;
-        e.preventDefault();
-        return;
-      }
+    /* 模式中：記錄點擊 */
+    if(mapMode !== 'none'){
+      modeTouchStart = { x: t.clientX, y: t.clientY, moved: false };
+      e.preventDefault();
+      return;
+    }
 
+    /* 無模式：平移畫布 */
+    touchPanStart = { x: t.clientX, y: t.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
+  }
+}
+
+  function onTouchMove(e){
+  if(e.touches.length === 2 && pinchStartDist > 0){
+    e.preventDefault();
+    const dist = touchDist(e.touches[0], e.touches[1]);
+    const center = touchCenter(e.touches[0], e.touches[1]);
+    const factor = dist / pinchStartDist;
+    const newScale = Math.max(0.2, Math.min(3, pinchStartScale * factor));
+    const rect = containerEl.getBoundingClientRect();
+    const cx = (center.x - rect.left + containerEl.scrollLeft) / view.scale;
+    const cy = (center.y - rect.top + containerEl.scrollTop) / view.scale;
+    view.x = cx - (center.x - rect.left + containerEl.scrollLeft) / newScale;
+    view.y = cy - (center.y - rect.top + containerEl.scrollTop) / newScale;
+    view.scale = newScale;
+    applyView();
+    render();
+    return;
+  }
+  if(e.touches.length === 1){
+    const t = e.touches[0];
+
+    /* 1. 優先處理節點拖曳 */
+    if(nodeDragging){
+      e.preventDefault();
       const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
-      if(nodeDragging){
-        e.preventDefault();
-        const p = nodePositions.get(nodeDragging.cityId);
-        if(p){ p.x = worldPos.x - nodeDragging.offsetX; p.y = worldPos.y - nodeDragging.offsetY; render(); }
-        return;
-      }
-      if(touchPanStart){
-        e.preventDefault();
-        const dx = t.clientX - touchPanStart.x;
-        const dy = t.clientY - touchPanStart.y;
-        containerEl.scrollLeft = touchPanStart.sx - dx;
-        containerEl.scrollTop = touchPanStart.sy - dy;
-      }
+      const p = nodePositions.get(nodeDragging.cityId);
+      if(p){ p.x = worldPos.x - nodeDragging.offsetX; p.y = worldPos.y - nodeDragging.offsetY; render(); }
+      return;
+    }
+
+    /* 2. 模式中：記錄移動 */
+    if(mapMode !== 'none' && modeTouchStart){
+      const dx = Math.abs(t.clientX - modeTouchStart.x);
+      const dy = Math.abs(t.clientY - modeTouchStart.y);
+      if(dx > 5 || dy > 5) modeTouchStart.moved = true;
+      e.preventDefault();
+      return;
+    }
+
+    /* 3. 畫布平移 */
+    if(touchPanStart){
+      e.preventDefault();
+      const dx = t.clientX - touchPanStart.x;
+      const dy = t.clientY - touchPanStart.y;
+      containerEl.scrollLeft = touchPanStart.sx - dx;
+      containerEl.scrollTop = touchPanStart.sy - dy;
     }
   }
+}
 
   function onTouchEnd(e){
-    if(e.touches.length < 2){ pinchStartDist = 0; pinchStartCenter = null; }
-    if(e.touches.length === 0){
-      /* 模式中：判定點擊 */
-      if(mapMode !== 'none' && modeTouchStart){
-        if(!modeTouchStart.moved){
-          const t = e.changedTouches[0];
-          if(t) handleModeTap(t.clientX, t.clientY);
-        }
-        modeTouchStart = null;
-        e.preventDefault();
-        return;
-      }
+  if(e.touches.length < 2){ pinchStartDist = 0; pinchStartCenter = null; }
+  if(e.touches.length === 0){
+    /* 1. 結束節點拖曳 */
+    if(nodeDragging){
       nodeDragging = null;
-      touchPanStart = null;
+      modeTouchStart = null;
       applyCursor();
+      return;
     }
+
+    /* 2. 模式中：判定點擊 */
+    if(mapMode !== 'none' && modeTouchStart){
+      if(!modeTouchStart.moved){
+        const t = e.changedTouches[0];
+        if(t) handleModeTap(t.clientX, t.clientY);
+      }
+      modeTouchStart = null;
+      e.preventDefault();
+      return;
+    }
+
+    /* 3. 結束畫布平移 */
+    touchPanStart = null;
+    applyCursor();
   }
+}
 
   function getWorldPos(e){ return getWorldPosFromClient(e.clientX, e.clientY); }
   function getWorldPosFromClient(clientX, clientY){
@@ -3746,78 +3761,93 @@ function toggleFullscreen(){
   }
 
   function onPointerDown(e){
-    if(e.pointerType === 'touch') return;
+  if(e.pointerType === 'touch') return;
+  const worldPos = getWorldPos(e);
+  const city = pickCity(worldPos);
 
-    /* 模式中：僅記錄起始位置 */
-    if(mapMode !== 'none'){
-      modePointerStart = { x: e.clientX, y: e.clientY, moved: false };
-      return;
-    }
-
-    /* 無模式：可以拖曳節點 / 平移 */
-    const worldPos = getWorldPos(e);
-    const city = pickCity(worldPos);
-    if(city){
-      nodeDragging = { cityId: city.id, offsetX: worldPos.x - nodePositions.get(city.id).x, offsetY: worldPos.y - nodePositions.get(city.id).y };
-      canvas.style.cursor = 'grabbing';
-      return;
-    }
-    dragging = true;
-    dragStart = { x: e.clientX, y: e.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
+  /* 優先判定節點拖曳（無論什麼模式都允許） */
+  if(city){
+    nodeDragging = { cityId: city.id, offsetX: worldPos.x - nodePositions.get(city.id).x, offsetY: worldPos.y - nodePositions.get(city.id).y };
     canvas.style.cursor = 'grabbing';
+    /* 如果在模式中，標記已移動，避免觸發模式點擊 */
+    if(mapMode !== 'none'){
+      modePointerStart = { x: e.clientX, y: e.clientY, moved: true };
+    }
+    return;
   }
 
-  function onPointerMove(e){
-    if(e.pointerType === 'touch') return;
+  /* 模式中：僅記錄起始位置（點擊空白處） */
+  if(mapMode !== 'none'){
+    modePointerStart = { x: e.clientX, y: e.clientY, moved: false };
+    return;
+  }
 
-    /* 模式中：記錄移動 + hover 預覽 */
-    if(mapMode !== 'none' && modePointerStart){
-      const dx = Math.abs(e.clientX - modePointerStart.x);
-      const dy = Math.abs(e.clientY - modePointerStart.y);
-      if(dx > 5 || dy > 5) modePointerStart.moved = true;
+  /* 無模式：平移畫布 */
+  dragging = true;
+  dragStart = { x: e.clientX, y: e.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
+  canvas.style.cursor = 'grabbing';
+}
 
-      if(mapMode === 'war' && warFromCityId){
-        const worldPos = getWorldPos(e);
-        const city = pickCity(worldPos);
-        warHoverTgtId = (city && city.id !== warFromCityId) ? city.id : '';
-        render();
-      }
-      return;
-    }
+function onPointerMove(e){
+  if(e.pointerType === 'touch') return;
 
+  /* 1. 優先處理節點拖曳 */
+  if(nodeDragging){
     const worldPos = getWorldPos(e);
-    const city = pickCity(worldPos);
-    hoveredCityId = city ? city.id : null;
-
-    if(nodeDragging){
-      const p = nodePositions.get(nodeDragging.cityId);
-      if(p){ p.x = worldPos.x - nodeDragging.offsetX; p.y = worldPos.y - nodeDragging.offsetY; render(); }
-      return;
-    }
-    if(dragging){
-      const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
-      containerEl.scrollLeft = dragStart.sx - dx;
-      containerEl.scrollTop = dragStart.sy - dy;
-      return;
-    }
+    const p = nodePositions.get(nodeDragging.cityId);
+    if(p){ p.x = worldPos.x - nodeDragging.offsetX; p.y = worldPos.y - nodeDragging.offsetY; }
     if(state.cities.length > 0) render();
+    return;
   }
 
-  function onPointerUp(e){
-    if(e.pointerType === 'touch') return;
+  /* 2. 模式中：記錄移動 + hover 預覽 */
+  if(mapMode !== 'none' && modePointerStart){
+    const dx = Math.abs(e.clientX - modePointerStart.x);
+    const dy = Math.abs(e.clientY - modePointerStart.y);
+    if(dx > 5 || dy > 5) modePointerStart.moved = true;
 
-    /* 模式中：判定點擊 */
-    if(mapMode !== 'none' && modePointerStart){
-      if(!modePointerStart.moved){
-        handleModeTap(e.clientX, e.clientY);
-      }
-      modePointerStart = null;
-      return;
+    if(mapMode === 'war' && warFromCityId){
+      const worldPos = getWorldPos(e);
+      const city = pickCity(worldPos);
+      warHoverTgtId = (city && city.id !== warFromCityId) ? city.id : '';
+      render();
     }
-
-    if(nodeDragging){ nodeDragging = null; applyCursor(); return; }
-    if(dragging){ dragging = false; applyCursor(); }
+    return;
   }
+
+  /* 3. 畫布平移 */
+  if(dragging){
+    const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+    containerEl.scrollLeft = dragStart.sx - dx;
+    containerEl.scrollTop = dragStart.sy - dy;
+    return;
+  }
+  if(state.cities.length > 0) render();
+}
+
+function onPointerUp(e){
+  if(e.pointerType === 'touch') return;
+
+  /* 1. 結束節點拖曳 */
+  if(nodeDragging){
+    nodeDragging = null;
+    modePointerStart = null; /* 清除狀態，避免後續誤判 */
+    applyCursor();
+    return;
+  }
+
+  /* 2. 模式中：判定點擊（如果沒有移動） */
+  if(mapMode !== 'none' && modePointerStart){
+    if(!modePointerStart.moved){
+      handleModeTap(e.clientX, e.clientY);
+    }
+    modePointerStart = null;
+    return;
+  }
+
+  /* 3. 結束畫布平移 */
+  if(dragging){ dragging = false; applyCursor(); }
+}
 
   /* ── v8.9.4：統一處理模式點擊（含觸控） ── */
   function handleModeTap(clientX, clientY){
@@ -6215,102 +6245,140 @@ const NodeCalibration = (() => {
     }
   }
 
-  function renderCityList(){
-    const el = document.getElementById('nc_cityList');
-    if(!el) return;
+function renderCityList(){
+  const el = document.getElementById('nc_cityList');
+  if(!el) return;
 
-    const list = state.cities.map(c => {
-      const nid = cityNodeId(c);
-      const n = nodes[nid];
-      return { city: c, node: n || null };
-    });
+  /* 1. 正常城池節點 */
+  const list = state.cities.map(c => {
+    const nid = cityNodeId(c);
+    const n = nodes[nid];
+    return { city: c, node: n || null, isOrphan: false, nid: nid };
+  });
 
-    if(list.length === 0){
-      el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;">無城池資料</div>';
-      return;
+  /* 2. 找出「孤兒節點」（有座標但無匹配城池） */
+  for(const nid in nodes){
+    const n = nodes[nid];
+    if(!n) continue;
+    let matched = false;
+    if(n.namedCityId){
+      matched = state.cities.some(c => c.id === n.namedCityId);
     }
-
-    el.innerHTML = list.map(({ city, node }) => {
-      const isNamed = !!node;
-      const isSelected = (activeCityId === city.id) || (fixedPointCityId === city.id);
-      const isManual = node && node.source === 'manual';
-      const isAiClick = node && node.source === 'ai-click';
-      const isFixedSel = (fixedPointCityId === city.id);
-      const cls = 'nc-item-v3'
-        + (isNamed ? ' named' : ' unnamed')
-        + (isManual || isAiClick ? ' manual' : '')
-        + (isFixedSel ? ' fixed-selected' : '')
-        + (isSelected ? ' selected' : '');
-      const icon = isNamed ? '✅' : '⭕';
-      const codeStr = city.code ? `<span class="nc-item-code">${esc(city.code)}</span>` : '';
-      const coordStr = node ? `(${node.x}, ${node.y})` : '';
-      const sourceStr = node
-        ? (node.source === 'ai' ? 'AI' : node.source === 'ai-click' ? 'AI點擊' : '手動')
-        : '';
-      const deleteBtn = node
-        ? `<button class="nc-item-delete" data-delete-city="${esc(city.id)}" title="刪除標記">🗑️</button>`
-        : '';
-      return `<div class="${cls}" data-city-id="${esc(city.id)}">
-        <span class="nc-item-icon">${icon}</span>
-        <div class="nc-item-body">
-          <div class="nc-item-name${isNamed ? '' : ' unnamed'}">${esc(city.name)}${codeStr}</div>
-          <div class="nc-item-meta">
-            ${coordStr ? `<span class="nc-item-dist">${coordStr}</span>` : ''}
-            ${sourceStr ? `<span>${sourceStr}</span>` : ''}
-          </div>
-        </div>
-        ${deleteBtn}
-      </div>`;
-    }).join('');
-
-    el.querySelectorAll('.nc-item-v3').forEach(item => {
-      item.addEventListener('click', (e) => {
-        if(e.target.closest('.nc-item-delete')) return;
-        const cityId = item.dataset.cityId;
-        activeCityId = cityId;
-        if(isFixedPointMode){
-          fixedPointCityId = cityId;
-          updateModeUI();
-        }
-        activeRouteIdx = -1;
-        renderCityList();
-        renderRouteList();
-        renderAll();
-        const city = state.cities.find(c => c.id === cityId);
-        if(city){
-          const n = nodes[cityNodeId(city)];
-          if(n && wrapEl){
-            const px = n.x * zoom;
-            const py = n.y * zoom;
-            wrapEl.scrollTo({
-              left: Math.max(0, px - wrapEl.clientWidth / 2),
-              top: Math.max(0, py - wrapEl.clientHeight / 2),
-              behavior: 'smooth',
-            });
-          }
-        }
+    /* 如果沒有匹配到任何城池，加入列表 */
+    if(!matched){
+      list.push({
+        city: { id: 'orphan_' + nid, name: n.name || '未匹配節點', code: '' },
+        node: n,
+        isOrphan: true,
+        nid: nid
       });
-    });
+    }
+  }
 
-    el.querySelectorAll('[data-delete-city]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const cityId = btn.dataset.deleteCity;
-        const city = state.cities.find(c => c.id === cityId);
+  if(list.length === 0){
+    el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;">無城池資料</div>';
+    return;
+  }
+
+  el.innerHTML = list.map(({ city, node, isOrphan, nid }) => {
+    const isNamed = !!node;
+    const isSelected = (activeCityId === city.id) || (fixedPointCityId === city.id);
+    const isManual = node && node.source === 'manual';
+    const isAiClick = node && node.source === 'ai-click';
+    const isFixedSel = (fixedPointCityId === city.id);
+    const cls = 'nc-item-v3'
+      + (isNamed ? ' named' : ' unnamed')
+      + (isManual || isAiClick ? ' manual' : '')
+      + (isOrphan ? ' orphan' : '')
+      + (isFixedSel ? ' fixed-selected' : '')
+      + (isSelected ? ' selected' : '');
+    const icon = isOrphan ? '⚠️' : (isNamed ? '✅' : '⭕');
+    const codeStr = city.code ? `<span class="nc-item-code">${esc(city.code)}</span>` : '';
+    const coordStr = node ? `(${node.x}, ${node.y})` : '';
+    const sourceStr = node
+      ? (node.source === 'ai' ? 'AI' : node.source === 'ai-click' ? 'AI點擊' : '手動')
+      : '';
+    /* 刪除按鈕：使用 nid 或 city.id */
+    const deleteBtn = node
+      ? `<button class="nc-item-delete" data-delete-id="${esc(isOrphan ? nid : city.id)}" data-is-orphan="${isOrphan}" title="刪除標記">🗑️</button>`
+      : '';
+    return `<div class="${cls}" data-city-id="${esc(city.id)}">
+      <span class="nc-item-icon">${icon}</span>
+      <div class="nc-item-body">
+        <div class="nc-item-name${isNamed ? '' : ' unnamed'}">${esc(city.name)}${codeStr}</div>
+        <div class="nc-item-meta">
+          ${coordStr ? `<span class="nc-item-dist">${coordStr}</span>` : ''}
+          ${sourceStr ? `<span>${sourceStr}</span>` : ''}
+        </div>
+      </div>
+      ${deleteBtn}
+    </div>`;
+  }).join('');
+
+  /* 綁定點擊事件（選取） */
+  el.querySelectorAll('.nc-item-v3').forEach(item => {
+    item.addEventListener('click', (e) => {
+      if(e.target.closest('.nc-item-delete')) return;
+      const cityId = item.dataset.cityId;
+      /* 孤兒節點不支援自動跳轉等操作，僅高亮 */
+      if(cityId.startsWith('orphan_')) return;
+
+      activeCityId = cityId;
+      if(isFixedPointMode){
+        fixedPointCityId = cityId;
+        updateModeUI();
+      }
+      activeRouteIdx = -1;
+      renderCityList();
+      renderRouteList();
+      renderAll();
+      const city = state.cities.find(c => c.id === cityId);
+      if(city){
+        const n = nodes[cityNodeId(city)];
+        if(n && wrapEl){
+          const px = n.x * zoom;
+          const py = n.y * zoom;
+          wrapEl.scrollTo({
+            left: Math.max(0, px - wrapEl.clientWidth / 2),
+            top: Math.max(0, py - wrapEl.clientHeight / 2),
+            behavior: 'smooth',
+          });
+        }
+      }
+    });
+  });
+
+  /* 綁定刪除按鈕 */
+  el.querySelectorAll('[data-delete-id]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const delId = btn.dataset.deleteId;
+      const isOrphan = btn.dataset.isOrphan === 'true';
+      
+      if(isOrphan){
+        /* 孤兒節點：直接用 nid 刪除 */
+        if(!nodes[delId]) return;
+        if(!confirm(`確定刪除「${nodes[delId].name || '未匹配節點'}」的標記嗎？`)) return;
+        delete nodes[delId];
+        logSystem(`🗑️ 已刪除孤兒節點：${delId}`);
+      } else {
+        /* 正常城池：用 cityId 刪除 */
+        const city = state.cities.find(c => c.id === delId);
         if(!city) return;
         const nid = cityNodeId(city);
         if(!nodes[nid]) return;
         if(!confirm(`確定刪除「${city.name}」的標記嗎？`)) return;
         delete nodes[nid];
-        if(fixedPointCityId === cityId){
-          fixedPointCityId = cityId;
+        if(fixedPointCityId === delId){
+          fixedPointCityId = '';
         }
-        renderAll();
-        updateProgress();
         logSystem(`🗑️ 已刪除標記：${city.name}`);
-      });
+      }
+      renderAll();
+      updateProgress();
     });
-  }
+  });
+}
 
   function renderRouteList(){
     const el = document.getElementById('nc_routeList');
