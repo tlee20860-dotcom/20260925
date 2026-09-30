@@ -3709,14 +3709,32 @@ function onTouchStart(e){
   }
 }
 
-  function onTouchEnd(e){
+function onTouchEnd(e){
   if(e.touches.length < 2){ pinchStartDist = 0; pinchStartCenter = null; }
   if(e.touches.length === 0){
-    /* 1. 結束節點拖曳 */
+    /* 1. 結束節點拖曳，並儲存新座標 */
     if(nodeDragging){
+      const city = state.cities.find(c => c.id === nodeDragging.cityId);
+      const p = nodePositions.get(nodeDragging.cityId);
+      if(city && p){
+        city.mapNode = {
+          mapId: state.mapLibrary.activeMapId || '',
+          nodeId: city.code || ('n_' + city.id),
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          method: 'manual'
+        };
+        state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+        if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+        if(window.SLG.tickLamport) window.SLG.tickLamport();
+        if(window.SLG.flushPatches) window.SLG.flushPatches();
+        if(window.SLG.saveState) window.SLG.saveState('important');
+        logSystem(`📍 已儲存「${city.name}」新座標：(${Math.round(p.x)}, ${Math.round(p.y)})`);
+      }
       nodeDragging = null;
       modeTouchStart = null;
       applyCursor();
+      render();
       return;
     }
 
@@ -3828,11 +3846,30 @@ function onPointerMove(e){
 function onPointerUp(e){
   if(e.pointerType === 'touch') return;
 
-  /* 1. 結束節點拖曳 */
+  /* 1. 結束節點拖曳，並儲存新座標 */
   if(nodeDragging){
+    const city = state.cities.find(c => c.id === nodeDragging.cityId);
+    const p = nodePositions.get(nodeDragging.cityId);
+    if(city && p){
+      // ⭐ v8.9.7：把拖曳後座標寫入 city.mapNode，讓下次佈局計算時使用新座標
+      city.mapNode = {
+        mapId: state.mapLibrary.activeMapId || '',
+        nodeId: city.code || ('n_' + city.id),
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        method: 'manual'
+      };
+      state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+      if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+      if(window.SLG.tickLamport) window.SLG.tickLamport();
+      if(window.SLG.flushPatches) window.SLG.flushPatches();
+      if(window.SLG.saveState) window.SLG.saveState('important');
+      logSystem(`📍 已儲存「${city.name}」新座標：(${Math.round(p.x)}, ${Math.round(p.y)})`);
+    }
     nodeDragging = null;
-    modePointerStart = null; /* 清除狀態，避免後續誤判 */
+    modePointerStart = null;
     applyCursor();
+    render();
     return;
   }
 
@@ -4131,7 +4168,11 @@ function onPointerUp(e){
   const cities = state.cities;
   if(cities.length === 0){ nodePositions.clear(); return; }
 
+  // ⭐ v8.9.7：拖曳節點時不重算佈局，避免拖曳結果被覆蓋
+  if(nodeDragging) return;
+
   const currentMapId = state.mapLibrary.activeMapId;
+  // ... 下面保持不變
 
   /* v8.9.4：優先順序：city.mapNode.x/y > 地圖庫節點 > 力導向 */
   if(activeMapNodes && Object.keys(activeMapNodes).length > 0){
