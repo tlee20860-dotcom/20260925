@@ -1,10 +1,6 @@
 /* ============================================================================
  * functions/api/ocr.js — v8.9.3
- * Gemini API 代理（使用 Durable Object 繞過地區限制）
- * 
- * 路徑：POST /api/ocr
- * 請求：{ imageBase64, prompt, mimeType }
- * 回應：{ cities: [...], routes: [...] } 或 { name, code } 或 { error }
+ * 代理 OpenRouter API（使用免费视觉模型）
  * ========================================================================== */
 
 const CORS = {
@@ -25,167 +21,83 @@ function jsonResponse(obj, status = 200) {
   });
 }
 
-/* ============================================================================
- * Durable Object：固定路由到美國西部，繞過 Gemini 地區限制
- * ========================================================================== */
-export class GeminiProxy {
-  constructor(state, env) {
-    this.state = state;
-    this.env = env;
-  }
-
-  async fetch(request) {
-    try {
-      /* ── 解析請求 ── */
-      let body;
-      try {
-        body = await request.json();
-      } catch (e) {
-        return jsonResponse({ error: 'Invalid JSON body' }, 400);
-      }
-
-      const { imageBase64, prompt, mimeType } = body || {};
-
-      if (!imageBase64 || typeof imageBase64 !== 'string') {
-        return jsonResponse({ error: 'Missing imageBase64' }, 400);
-      }
-      if (!prompt || typeof prompt !== 'string') {
-        return jsonResponse({ error: 'Missing prompt' }, 400);
-      }
-
-      /* ── 讀取環境變數 ── */
-      const apiKey = this.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return jsonResponse({
-          error: 'Server not configured',
-          detail: 'GEMINI_API_KEY missing in Pages environment variables',
-        }, 500);
-      }
-
-      /* ── 模型名稱（預設 gemini-2.5-flash）── */
-      const model = this.env.GEMINI_MODEL || 'gemini-2.5-flash';
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-      const geminiBody = {
-        contents: [{
-          parts: [
-            { text: prompt },
-            {
-              inline_data: {
-                mime_type: mimeType || 'image/jpeg',
-                data: imageBase64,
-              },
-            },
-          ],
-        }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-          maxOutputTokens: 8192,
-        },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-        ],
-      };
-
-      /* ── 呼叫 Gemini ── */
-      const geminiResp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiBody),
-      });
-
-      if (!geminiResp.ok) {
-        let detail = '';
-        try {
-          const errJson = await geminiResp.json();
-          detail = errJson.error?.message || JSON.stringify(errJson);
-        } catch (e) {
-          detail = await geminiResp.text();
-        }
-        return jsonResponse({
-          error: 'Gemini API error',
-          status: geminiResp.status,
-          detail: detail,
-          model: model,
-          from: 'us-west',  // 標示 Durable Object 位置
-        }, 502);
-      }
-
-      /* ── 解析回應 ── */
-      const data = await geminiResp.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-
-      let parsed;
-      try {
-        let cleanText = text.trim();
-        if (cleanText.startsWith('```json')) {
-          cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-        } else if (cleanText.startsWith('```')) {
-          cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-        }
-        parsed = JSON.parse(cleanText);
-      } catch (e) {
-        parsed = { raw: text, parseError: e.message };
-      }
-
-      return jsonResponse(parsed, 200);
-
-    } catch (e) {
-      return jsonResponse({
-        error: 'GeminiProxy exception',
-        message: e.message,
-        stack: e.stack,
-      }, 500);
-    }
-  }
-}
-
-/* ============================================================================
- * Pages Function 入口
- * ========================================================================== */
 export async function onRequest(context) {
   const { request, env } = context;
 
-  /* ── OPTIONS 預檢 ── */
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS });
   }
-
-  /* ── 只接受 POST ── */
   if (request.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
-  /* ── 檢查 Durable Object 綁定 ── */
-  if (!env.GEMINI_PROXY) {
-    return jsonResponse({
-      error: 'Durable Object not bound',
-      detail: '請確認 wrangler.toml 已正確配置 GEMINI_PROXY 綁定',
-      hint: '參考交付說明中的 wrangler.toml 範例',
-    }, 500);
-  }
-
-  /* ── 轉發到 Durable Object（固定美國西部）── */
   try {
-    const id = env.GEMINI_PROXY.idFromName('global-gemini-proxy');
-    let stub;
-    try {
-      stub = env.GEMINI_PROXY.get(id, { locationHint: 'wnam' });
-    } catch (e) {
-      /* 若 runtime 不支援 locationHint，退回一般 get */
-      stub = env.GEMINI_PROXY.get(id);
+    const body = await request.json();
+    const { imageBase64, prompt, mimeType } = body || {};
+
+    if (!imageBase64 || !prompt) {
+      return jsonResponse({ error: 'Missing imageBase64 or prompt' }, 400);
     }
-    return await stub.fetch(request);
+
+    const apiKey = env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return jsonResponse({ error: 'OPENROUTER_API_KEY missing in environment variables' }, 500);
+    }
+
+    // 使用你在 Cloudflare 设置的模型，或默认使用 Qwen
+    const model = env.OPENROUTER_MODEL || 'qwen/qwen2.5-vl-72b-instruct:free';
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://ya-sandbox.pages.dev',
+        'X-Title': 'SLG Sandbox',
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBase64}` } }
+          ]
+        }],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 8192,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenRouter API error (${response.status}):`, errorText);
+      return jsonResponse({
+        error: 'OpenRouter API error',
+        status: response.status,
+        detail: errorText,
+      }, 502);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || '{}';
+
+    // 解析 AI 返回的 JSON
+    let parsed;
+    try {
+      let cleanText = text.trim();
+      if (cleanText.startsWith('```json')) cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      else if (cleanText.startsWith('```')) cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      parsed = JSON.parse(cleanText);
+    } catch (e) {
+      parsed = { raw: text, parseError: e.message };
+    }
+
+    return jsonResponse(parsed, 200);
+
   } catch (e) {
-    return jsonResponse({
-      error: 'Durable Object binding failed',
-      message: e.message,
-      hint: '請確認 wrangler.toml 已正確配置 GEMINI_PROXY 綁定',
-    }, 500);
+    console.error('Function exception:', e);
+    return jsonResponse({ error: 'Function exception', message: e.message }, 500);
   }
 }
