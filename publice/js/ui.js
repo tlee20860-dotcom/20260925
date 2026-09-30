@@ -3194,6 +3194,8 @@ const RouteManager = (() => {
 const GameMap = (() => {
   let canvas, ctx, containerEl, outerEl;
   let view = { x: 0, y: 0, scale: 1 };
+  /* v8.9.6：全螢幕狀態 */
+let isFullscreen = false;
   let nodePositions = new Map();
   let layoutDirty = true;
   let dragging = false;
@@ -3282,6 +3284,7 @@ const GameMap = (() => {
       btnBaseMap.addEventListener('click', toggleBaseMap);
     }
 
+
     const btnRelayout = document.getElementById('btnMapRelayout');
     if(btnRelayout) btnRelayout.addEventListener('click', () => {
       layoutDirty = true;
@@ -3291,7 +3294,23 @@ const GameMap = (() => {
     });
 
     const btnFit = document.getElementById('btnMapFit');
-    if(btnFit) btnFit.addEventListener('click', () => { fitView(); applyView(); render(); });
+if(btnFit) btnFit.addEventListener('click', () => { fitView(); applyView(); render(); });
+
+/* v8.9.6：全螢幕按鈕 */
+const btnFullscreen = document.getElementById('btnMapFullscreen');
+if(btnFullscreen && !btnFullscreen.dataset.bound){
+  btnFullscreen.dataset.bound = '1';
+  btnFullscreen.addEventListener('click', toggleFullscreen);
+}
+
+/* v8.9.6：退出全螢幕按鈕 */
+const btnFullscreenExit = document.getElementById('mapFullscreenExit');
+if(btnFullscreenExit && !btnFullscreenExit.dataset.bound){
+  btnFullscreenExit.dataset.bound = '1';
+  btnFullscreenExit.addEventListener('click', () => {
+    if(isFullscreen) toggleFullscreen();
+  });
+}
 
     const btnClearHighlight = document.getElementById('btnMapClearHighlight');
     if(btnClearHighlight) btnClearHighlight.addEventListener('click', () => {
@@ -3317,10 +3336,20 @@ const GameMap = (() => {
       window.SLG.on(window.SLG.EVT.DISTANCE_CLEAR, () => { highlight = null; render(); });
       window.SLG.on(window.SLG.EVT.MAP_LIBRARY_UPDATED, () => { onMapLibraryChanged(); });
     }
-    window.addEventListener('resize', () => { if(containerEl) render(); });
-    refreshZoneSelector();
-    onMapLibraryChanged();
+      window.addEventListener('resize', () => { if(containerEl) render(); });
+  refreshZoneSelector();
+  onMapLibraryChanged();
+
+  /* v8.9.6：ESC 鍵退出全螢幕 */
+  if(!window.__fullscreenEscBound){
+    window.__fullscreenEscBound = true;
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape' && isFullscreen){
+        toggleFullscreen();
+      }
+    });
   }
+}
 
   function bindFloatButtons(){
     const bind = (id, fn) => {
@@ -3499,12 +3528,38 @@ const GameMap = (() => {
     if(outerEl) outerEl.classList.toggle('base-map-off', !baseMapVisible);
   }
   function toggleBaseMap(){
-    baseMapVisible = !baseMapVisible;
-    saveBaseMapPref();
-    applyBaseMapUI();
-    render();
-    logSystem(baseMapVisible ? '🖼️ 底圖：開' : '🖼️ 底圖：關');
+  baseMapVisible = !baseMapVisible;
+  saveBaseMapPref();
+  applyBaseMapUI();
+  render();
+  logSystem(baseMapVisible ? '🖼️ 底圖：開' : '🖼️ 底圖：關');
+}
+
+/* v8.9.6：切換全螢幕模式（模組層級） */
+function toggleFullscreen(){
+  isFullscreen = !isFullscreen;
+
+  if(outerEl){
+    outerEl.classList.toggle('fullscreen-mode', isFullscreen);
   }
+  document.body.classList.toggle('map-fullscreen', isFullscreen);
+
+  const btn = document.getElementById('btnMapFullscreen');
+  if(btn){
+    btn.textContent = isFullscreen ? '✖️ 退出全螢幕' : '🖥️ 全螢幕';
+    btn.classList.toggle('active', isFullscreen);
+  }
+
+  logSystem(isFullscreen ? '🖥️ 進入全螢幕地圖' : '↩️ 退出全螢幕地圖');
+
+  setTimeout(() => {
+    if(containerEl){
+      fitView();
+      applyView();
+      render();
+    }
+  }, 150);
+}
 
   function getZoneFilter(){ return currentZoneFilter; }
   function setZoneFilter(zoneId){
@@ -4165,69 +4220,6 @@ const GameMap = (() => {
   layoutDirty = false;
 }
 
-    /* 無地圖庫：完全力導向 */
-    if(!layoutDirty && nodePositions.size === cities.length) return;
-    nodePositions.clear();
-    const W = CANVAS_W, H = CANVAS_H, PAD = 200;
-    const N = cities.length;
-    const area = (W - PAD * 2) * (H - PAD * 2);
-    const k = Math.sqrt(area / Math.max(N, 1)) * 0.55;
-    cities.forEach((c, i) => {
-      const ang = (i / N) * Math.PI * 2 - Math.PI / 2;
-      const r = 200 + (i % 4) * 80;
-      nodePositions.set(c.id, { x: W/2 + Math.cos(ang) * r, y: H/2 + Math.sin(ang) * r });
-    });
-    const edges = [];
-    for(const r of (state.routes || [])){
-      if(nodePositions.has(r.cityAId) && nodePositions.has(r.cityBId)) edges.push([r.cityAId, r.cityBId]);
-    }
-    const iterations = N > 60 ? 150 : 300;
-    let temp = W / 10;
-    const cool = temp / (iterations + 1);
-    for(let iter = 0; iter < iterations; iter++){
-      const disp = new Map();
-      cities.forEach(c => disp.set(c.id, { x: 0, y: 0 }));
-      for(let i = 0; i < N; i++){
-        for(let j = i + 1; j < N; j++){
-          const a = nodePositions.get(cities[i].id);
-          const b = nodePositions.get(cities[j].id);
-          let dx = a.x - b.x, dy = a.y - b.y;
-          let d = Math.hypot(dx, dy);
-          if(d < 0.01){ dx = (Math.random()-0.5)*10; dy = (Math.random()-0.5)*10; d = Math.hypot(dx, dy) || 0.01; }
-          const force = (k * k) / d;
-          const fx = (dx / d) * force, fy = (dy / d) * force;
-          const da = disp.get(cities[i].id), db = disp.get(cities[j].id);
-          da.x += fx; da.y += fy;
-          db.x -= fx; db.y -= fy;
-        }
-      }
-      for(const [aId, bId] of edges){
-        const pa = nodePositions.get(aId), pb = nodePositions.get(bId);
-        let dx = pa.x - pb.x, dy = pa.y - pb.y;
-        let d = Math.hypot(dx, dy);
-        if(d < 0.01) d = 0.01;
-        const force = (d * d) / k * 1.2;
-        const fx = (dx / d) * force, fy = (dy / d) * force;
-        const da = disp.get(aId), db = disp.get(bId);
-        da.x -= fx; da.y -= fy;
-        db.x += fx; db.y += fy;
-      }
-      cities.forEach(c => {
-        const d = disp.get(c.id);
-        const p = nodePositions.get(c.id);
-        const len = Math.hypot(d.x, d.y);
-        if(len > 0){
-          const limit = Math.min(len, temp);
-          p.x += (d.x / len) * limit;
-          p.y += (d.y / len) * limit;
-        }
-        p.x = Math.max(PAD, Math.min(W - PAD, p.x));
-        p.y = Math.max(PAD, Math.min(H - PAD, p.y));
-      });
-      temp = Math.max(temp - cool, 0.5);
-    }
-    layoutDirty = false;
-  }
 
   function fitView(){
     if(nodePositions.size === 0){ view = { x: 0, y: 0, scale: 1 }; return; }
@@ -4779,23 +4771,25 @@ const GameMap = (() => {
   }
 
   return {
-    init, render, activate, reset, fitView, setHighlight,
-    getZoneFilter, setZoneFilter, refreshZoneSelector,
-    exportAsPDF, onMapLibraryChanged,
-    invalidateLayout,
-    setMapMode,
-    getMapMode: () => mapMode,
-    /* v8.9.4：舊介面相容 */
-    setWarMode: (on) => setMapMode(on ? 'war' : 'none'),
-    isWarMode: () => mapMode === 'war',
-    accumulateWarChange,
-    saveWarChanges,
-    accumulateRouteChange,
-    saveRouteChanges,
-    getPendingWarCount: () => pendingWarCount,
-    isBaseMapVisible: () => baseMapVisible,
-    toggleBaseMap,
-  };
+  init, render, activate, reset, fitView, setHighlight,
+  getZoneFilter, setZoneFilter, refreshZoneSelector,
+  exportAsPDF, onMapLibraryChanged,
+  invalidateLayout,
+  setMapMode,
+  getMapMode: () => mapMode,
+  setWarMode: (on) => setMapMode(on ? 'war' : 'none'),
+  isWarMode: () => mapMode === 'war',
+  accumulateWarChange,
+  saveWarChanges,
+  accumulateRouteChange,
+  saveRouteChanges,
+  getPendingWarCount: () => pendingWarCount,
+  isBaseMapVisible: () => baseMapVisible,
+  toggleBaseMap,
+  /* v8.9.6 */
+  toggleFullscreen,
+  isFullscreen: () => isFullscreen,
+};
 })();
 
 /* ============================================================
