@@ -3629,38 +3629,63 @@ function toggleFullscreen(){
   function touchCenter(t1, t2){ return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
 
 function onTouchStart(e){
+  // ① 雙指 → Pinch 縮放
   if(e.touches.length === 2){
     e.preventDefault();
     pinchStartDist = touchDist(e.touches[0], e.touches[1]);
     pinchStartScale = view.scale;
     pinchStartCenter = touchCenter(e.touches[0], e.touches[1]);
-    dragging = false; nodeDragging = null; touchPanStart = null;
-  } else if(e.touches.length === 1){
+    // 清除其他狀態，避免衝突
+    dragging = false;
+    nodeDragging = null;
+    touchPanStart = null;
+    modeTouchStart = null;
+    return;
+  }
+
+  // ② 單指
+  if(e.touches.length === 1){
     const t = e.touches[0];
     const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
     const city = pickCity(worldPos);
 
-    /* 優先判定節點拖曳（無論什麼模式都允許） */
+    // ⭐ 2-1. 節點拖曳優先（不論什麼模式）
     if(city){
-      nodeDragging = { cityId: city.id, offsetX: worldPos.x - nodePositions.get(city.id).x, offsetY: worldPos.y - nodePositions.get(city.id).y };
-      if(mapMode !== 'none') modeTouchStart = { moved: true };
+      nodeDragging = {
+        cityId: city.id,
+        offsetX: worldPos.x - nodePositions.get(city.id).x,
+        offsetY: worldPos.y - nodePositions.get(city.id).y,
+        moved: false,
+        startX: t.clientX,
+        startY: t.clientY
+      };
+      // 標記「已移動」避免觸發模式點擊
+      if(mapMode !== 'none'){
+        modeTouchStart = { x: t.clientX, y: t.clientY, moved: true };
+      }
       e.preventDefault();
       return;
     }
 
-    /* 模式中：記錄點擊 */
+    // 2-2. 模式中（點空白）：記錄起始位置，等待判定
     if(mapMode !== 'none'){
       modeTouchStart = { x: t.clientX, y: t.clientY, moved: false };
       e.preventDefault();
       return;
     }
 
-    /* 無模式：平移畫布 */
-    touchPanStart = { x: t.clientX, y: t.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
+    // 2-3. 無模式（點空白）：平移畫布
+    touchPanStart = {
+      x: t.clientX,
+      y: t.clientY,
+      sx: containerEl.scrollLeft,
+      sy: containerEl.scrollTop
+    };
   }
 }
 
-  function onTouchMove(e){
+function onTouchMove(e){
+  // ① 雙指 → Pinch 縮放
   if(e.touches.length === 2 && pinchStartDist > 0){
     e.preventDefault();
     const dist = touchDist(e.touches[0], e.touches[1]);
@@ -3677,19 +3702,32 @@ function onTouchStart(e){
     render();
     return;
   }
+
+  // ② 單指
   if(e.touches.length === 1){
     const t = e.touches[0];
 
-    /* 1. 優先處理節點拖曳 */
+    // ⭐ 2-1. 節點拖曳（最高優先）
     if(nodeDragging){
       e.preventDefault();
       const worldPos = getWorldPosFromClient(t.clientX, t.clientY);
       const p = nodePositions.get(nodeDragging.cityId);
-      if(p){ p.x = worldPos.x - nodeDragging.offsetX; p.y = worldPos.y - nodeDragging.offsetY; render(); }
+
+      // 判斷是否真的移動（超過 5px 才算拖曳）
+      const dx = Math.abs(t.clientX - nodeDragging.startX);
+      const dy = Math.abs(t.clientY - nodeDragging.startY);
+      if(dx > 5 || dy > 5) nodeDragging.moved = true;
+
+      if(p){
+        p.x = worldPos.x - nodeDragging.offsetX;
+        p.y = worldPos.y - nodeDragging.offsetY;
+      }
+      // 直接重繪，不重算佈局
+      render();
       return;
     }
 
-    /* 2. 模式中：記錄移動 */
+    // 2-2. 模式中：僅記錄是否移動
     if(mapMode !== 'none' && modeTouchStart){
       const dx = Math.abs(t.clientX - modeTouchStart.x);
       const dy = Math.abs(t.clientY - modeTouchStart.y);
@@ -3698,7 +3736,7 @@ function onTouchStart(e){
       return;
     }
 
-    /* 3. 畫布平移 */
+    // 2-3. 平移畫布
     if(touchPanStart){
       e.preventDefault();
       const dx = t.clientX - touchPanStart.x;
@@ -3710,35 +3748,76 @@ function onTouchStart(e){
 }
 
 function onTouchEnd(e){
-  if(e.touches.length < 2){ pinchStartDist = 0; pinchStartCenter = null; }
+  // 雙指放開：重置 pinch 狀態
+  if(e.touches.length < 2){
+    pinchStartDist = 0;
+    pinchStartCenter = null;
+  }
+
+  // 全部手指放開
   if(e.touches.length === 0){
-    /* 1. 結束節點拖曳，並儲存新座標 */
+
+    // ⭐ 1. 結束節點拖曳 → 儲存座標
     if(nodeDragging){
+      const wasMoved = nodeDragging.moved;
       const city = state.cities.find(c => c.id === nodeDragging.cityId);
       const p = nodePositions.get(nodeDragging.cityId);
-      if(city && p){
+
+      if(city && p && wasMoved){
+        const nodeId = city.code || ('n_' + city.id);
+        const newX = Math.round(p.x);
+        const newY = Math.round(p.y);
+
+        // ① 寫入 city.mapNode（沙盤）
         city.mapNode = {
           mapId: state.mapLibrary.activeMapId || '',
-          nodeId: city.code || ('n_' + city.id),
-          x: Math.round(p.x),
-          y: Math.round(p.y),
+          nodeId: nodeId,
+          x: newX,
+          y: newY,
           method: 'manual'
         };
         state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
         if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+
+        // ② 同步寫入 activeMapNodes（讓 NodeCalibration 也看得到）
+        if(activeMapNodes){
+          activeMapNodes[nodeId] = {
+            name: city.name,
+            code: city.code || '',
+            x: newX,
+            y: newY,
+            namedCityId: city.id,
+            source: 'manual'
+          };
+        }
+
+        // ③ 同步推送到 Firebase 地圖庫
+        if(state.mapLibrary.activeMapId && window.SLG.writeNodeToMapLibrary){
+          window.SLG.writeNodeToMapLibrary(state.mapLibrary.activeMapId, nodeId, {
+            name: city.name,
+            code: city.code || '',
+            x: newX,
+            y: newY,
+            source: 'manual'
+          }).catch(err => console.warn('寫入地圖庫失敗', err));
+        }
+
         if(window.SLG.tickLamport) window.SLG.tickLamport();
         if(window.SLG.flushPatches) window.SLG.flushPatches();
         if(window.SLG.saveState) window.SLG.saveState('important');
-        logSystem(`📍 已儲存「${city.name}」新座標：(${Math.round(p.x)}, ${Math.round(p.y)})`);
+
+        logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
       }
+
       nodeDragging = null;
       modeTouchStart = null;
+      touchPanStart = null;
       applyCursor();
       render();
       return;
     }
 
-    /* 2. 模式中：判定點擊 */
+    // 2. 模式中：判定點擊
     if(mapMode !== 'none' && modeTouchStart){
       if(!modeTouchStart.moved){
         const t = e.changedTouches[0];
@@ -3749,7 +3828,7 @@ function onTouchEnd(e){
       return;
     }
 
-    /* 3. 結束畫布平移 */
+    // 3. 結束畫布平移
     touchPanStart = null;
     applyCursor();
   }
@@ -3778,29 +3857,34 @@ function onTouchEnd(e){
     return (city.zoneId || '__none__') === currentZoneFilter;
   }
 
-  function onPointerDown(e){
+function onPointerDown(e){
   if(e.pointerType === 'touch') return;
   const worldPos = getWorldPos(e);
   const city = pickCity(worldPos);
 
-  /* 優先判定節點拖曳（無論什麼模式都允許） */
+  // ⭐ 節點拖曳優先（不論什麼模式）
   if(city){
-    nodeDragging = { cityId: city.id, offsetX: worldPos.x - nodePositions.get(city.id).x, offsetY: worldPos.y - nodePositions.get(city.id).y };
+    nodeDragging = {
+      cityId: city.id,
+      offsetX: worldPos.x - nodePositions.get(city.id).x,
+      offsetY: worldPos.y - nodePositions.get(city.id).y
+    };
     canvas.style.cursor = 'grabbing';
-    /* 如果在模式中，標記已移動，避免觸發模式點擊 */
+    // 標記「已移動」避免觸發模式點擊
     if(mapMode !== 'none'){
       modePointerStart = { x: e.clientX, y: e.clientY, moved: true };
     }
+    e.preventDefault();
     return;
   }
 
-  /* 模式中：僅記錄起始位置（點擊空白處） */
+  // 模式中（點空白）：記錄起始位置
   if(mapMode !== 'none'){
     modePointerStart = { x: e.clientX, y: e.clientY, moved: false };
     return;
   }
 
-  /* 無模式：平移畫布 */
+  // 無模式（點空白）：平移畫布
   dragging = true;
   dragStart = { x: e.clientX, y: e.clientY, sx: containerEl.scrollLeft, sy: containerEl.scrollTop };
   canvas.style.cursor = 'grabbing';
@@ -3809,16 +3893,20 @@ function onTouchEnd(e){
 function onPointerMove(e){
   if(e.pointerType === 'touch') return;
 
-  /* 1. 優先處理節點拖曳 */
+  // ⭐ 1. 節點拖曳（最高優先）
   if(nodeDragging){
     const worldPos = getWorldPos(e);
     const p = nodePositions.get(nodeDragging.cityId);
-    if(p){ p.x = worldPos.x - nodeDragging.offsetX; p.y = worldPos.y - nodeDragging.offsetY; }
-    if(state.cities.length > 0) render();
+    if(p){
+      p.x = worldPos.x - nodeDragging.offsetX;
+      p.y = worldPos.y - nodeDragging.offsetY;
+    }
+    // 直接重繪，不重算佈局
+    render();
     return;
   }
 
-  /* 2. 模式中：記錄移動 + hover 預覽 */
+  // 2. 模式中的 hover 預覽
   if(mapMode !== 'none' && modePointerStart){
     const dx = Math.abs(e.clientX - modePointerStart.x);
     const dy = Math.abs(e.clientY - modePointerStart.y);
@@ -3833,38 +3921,72 @@ function onPointerMove(e){
     return;
   }
 
-  /* 3. 畫布平移 */
+  // 3. 畫布平移
   if(dragging){
     const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
     containerEl.scrollLeft = dragStart.sx - dx;
     containerEl.scrollTop = dragStart.sy - dy;
     return;
   }
+
+  // hover 效果
+  const worldPos = getWorldPos(e);
+  const city = pickCity(worldPos);
+  hoveredCityId = city ? city.id : null;
   if(state.cities.length > 0) render();
 }
 
 function onPointerUp(e){
   if(e.pointerType === 'touch') return;
 
-  /* 1. 結束節點拖曳，並儲存新座標 */
+  // ⭐ 1. 結束節點拖曳 → 儲存座標
   if(nodeDragging){
     const city = state.cities.find(c => c.id === nodeDragging.cityId);
     const p = nodePositions.get(nodeDragging.cityId);
     if(city && p){
-      // ⭐ v8.9.7：把拖曳後座標寫入 city.mapNode，讓下次佈局計算時使用新座標
+      const nodeId = city.code || ('n_' + city.id);
+      const newX = Math.round(p.x);
+      const newY = Math.round(p.y);
+
+      // ① 寫入 city.mapNode（沙盤）
       city.mapNode = {
         mapId: state.mapLibrary.activeMapId || '',
-        nodeId: city.code || ('n_' + city.id),
-        x: Math.round(p.x),
-        y: Math.round(p.y),
+        nodeId: nodeId,
+        x: newX,
+        y: newY,
         method: 'manual'
       };
       state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
       if(window.SLG.markDirty) window.SLG.markDirty('city', city.id);
+
+      // ② 同步寫入 activeMapNodes（讓 NodeCalibration 也看得到）
+      if(activeMapNodes){
+        activeMapNodes[nodeId] = {
+          name: city.name,
+          code: city.code || '',
+          x: newX,
+          y: newY,
+          namedCityId: city.id,
+          source: 'manual'
+        };
+      }
+
+      // ③ 同步推送到 Firebase 地圖庫
+      if(state.mapLibrary.activeMapId && window.SLG.writeNodeToMapLibrary){
+        window.SLG.writeNodeToMapLibrary(state.mapLibrary.activeMapId, nodeId, {
+          name: city.name,
+          code: city.code || '',
+          x: newX,
+          y: newY,
+          source: 'manual'
+        }).catch(err => console.warn('寫入地圖庫失敗', err));
+      }
+
       if(window.SLG.tickLamport) window.SLG.tickLamport();
       if(window.SLG.flushPatches) window.SLG.flushPatches();
       if(window.SLG.saveState) window.SLG.saveState('important');
-      logSystem(`📍 已儲存「${city.name}」新座標：(${Math.round(p.x)}, ${Math.round(p.y)})`);
+
+      logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
     }
     nodeDragging = null;
     modePointerStart = null;
@@ -3873,7 +3995,7 @@ function onPointerUp(e){
     return;
   }
 
-  /* 2. 模式中：判定點擊（如果沒有移動） */
+  // 2. 模式中：判定點擊
   if(mapMode !== 'none' && modePointerStart){
     if(!modePointerStart.moved){
       handleModeTap(e.clientX, e.clientY);
@@ -3882,7 +4004,7 @@ function onPointerUp(e){
     return;
   }
 
-  /* 3. 結束畫布平移 */
+  // 3. 結束畫布平移
   if(dragging){ dragging = false; applyCursor(); }
 }
 
@@ -6225,6 +6347,28 @@ const NodeCalibration = (() => {
       ctx.setLineDash([]);
     }
 
+// ⭐ v8.9.7：為「未標記」的城池顯示灰色占位點
+for(const c of state.cities){
+  const nid = cityNodeId(c);
+  if(nodes[nid]) continue; // 已有節點，跳過
+  // 嘗試從 city.mapNode 取得座標
+  let px = null, py = null;
+  if(c.mapNode && c.mapNode.mapId === mapId && typeof c.mapNode.x === 'number'){
+    px = c.mapNode.x;
+    py = c.mapNode.y;
+  }
+  if(px === null) continue; // 沒座標就跳過
+  const dx = px * zoom;
+  const dy = py * zoom;
+  const radius = Math.max(6, Math.min(10, 10 * Math.min(1, zoom)));
+  ctx.beginPath();
+  ctx.arc(dx, dy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(148,163,184,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
     for(const nid in nodes){
       const n = nodes[nid];
       if(!n || typeof n.x !== 'number') continue;
