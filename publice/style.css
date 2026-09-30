@@ -1,6 +1,6 @@
 /* ============================================================================
- * style.css — v8.6.7
- * v8.6.7：雲端同步狀態列 + 參數設定同步區塊 + 登出簡化
+ * style.css — v8.9.4
+ * v8.9.4：三模式互斥 UI + 虛線路線 + 手動備份按鈕 + 路線刪除確認 Modal
  * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
@@ -182,7 +182,6 @@ body{background:var(--bg-deep);color:var(--text-primary);
 .sync-dot{font-size:10px;line-height:1;}
 .sync-text{font-size:10px;letter-spacing:.3px;}
 
-/* 狀態顏色 */
 .sync-status.state-idle .sync-dot{color:var(--text-dim);}
 .sync-status.state-synced .sync-dot{color:var(--neon-green);text-shadow:0 0 6px var(--neon-green);}
 .sync-status.state-pending .sync-dot{color:var(--neon-yellow);text-shadow:0 0 6px var(--neon-yellow);animation:syncPulse 1.5s ease-in-out infinite;}
@@ -1745,6 +1744,7 @@ tr.inline-editing .col-name{
   margin-bottom:18px;
   animation:networkPulse 1.6s ease-in-out infinite;
 }
+
 /* v8.6.8：匯入模式選單 */
 .excel-mode-select{
   width:auto;
@@ -1855,7 +1855,6 @@ tr.inline-editing .col-name{
   width:18px;text-align:center;flex:0 0 18px;
 }
 
-/* 手機：下拉選單滿版 */
 @media (max-width:600px){
   .auth-menu{
     right:-8px;
@@ -2023,7 +2022,6 @@ tr.inline-editing .col-name{
   color:var(--neon-green);
 }
 
-/* 卡片檢視的分級明細 */
 .city-card .city-tier-detail{
   display:flex;gap:10px;flex-wrap:wrap;
   padding:6px 8px;
@@ -2078,7 +2076,6 @@ tr.inline-editing .col-name{
   background:transparent;
 }
 
-/* 展開列 */
 tr.tier-edit-row td{
   padding:0 !important;
   background:#0a101a;
@@ -2259,11 +2256,11 @@ tr.tier-edit-row td{
   font-style:italic;
   font-size:12px;
 }
+
 /* ============================================================
    v8.8.0：地圖庫（Map Library）
    ============================================================ */
 
-/* 地圖庫控制列 */
 .map-library-toolbar{
   display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
   padding:10px 12px;
@@ -2764,7 +2761,6 @@ tr.tier-edit-row td{
   white-space:nowrap;
 }
 
-/* 空狀態 */
 .map-gallery-empty{
   grid-column:1 / -1;
   padding:40px 20px;
@@ -2811,7 +2807,6 @@ tr.tier-edit-row td{
   pointer-events:none;
 }
 
-/* 校準模式開啟時的畫布裝飾 */
 .nc-canvas-wrap.calibrating::before{
   content:'';
   position:absolute;
@@ -2826,7 +2821,6 @@ tr.tier-edit-row td{
   50%{opacity:.2;}
 }
 
-/* 校準點標記 */
 .nc-marker-label{
   position:absolute;
   padding:2px 6px;
@@ -2840,11 +2834,11 @@ tr.tier-edit-row td{
   transform:translate(-50%,-140%);
   box-shadow:0 2px 8px rgba(0,0,0,.5);
 }
+
 /* ============================================================
    v8.9.0：節點校準 v2（菱形偵測 + 智慧命名）
    ============================================================ */
 
-/* 模式徽章 */
 .nc-mode-badge{
   display:inline-flex;
   align-items:center;
@@ -2880,7 +2874,6 @@ tr.tier-edit-row td{
   50%{opacity:.5;}
 }
 
-/* 主佈局 v2 */
 .nc-layout-v2{
   display:grid;
   grid-template-columns:340px 1fr;
@@ -2891,7 +2884,6 @@ tr.tier-edit-row td{
   max-height:calc(95vh - 100px);
 }
 
-/* 左側欄 v2 */
 .nc-sidebar-v2{
   display:flex;
   flex-direction:column;
@@ -2900,7 +2892,6 @@ tr.tier-edit-row td{
   overflow:hidden;
 }
 
-/* 掃描進度面板 */
 .nc-scan-panel{
   background:linear-gradient(135deg, rgba(255,204,0,.08), rgba(255,153,0,.04));
   border:1px solid rgba(255,204,0,.4);
@@ -2937,7 +2928,6 @@ tr.tier-edit-row td{
   line-height:1.5;
 }
 
-/* 統計面板 */
 .nc-stats-panel{
   background:#0a101a;
   border:1px solid var(--border);
@@ -2967,7 +2957,6 @@ tr.tier-edit-row td{
 .nc-stat-value.nc-stat-warn{ color:var(--neon-red); }
 .nc-stat-value.nc-stat-manual{ color:var(--neon-purple); }
 
-/* 篩選列 */
 .nc-filter-bar{
   display:flex;
   gap:4px;
@@ -3002,7 +2991,6 @@ tr.tier-edit-row td{
   box-shadow:0 0 8px rgba(68,170,255,.2);
 }
 
-/* 候選清單 */
 .nc-candidate-list{
   flex:1 1 auto;
   min-height:0;
@@ -3121,7 +3109,6 @@ tr.tier-edit-row td{
   font-size:14px;
 }
 
-/* 操作按鈕列 v2 */
 .nc-actions-v2{
   display:flex;
   gap:4px;
@@ -3143,7 +3130,6 @@ tr.tier-edit-row td{
   min-width:60px;
 }
 
-/* 畫布容器 v2 */
 .nc-canvas-wrap-v2{
   position:relative;
   background:#060a10;
@@ -3170,7 +3156,6 @@ tr.tier-edit-row td{
   background:#0a0e17;
 }
 
-/* 提示標籤 v2 */
 .nc-canvas-hint-v2{
   position:absolute;
   top:12px;
@@ -3196,7 +3181,6 @@ tr.tier-edit-row td{
   box-shadow:0 4px 12px rgba(170,102,255,.35);
 }
 
-/* 命名彈出面板 */
 .nc-naming-popup{
   position:absolute;
   width:280px;
@@ -3343,7 +3327,6 @@ tr.tier-edit-row td{
   font-size:11px;
 }
 
-/* 響應式 */
 @media (max-width:900px){
   .nc-layout-v2{
     grid-template-columns:1fr;
@@ -3378,7 +3361,6 @@ tr.tier-edit-row td{
   }
 }
 
-/* 補點模式下的十字準星（可選增強視覺） */
 .nc-canvas-wrap-v2.manual-mode::before{
   content:'';
   position:absolute;
@@ -3392,11 +3374,11 @@ tr.tier-edit-row td{
   0%,100%{opacity:.5;}
   50%{opacity:.15;}
 }
+
 /* ============================================================
    v8.9.1：節點校準 v3（AI 辨識 + 縮放 + 混合模式）
    ============================================================ */
 
-/* 進度顯示（標題列右側） */
 .nc-progress-inline{
   font-size:12px;
   font-weight:700;
@@ -3410,7 +3392,6 @@ tr.tier-edit-row td{
   margin:0 3px;
 }
 
-/* 工具列 v3 */
 .nc-toolbar-v3{
   display:flex;
   gap:6px;
@@ -3446,7 +3427,6 @@ tr.tier-edit-row td{
   border-radius:6px;
 }
 
-/* 主佈局 v3 */
 .nc-layout-v3{
   display:grid;
   grid-template-columns:300px 1fr;
@@ -3457,7 +3437,6 @@ tr.tier-edit-row td{
   max-height:calc(95vh - 180px);
 }
 
-/* 左側欄 v3 */
 .nc-sidebar-v3{
   display:flex;
   flex-direction:column;
@@ -3470,7 +3449,6 @@ tr.tier-edit-row td{
   padding:6px;
 }
 
-/* Tab 切換 */
 .nc-tabs-v3{
   display:flex;
   gap:2px;
@@ -3519,7 +3497,6 @@ tr.tier-edit-row td{
   color:#fff;
 }
 
-/* 清單 */
 .nc-list-v3{
   flex:1 1 auto;
   min-height:0;
@@ -3534,7 +3511,6 @@ tr.tier-edit-row td{
   border-radius:3px;
 }
 
-/* 清單項目 */
 .nc-item-v3{
   display:flex;
   align-items:center;
@@ -3623,7 +3599,6 @@ tr.tier-edit-row td{
   font-size:13px;
 }
 
-/* 操作按鈕 */
 .nc-actions-v3{
   display:flex;
   gap:4px;
@@ -3637,7 +3612,6 @@ tr.tier-edit-row td{
   padding:6px 8px;
 }
 
-/* 畫布容器 v3 */
 .nc-canvas-wrap-v3{
   position:relative;
   background:#060a10;
@@ -3675,7 +3649,6 @@ tr.tier-edit-row td{
   -webkit-user-drag:none;
 }
 
-/* 提示 */
 .nc-canvas-hint-v3{
   position:absolute;
   top:12px;
@@ -3701,7 +3674,6 @@ tr.tier-edit-row td{
   box-shadow:0 4px 12px rgba(170,102,255,.35);
 }
 
-/* AI 進度遮罩 */
 .nc-ai-progress{
   position:absolute;
   top:0;left:0;right:0;bottom:0;
@@ -3764,7 +3736,6 @@ tr.tier-edit-row td{
   min-height:16px;
 }
 
-/* 點擊辨識面板 */
 .nc-click-popup{
   position:absolute;
   width:280px;
@@ -3820,7 +3791,6 @@ tr.tier-edit-row td{
   min-height:0;
 }
 
-/* AI 辨識結果卡 */
 .nc-ai-result{
   background:#0a101a;
   border:1px solid rgba(34,255,136,.35);
@@ -3870,7 +3840,6 @@ tr.tier-edit-row td{
   padding:5px 8px;
 }
 
-/* 距差排序清單（AI 失敗備援） */
 .nc-fallback-list{
   display:flex;
   flex-direction:column;
@@ -3907,14 +3876,12 @@ tr.tier-edit-row td{
   color:var(--text-dim);
 }
 
-/* 畫布上的標記（用 Canvas 繪製，這裡只留除錯用） */
 .nc-marker-debug{
   position:absolute;
   pointer-events:none;
   z-index:4;
 }
 
-/* 響應式 */
 @media (max-width:900px){
   .nc-layout-v3{
     grid-template-columns:1fr;
@@ -3970,7 +3937,6 @@ tr.tier-edit-row td{
   }
 }
 
-/* 補點模式視覺 */
 .nc-canvas-wrap-v3.manual-mode::before{
   content:'';
   position:absolute;
@@ -3984,11 +3950,11 @@ tr.tier-edit-row td{
   0%,100%{ opacity:.5; }
   50%{ opacity:.15; }
 }
+
 /* ============================================================
    v8.9.2：地圖主頁面 - 右側懸浮按鈕 + 宣戰模式
    ============================================================ */
 
-/* 地圖外層容器（含右側按鈕） */
 .game-map-outer{
   position:relative;
   width:100%;
@@ -4001,7 +3967,6 @@ tr.tier-edit-row td{
   height:100%;
 }
 
-/* 右側垂直按鈕組 */
 .map-float-btns{
   position:absolute;
   top:50%;
@@ -4055,7 +4020,6 @@ tr.tier-edit-row td{
   margin:2px 0;
 }
 
-/* 宣戰模式提示 */
 .map-war-hint{
   position:absolute;
   top:14px;
@@ -4082,7 +4046,6 @@ tr.tier-edit-row td{
   50%{ box-shadow:0 4px 24px rgba(255,68,102,.9); }
 }
 
-/* 宣戰儲存浮動按鈕 */
 .map-war-save-btn{
   position:absolute;
   bottom:18px;
@@ -4132,7 +4095,6 @@ tr.tier-edit-row td{
   to{ opacity:1; transform:translateY(0); }
 }
 
-/* 宣戰模式下畫布裝飾 */
 .game-map-outer.war-mode .game-map-container{
   cursor:crosshair;
 }
@@ -4182,7 +4144,6 @@ tr.tier-edit-row td{
   text-shadow:0 0 10px rgba(255,68,102,.6);
 }
 
-/* 類型選擇 */
 .war-quick-type-row{
   display:flex;
   gap:8px;
@@ -4219,7 +4180,6 @@ tr.tier-edit-row td{
   box-shadow:0 0 16px rgba(34,255,136,.25);
 }
 
-/* 百分比快速選項 */
 .war-quick-pct-row{
   display:grid;
   grid-template-columns:repeat(2, 1fr);
@@ -4250,7 +4210,6 @@ tr.tier-edit-row td{
   box-shadow:0 0 12px rgba(68,170,255,.3);
 }
 
-/* 時間欄位 */
 .war-quick-field{
   margin-bottom:14px;
 }
@@ -4283,7 +4242,6 @@ tr.tier-edit-row td{
   display:none;
 }
 
-/* 響應式 */
 @media (max-width:768px){
   .map-float-btn{
     width:60px;
@@ -4356,11 +4314,11 @@ tr.tier-edit-row td{
     font-size:20px;
   }
 }
+
 /* ============================================================
    v8.9.3：NodeCalibration 定點模式 + 拖曳 + 刪除按鈕
    ============================================================ */
 
-/* 定點模式按鈕 active 狀態 */
 #nc_btnFixedPoint.active {
   background: linear-gradient(135deg, #059669, #10b981);
   color: #fff;
@@ -4368,7 +4326,6 @@ tr.tier-edit-row td{
   box-shadow: 0 0 16px rgba(34, 255, 136, 0.4);
 }
 
-/* 定點模式下的提示 */
 .nc-canvas-wrap-v3.fixed-point-mode {
   cursor: crosshair;
   border-color: var(--neon-green);
@@ -4382,7 +4339,6 @@ tr.tier-edit-row td{
   box-shadow: 0 4px 12px rgba(34, 255, 136, 0.3);
 }
 
-/* 定點模式下畫布裝飾 */
 .nc-canvas-wrap-v3.fixed-point-mode::before {
   content: '';
   position: absolute;
@@ -4397,14 +4353,12 @@ tr.tier-edit-row td{
   50% { opacity: 0.15; }
 }
 
-/* 定點模式下選中的城池高亮 */
 .nc-item-v3.fixed-selected {
   border-color: var(--neon-green) !important;
   background: rgba(34, 255, 136, 0.12) !important;
   box-shadow: 0 0 16px rgba(34, 255, 136, 0.3);
 }
 
-/* 清單項目的刪除按鈕 */
 .nc-item-delete {
   flex: 0 0 auto;
   background: transparent;
@@ -4425,12 +4379,10 @@ tr.tier-edit-row td{
   background: rgba(255, 68, 102, 0.3);
 }
 
-/* 拖曳中的節點 */
 .nc-canvas-wrap-v3.dragging-node {
   cursor: grabbing;
 }
 
-/* 拖曳中的節點光暈 */
 .nc-node-drag-glow {
   position: absolute;
   pointer-events: none;
@@ -4446,7 +4398,6 @@ tr.tier-edit-row td{
   50% { box-shadow: 0 0 28px rgba(68, 170, 255, 0.9); }
 }
 
-/* 節點顏色圖例 */
 .nc-node-legend {
   display: flex;
   gap: 12px;
@@ -4475,9 +4426,6 @@ tr.tier-edit-row td{
 .nc-node-legend .dot.manual { background: #3b82f6; }
 .nc-node-legend .dot.selected { background: #ffffff; border-color: #22ff88; }
 
-/* ============================================================
-   v8.9.3：底圖開關
-   ============================================================ */
 #btnMapBaseMap.active {
   background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
   color: var(--neon-blue);
@@ -4485,7 +4433,6 @@ tr.tier-edit-row td{
   box-shadow: 0 0 12px rgba(68, 170, 255, 0.3);
 }
 
-/* 底圖關閉時的畫布裝飾 */
 .game-map-outer.base-map-off .game-map-container {
   background: #0a0e17;
 }
@@ -4505,19 +4452,10 @@ tr.tier-edit-row td{
   z-index: 5;
 }
 
-/* ============================================================
-   v8.9.3：路線改粗黑線（透過 canvas 繪製，此處為說明）
-   ============================================================ */
-/* 路線改為 10px 黑色 + 白色外框，已於 ui.js drawNormalRoute 中實作 */
-
-/* ============================================================
-   v8.9.3：宣戰模式修正的輔助樣式
-   ============================================================ */
 .map-war-hint {
   pointer-events: none;
 }
 
-/* 手機版宣戰提示加大 */
 @media (max-width: 768px) {
   .map-war-hint {
     font-size: 12px;
@@ -4540,6 +4478,167 @@ tr.tier-edit-row td{
     padding: 5px 8px;
   }
   .map-war-hint {
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+}
+
+/* ============================================================
+   v8.9.4：三模式互斥 + 統一提示條 + 路線刪除確認 Modal
+   ============================================================ */
+
+/* 模式按鈕 active 狀態（三模式共用底色） */
+#btnMapRouteMode.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(59, 130, 246, 0.05));
+  color: var(--neon-blue);
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 14px rgba(68, 170, 255, 0.35);
+}
+#btnMapWarMode.active {
+  background: linear-gradient(135deg, rgba(255, 68, 102, 0.25), rgba(255, 68, 102, 0.05));
+  color: var(--neon-red);
+  border-color: var(--neon-red);
+  box-shadow: 0 0 14px rgba(255, 68, 102, 0.35);
+}
+#btnMapCityMode.active {
+  background: linear-gradient(135deg, rgba(34, 255, 136, 0.2), rgba(34, 255, 136, 0.05));
+  color: var(--neon-green);
+  border-color: var(--neon-green);
+  box-shadow: 0 0 14px rgba(34, 255, 136, 0.35);
+}
+
+/* ── 三模式畫布邊框 ── */
+.game-map-outer.route-mode .game-map-container {
+  cursor: crosshair;
+  border-color: var(--neon-blue);
+  box-shadow: inset 0 0 40px rgba(68, 170, 255, 0.12);
+}
+.game-map-outer.war-mode .game-map-container {
+  cursor: crosshair;
+  border-color: var(--neon-red);
+  box-shadow: inset 0 0 40px rgba(255, 68, 102, 0.12);
+}
+.game-map-outer.city-mode .game-map-container {
+  cursor: crosshair;
+  border-color: var(--neon-green);
+  box-shadow: inset 0 0 40px rgba(34, 255, 136, 0.12);
+}
+
+/* ── 統一模式提示條 ── */
+.map-mode-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 18px;
+  border: 2px solid;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  z-index: 25;
+  pointer-events: none;
+  animation: modeHintPulse 1.6s ease-in-out infinite;
+  white-space: nowrap;
+}
+.map-mode-hint.hidden {
+  display: none;
+}
+
+/* 預設樣式（未啟用模式時不顯示，但以防萬一） */
+.map-mode-hint {
+  background: rgba(30, 58, 95, 0.92);
+  border-color: rgba(68, 170, 255, 0.8);
+  color: #9ed2ff;
+  box-shadow: 0 4px 16px rgba(68, 170, 255, 0.5);
+}
+
+/* 路線模式（藍色） */
+.map-mode-hint.mode-route {
+  background: rgba(30, 58, 95, 0.92);
+  border-color: rgba(68, 170, 255, 0.9);
+  color: #9ed2ff;
+  box-shadow: 0 4px 16px rgba(68, 170, 255, 0.5);
+}
+
+/* 宣戰模式（紅色） */
+.map-mode-hint.mode-war {
+  background: rgba(255, 68, 102, 0.92);
+  border-color: rgba(255, 204, 0, 0.8);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(255, 68, 102, 0.5);
+}
+
+/* 城池編輯模式（綠色） */
+.map-mode-hint.mode-city {
+  background: rgba(5, 80, 55, 0.92);
+  border-color: rgba(34, 255, 136, 0.9);
+  color: #a7ffcf;
+  box-shadow: 0 4px 16px rgba(34, 255, 136, 0.5);
+}
+
+@keyframes modeHintPulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50%      { transform: translateX(-50%) scale(1.02); }
+}
+
+/* ── 路線刪除確認 Modal ── */
+#routeDeleteConfirmModal .modal-box {
+  border-color: rgba(255, 68, 102, 0.5);
+}
+#routeDeleteConfirmModal h3 {
+  color: var(--neon-red);
+}
+
+/* ── History Modal 手動備份按鈕 ── */
+#btnCreateBackupNow {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  font-size: 12px;
+  padding: 8px 14px;
+}
+#btnCreateBackupNow:hover {
+  box-shadow: 0 4px 16px rgba(34, 255, 136, 0.4);
+}
+#btnCreateBackupNow:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 城池 Modal 座標提示 ── */
+#cm_coordsHint {
+  padding: 6px 10px;
+  background: rgba(34, 255, 136, 0.08);
+  border: 1px dashed rgba(34, 255, 136, 0.4);
+  border-radius: var(--radius-sm);
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── 響應式（三模式 & 提示條） ── */
+@media (max-width: 768px) {
+  .map-mode-hint {
+    font-size: 12px;
+    padding: 8px 16px;
+    max-width: 90vw;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.4;
+  }
+}
+
+@media (max-width: 600px) {
+  #btnMapRouteMode,
+  #btnMapWarMode,
+  #btnMapCityMode {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .map-mode-hint {
     font-size: 11px;
     padding: 6px 12px;
   }
