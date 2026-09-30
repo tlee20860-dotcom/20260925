@@ -3231,8 +3231,9 @@ let isFullscreen = false;
   const LS_BASE_MAP_KEY = 'slg_base_map_visible_v893';
 
   let activeMapId = '';
-  let activeMapNodes = null;
-  let activeMapImageEl = null;
+let activeMapNodes = null;
+let activeMapImageEl = null;
+let lastActiveMapId = '';   // ⭐ v8.9.7：記錄上次地圖 ID
 
   /* ── 初始化 ── */
   function init(){
@@ -3473,32 +3474,50 @@ if(btnFullscreenExit && !btnFullscreenExit.dataset.bound){
     }
   }
 
-  function onMapLibraryChanged(){
-    const newId = state.mapLibrary.activeMapId || '';
-    const map = newId ? getLoadedMap(newId) : null;
-    activeMapId = newId;
-    activeMapNodes = (map && map.nodes) ? map.nodes : null;
-    activeMapImageEl = (map && map.imageEl) ? map.imageEl : null;
-    layoutDirty = true;
-    nodePositions.clear();
-    if(activeMapImageEl){
-      const w = activeMapImageEl.naturalWidth || map.imageWidth || CANVAS_W;
-      const h = activeMapImageEl.naturalHeight || map.imageHeight || CANVAS_H;
+function onMapLibraryChanged(){
+  const newId = state.mapLibrary.activeMapId || '';
+  const map = newId ? getLoadedMap(newId) : null;
+  activeMapId = newId;
+  activeMapNodes = (map && map.nodes) ? map.nodes : null;
+  activeMapImageEl = (map && map.imageEl) ? map.imageEl : null;
+
+  // ⭐ v8.9.7：只有「地圖 ID 改變」時才重置視圖
+  const mapChanged = (lastActiveMapId !== newId);
+  lastActiveMapId = newId;
+
+  layoutDirty = true;
+  nodePositions.clear();
+
+  // 更新 canvas 尺寸（底圖載入完成時要對齊）
+  if(activeMapImageEl){
+    const w = activeMapImageEl.naturalWidth || map.imageWidth || CANVAS_W;
+    const h = activeMapImageEl.naturalHeight || map.imageHeight || CANVAS_H;
+    if(canvas.width !== w || canvas.height !== h){
       canvas.width = w;
       canvas.height = h;
       canvas.style.width = w + 'px';
       canvas.style.height = h + 'px';
-    } else {
+    }
+  } else {
+    if(canvas.width !== CANVAS_W || canvas.height !== CANVAS_H){
       canvas.width = CANVAS_W;
       canvas.height = CANVAS_H;
       canvas.style.width = CANVAS_W + 'px';
       canvas.style.height = CANVAS_H + 'px';
     }
+  }
+
+  if(mapChanged){
+    // ⭐ 換地圖：重置視圖 + 適合視窗
     view = { x: 0, y: 0, scale: 1 };
     applyView();
     render();
     if(containerEl && activeMapImageEl){ fitView(); applyView(); render(); }
+  } else {
+    // ⭐ 同地圖：只重繪，保留視圖（縮放 + 平移位置不變）
+    render();
   }
+}
 
   function loadZoneFilter(){
     try{
