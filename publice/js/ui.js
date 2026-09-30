@@ -3297,20 +3297,15 @@ if(btnSyncNodes && !btnSyncNodes.dataset.bound){
 }
 
 const btnRelayout = document.getElementById('btnMapRelayout');
-if(btnRelayout) btnRelayout.addEventListener('click', () => {
-  layoutDirty = true;
-  view = { x: 0, y: 0, scale: 1 };
-  applyView();
-  render();
-});
-
-    const btnRelayout = document.getElementById('btnMapRelayout');
-    if(btnRelayout) btnRelayout.addEventListener('click', () => {
-      layoutDirty = true;
-      view = { x: 0, y: 0, scale: 1 };
-      applyView();
-      render();
-    });
+if(btnRelayout && !btnRelayout.dataset.bound){
+  btnRelayout.dataset.bound = '1';
+  btnRelayout.addEventListener('click', () => {
+    layoutDirty = true;
+    view = { x: 0, y: 0, scale: 1 };
+    applyView();
+    render();
+  });
+}
 
     const btnFit = document.getElementById('btnMapFit');
 if(btnFit) btnFit.addEventListener('click', () => { fitView(); applyView(); render(); });
@@ -3771,10 +3766,14 @@ function onTouchStart(e){
   // ① 雙指 → Pinch 縮放
   if(e.touches.length === 2){
     e.preventDefault();
+    /* v8.9.8：雙指時清除長按 */
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressStart = null;
+    longPressTriggered = false;
     pinchStartDist = touchDist(e.touches[0], e.touches[1]);
     pinchStartScale = view.scale;
     pinchStartCenter = touchCenter(e.touches[0], e.touches[1]);
-    // 清除其他狀態，避免衝突
     dragging = false;
     nodeDragging = null;
     touchPanStart = null;
@@ -3798,10 +3797,24 @@ function onTouchStart(e){
         startX: t.clientX,
         startY: t.clientY
       };
-      // 標記「已移動」避免觸發模式點擊
       if(mapMode !== 'none'){
         modeTouchStart = { x: t.clientX, y: t.clientY, moved: true };
       }
+
+      /* ⭐ v8.9.8：啟動長按計時器（500ms） */
+      longPressStart = { x: t.clientX, y: t.clientY, cityId: city.id };
+      longPressTriggered = false;
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        if(longPressStart && !longPressTriggered && nodeDragging && !nodeDragging.moved){
+          longPressTriggered = true;
+          const cityId = longPressStart.cityId;
+          nodeDragging = null;
+          modeTouchStart = null;
+          showNodeDeleteConfirm(cityId);
+        }
+      }, 500);
+
       e.preventDefault();
       return;
     }
@@ -3827,6 +3840,9 @@ function onTouchMove(e){
   // ① 雙指 → Pinch 縮放
   if(e.touches.length === 2 && pinchStartDist > 0){
     e.preventDefault();
+    /* v8.9.8：雙指時清除長按 */
+    if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
+    longPressStart = null;
     const dist = touchDist(e.touches[0], e.touches[1]);
     const center = touchCenter(e.touches[0], e.touches[1]);
     const factor = dist / pinchStartDist;
@@ -3855,17 +3871,21 @@ function onTouchMove(e){
       // 判斷是否真的移動（超過 5px 才算拖曳）
       const dx = Math.abs(t.clientX - nodeDragging.startX);
       const dy = Math.abs(t.clientY - nodeDragging.startY);
-      if(dx > 5 || dy > 5) nodeDragging.moved = true;
+      if(dx > 5 || dy > 5){
+        nodeDragging.moved = true;
+        /* ⭐ v8.9.8：移動超過 5px → 取消長按 */
+        if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
+        longPressStart = null;
+      }
 
       if(p){
         p.x = worldPos.x - nodeDragging.offsetX;
         p.y = worldPos.y - nodeDragging.offsetY;
       }
-      // 直接重繪，不重算佈局
       render();
       return;
     }
-
+    
     // 2-2. 模式中：僅記錄是否移動
     if(mapMode !== 'none' && modeTouchStart){
       const dx = Math.abs(t.clientX - modeTouchStart.x);
@@ -3887,6 +3907,10 @@ function onTouchMove(e){
 }
 
 function onTouchEnd(e){
+  /* v8.9.8：清除長按計時器 */
+  clearTimeout(longPressTimer);
+  longPressTimer = null;
+
   // 雙指放開：重置 pinch 狀態
   if(e.touches.length < 2){
     pinchStartDist = 0;
@@ -3898,6 +3922,18 @@ function onTouchEnd(e){
 
     // ⭐ 1. 結束節點拖曳 → 儲存座標
     if(nodeDragging){
+      /* ⭐ v8.9.8：若已觸發長按 → 不儲存座標，不繼續拖曳邏輯 */
+      if(longPressTriggered){
+        longPressTriggered = false;
+        longPressStart = null;
+        nodeDragging = null;
+        modeTouchStart = null;
+        touchPanStart = null;
+        applyCursor();
+        render();
+        return;
+      }
+
       const wasMoved = nodeDragging.moved;
       const city = state.cities.find(c => c.id === nodeDragging.cityId);
       const p = nodePositions.get(nodeDragging.cityId);
@@ -3948,16 +3984,18 @@ function onTouchEnd(e){
         logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
       }
 
-      nodeDragging = null;
-      modeTouchStart = null;
-      touchPanStart = null;
-      applyCursor();
-      render();
-      return;
-    }
+  nodeDragging = null;
+  modeTouchStart = null;
+  touchPanStart = null;
+  /* v8.9.8：順便重置長按狀態 */
+  longPressStart = null;
+  applyCursor();
+  render();
+  return;
+}
 
-    // 2. 模式中：判定點擊
-    if(mapMode !== 'none' && modeTouchStart){
+// 2. 模式中：判定點擊
+if(mapMode !== 'none' && modeTouchStart){
       if(!modeTouchStart.moved){
         const t = e.changedTouches[0];
         if(t) handleModeTap(t.clientX, t.clientY);
@@ -7041,25 +7079,27 @@ const FuzzyMatch = (() => {
   }
 
   function applyAndClose(){
-    let applied = 0;
-    for(const cityId in decisions){
-      const nodeId = decisions[cityId];
-      if(!nodeId) continue;
-      const city = state.cities.find(c => c.id === cityId);
-      if(!city) continue;
-      const map = getLoadedMap(state.mapLibrary.activeMapId);
-      if(!map || !map.nodes || !map.nodes[nodeId]) continue;
-      const node = map.nodes[nodeId];
-      city.mapNode = {
-        nodeId,
-        x: node.x,
-        y: node.y,
-        method: 'fuzzy-manual',
-      };
-      state.entityRev.city[cityId] = (state.entityRev.city[cityId] || 0) + 1;
-      window.SLG.markDirty('city', cityId);
-      applied++;
-    }
+  let applied = 0;
+  const currentMapId = state.mapLibrary.activeMapId || '';
+  for(const cityId in decisions){
+    const nodeId = decisions[cityId];
+    if(!nodeId) continue;
+    const city = state.cities.find(c => c.id === cityId);
+    if(!city) continue;
+    const map = getLoadedMap(currentMapId);
+    if(!map || !map.nodes || !map.nodes[nodeId]) continue;
+    const node = map.nodes[nodeId];
+    city.mapNode = {
+      mapId: currentMapId,    /* ⭐ v8.9.8：綁定當前地圖，避免換圖後干擾 */
+      nodeId,
+      x: node.x,
+      y: node.y,
+      method: 'fuzzy-manual',
+    };
+    state.entityRev.city[cityId] = (state.entityRev.city[cityId] || 0) + 1;
+    window.SLG.markDirty('city', cityId);
+    applied++;
+  }
     if(applied > 0){
       window.SLG.tickLamport();
       window.SLG.flushPatches();
