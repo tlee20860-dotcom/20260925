@@ -4037,7 +4037,7 @@ const GameMap = (() => {
   function drawNormalRoute(a, b, isHi){
     /* 白色外框 */
     ctx.strokeStyle = isHi ? 'rgba(34,255,136,0.9)' : 'rgba(255,255,255,0.85)';
-    ctx.lineWidth = 16;
+    ctx.lineWidth = 13;
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
@@ -4046,7 +4046,7 @@ const GameMap = (() => {
 
     /* 黑色主線 */
     ctx.strokeStyle = isHi ? '#22ff88' : '#000000';
-    ctx.lineWidth = 10;
+    ctx.lineWidth = 8;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
