@@ -1,6 +1,6 @@
 /* ============================================================================
- * style.css — v8.9.4
- * v8.9.4：三模式互斥 UI + 虛線路線 + 手動備份按鈕 + 路線刪除確認 Modal
+ * style.css — v8.9.9
+ * v8.9.9：地圖欄位樣式 + 城池清單新欄位 + 地圖關聯規則
  * ========================================================================== */
 :root{
   --bg-deep:#0a0e17;--bg-panel:#111827;--bg-card:#1a2332;--bg-input:#0d1420;
@@ -168,7 +168,7 @@ body{background:var(--bg-deep);color:var(--text-primary);
 .mode-bar.room .btn-mode{color:#a7ffcf;}
 .mode-bar.idle{background:linear-gradient(90deg,rgba(50,50,60,.92),rgba(70,70,85,.92));color:var(--text-secondary);}
 
-/* ============ v8.6.7：同步狀態 ============ */
+/* ============ 同步狀態 ============ */
 .sync-status{
   flex:0 0 auto;
   display:inline-flex;align-items:center;gap:5px;
@@ -193,7 +193,7 @@ body{background:var(--bg-deep);color:var(--text-primary);
 
 .mode-divider{flex:0 0 auto;color:rgba(255,255,255,.2);font-size:14px;}
 
-/* ============ v8.6.7：同步參數區塊 ============ */
+/* ============ 同步參數區塊 ============ */
 .sync-params-card{
   background:linear-gradient(135deg,rgba(30,58,95,.25),rgba(42,74,111,.1));
   border:1px solid rgba(68,170,255,.3);
@@ -885,7 +885,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .city-batch-bar select{max-width:140px;padding:4px 22px 4px 6px;font-size:11px;}
 
 .city-table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm);background:#060a10;-webkit-overflow-scrolling:touch;max-height:70vh;}
-.city-table{width:100%;border-collapse:collapse;font-size:11px;min-width:900px;}
+.city-table{width:100%;border-collapse:collapse;font-size:11px;min-width:1080px;}
 .city-table th{position:sticky;top:0;background:#0f1a2a;color:var(--neon-blue);font-weight:700;font-size:10px;padding:8px;text-align:left;border-bottom:2px solid var(--border);border-right:1px solid var(--border);white-space:nowrap;z-index:2;}
 .city-table td{padding:6px 8px;border-bottom:1px solid #0f1a2a;border-right:1px solid #0f1a2a;white-space:nowrap;color:var(--text-secondary);vertical-align:middle;}
 .city-table tr:hover td{background:rgba(59,130,246,.05);}
@@ -896,9 +896,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .city-table .city-table-empty{padding:24px!important;text-align:center;color:var(--text-dim);font-style:italic;}
 .city-table input[type=checkbox]{width:16px;height:16px;accent-color:#3b82f6;cursor:pointer;}
 
-/* ============================================================
-   推演啟動（置頂）
-   ============================================================ */
+/* ============ 推演啟動（置頂） ============ */
 .sim-launch-card{
   background:linear-gradient(135deg,rgba(5,80,55,.35),rgba(16,140,100,.15));
   border:1px solid rgba(34,255,136,.35);
@@ -917,9 +915,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   box-shadow:0 2px 12px rgba(16,185,129,.35);
 }
 
-/* ============================================================
-   城池數據子 Tab
-   ============================================================ */
+/* ============ 城池數據子 Tab ============ */
 .city-subtabs{
   display:flex;gap:4px;
   margin-bottom:10px;
@@ -955,9 +951,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .city-subpanel.active{display:block;}
 @keyframes subpanelIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
 
-/* ============================================================
-   📊 概覽面板
-   ============================================================ */
+/* ============ 概覽面板 ============ */
 .overview-stats{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
@@ -1008,9 +1002,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   min-width:48px;text-align:right;
 }
 
-/* ============================================================
-   🛣️ 路線管理
-   ============================================================ */
+/* ============ 路線管理 ============ */
 .route-quick-add{
   background:#0a101a;
   border:1px solid var(--border);
@@ -1096,9 +1088,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   border-radius:var(--radius-sm);
 }
 
-/* ============================================================
-   清單工具列（排序 / 分組）
-   ============================================================ */
+/* ============ 清單工具列（排序 / 分組） ============ */
 .list-toolbar{
   display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
   background:#0a101a;
@@ -1125,9 +1115,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   background-color:var(--bg-input);
 }
 
-/* ============================================================
-   清單容器（宣戰 / 出兵）
-   ============================================================ */
+/* ============ 清單容器（宣戰 / 出兵） ============ */
 .war-list-container,
 .deploy-list-container{
   overflow:auto;
@@ -1138,9 +1126,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   max-height:60vh;
 }
 
-/* ============================================================
-   清單表格
-   ============================================================ */
+/* ============ 清單表格 ============ */
 .list-table{
   width:100%;
   border-collapse:collapse;
@@ -1252,9 +1238,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   outline:none;
 }
 
-/* ============================================================
-   分組摺疊
-   ============================================================ */
+/* ============ 分組摺疊 ============ */
 .list-group{border-bottom:1px solid var(--border);}
 .list-group:last-child{border-bottom:none;}
 .list-group-header{
@@ -1297,9 +1281,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   border-radius:var(--radius-sm);
 }
 
-/* ============================================================
-   宣戰手動新增區
-   ============================================================ */
+/* ============ 宣戰手動新增區 ============ */
 .war-add-row{
   margin-top:12px;
   padding:10px 12px;
@@ -1357,9 +1339,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   .war-add-btns .btn{flex:1;}
 }
 
-/* ============================================================
-   盟分配摘要
-   ============================================================ */
+/* ============ 盟分配摘要 ============ */
 .alliance-dist-summary{display:flex;flex-direction:column;gap:6px;}
 .alliance-dist-row{
   display:flex;align-items:center;gap:10px;
@@ -1382,9 +1362,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .alliance-dist-row .bar-fill.warn{background:linear-gradient(90deg,#ffcc00,#ff4466);}
 .alliance-dist-row .pct{font-family:"SF Mono","Consolas",monospace;min-width:40px;text-align:right;font-weight:700;}
 
-/* ============================================================
-   推演總結
-   ============================================================ */
+/* ============ 推演總結 ============ */
 .summary-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
 .summary-stat{background:#0a101a;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;text-align:center;}
 .summary-stat .label{font-size:10px;color:var(--text-dim);margin-bottom:4px;}
@@ -1420,9 +1398,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
 .summary-timeline-line .time{color:var(--neon-yellow);min-width:70px;font-weight:700;}
 .summary-timeline-line .text{color:var(--text-secondary);}
 
-/* ============================================================
-   地圖子檢視
-   ============================================================ */
+/* ============ 地圖子檢視 ============ */
 .map-view-tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;}
 .map-view-tab{flex:1;background:var(--bg-input);color:var(--text-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;}
 .map-view-tab:hover{color:var(--text-primary);}
@@ -1455,9 +1431,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   box-shadow:0 0 0 2px rgba(68,170,255,.18);
 }
 
-/* ============================================================
-   GameMap 容器
-   ============================================================ */
+/* ============ GameMap 容器 ============ */
 .game-map-container{
   width:100%;height:70vh;min-height:400px;
   overflow:auto;background:#0a0e17;
@@ -1477,9 +1451,7 @@ input:disabled,select:disabled,textarea:disabled{background:#0a0d15 !important;c
   touch-action:pan-x pan-y;
 }
 
-/* ============================================================
-   清單內行內編輯
-   ============================================================ */
+/* ============ 清單內行內編輯 ============ */
 tr.inline-editing td{
   background:rgba(255,204,0,.06) !important;
   padding:4px 6px !important;
@@ -1716,7 +1688,7 @@ tr.inline-editing .col-name{
 }
 
 /* ============================================================
-   v8.6.6：網路中斷遮罩
+   網路中斷遮罩
    ============================================================ */
 .network-overlay{
   display:none;
@@ -1745,7 +1717,7 @@ tr.inline-editing .col-name{
   animation:networkPulse 1.6s ease-in-out infinite;
 }
 
-/* v8.6.8：匯入模式選單 */
+/* 匯入模式選單 */
 .excel-mode-select{
   width:auto;
   font-size:11px;
@@ -1763,7 +1735,7 @@ tr.inline-editing .col-name{
 .excel-mode-select:focus{outline:none;border-color:var(--neon-blue);box-shadow:0 0 0 2px rgba(68,170,255,.18);}
 
 /* ============================================================
-   v8.6.9：置頂欄登入按鈕 + 下拉選單
+   置頂欄登入按鈕 + 下拉選單
    ============================================================ */
 .auth-menu-wrap{
   position:relative;
@@ -1868,7 +1840,7 @@ tr.inline-editing .col-name{
 }
 
 /* ============================================================
-   v8.6.9：隊數分級參數區
+   隊數分級參數區
    ============================================================ */
 .troop-tier-card{
   background:linear-gradient(135deg,rgba(255,204,0,.08),rgba(255,153,0,.04));
@@ -1921,7 +1893,7 @@ tr.inline-editing .col-name{
 }
 
 /* ============================================================
-   v8.6.9：城池 Modal 分級區
+   城池 Modal 分級區
    ============================================================ */
 .city-tier-panel{
   background:#0a101a;
@@ -1988,7 +1960,7 @@ tr.inline-editing .col-name{
 }
 
 /* ============================================================
-   v8.6.9：城池表格「人數」欄位懸停明細
+   城池表格「人數」欄位懸停明細
    ============================================================ */
 .city-member-cell{
   position:relative;
@@ -2041,7 +2013,7 @@ tr.inline-editing .col-name{
 }
 
 /* ============================================================
-   v8.6.9：同步遮罩（關閉頁面時）
+   同步遮罩（關閉頁面時）
    ============================================================ */
 #syncOverlay .network-box{
   border-color:var(--neon-blue);
@@ -2053,7 +2025,7 @@ tr.inline-editing .col-name{
 }
 
 /* ============================================================
-   v8.7.0：人數分級 Inline 編輯
+   人數分級 Inline 編輯
    ============================================================ */
 .city-member-cell{
   cursor:pointer;
@@ -2203,7 +2175,7 @@ tr.tier-edit-row td{
 }
 
 /* ============================================================
-   v8.6.7：雲端歷史版本 Modal
+   雲端歷史版本 Modal
    ============================================================ */
 .history-list{
   display:flex;flex-direction:column;gap:6px;
@@ -2258,9 +2230,8 @@ tr.tier-edit-row td{
 }
 
 /* ============================================================
-   v8.8.0：地圖庫（Map Library）
+   地圖庫（Map Library）
    ============================================================ */
-
 .map-library-toolbar{
   display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
   padding:10px 12px;
@@ -2355,1030 +2326,6 @@ tr.tier-edit-row td{
 /* ============================================================
    節點校準 Modal
    ============================================================ */
-.nc-layout{
-  display:grid;
-  grid-template-columns:320px 1fr;
-  gap:12px;
-  flex:1 1 auto;
-  min-height:0;
-  height:calc(95vh - 100px);
-  max-height:calc(95vh - 100px);
-}
-
-.nc-sidebar{
-  display:flex;
-  flex-direction:column;
-  background:#0a101a;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  overflow:hidden;
-  min-height:0;
-}
-
-.nc-progress{
-  padding:10px 12px;
-  background:#0f1a2a;
-  border-bottom:1px solid var(--border);
-  flex:0 0 auto;
-}
-.nc-progress-text{
-  font-size:11px;
-  color:var(--text-secondary);
-  margin-bottom:6px;
-  font-family:"SF Mono","Consolas",monospace;
-}
-.nc-progress-text b{
-  color:var(--neon-green);
-  font-size:13px;
-  margin:0 2px;
-}
-.nc-progress-bar{
-  height:6px;
-  background:#060a10;
-  border-radius:3px;
-  overflow:hidden;
-}
-.nc-progress-fill{
-  height:100%;
-  width:0;
-  background:linear-gradient(90deg,#3b82f6,#22ff88);
-  border-radius:3px;
-  transition:width .3s ease-out;
-}
-
-.nc-search{
-  padding:8px 10px;
-  border-bottom:1px solid var(--border);
-  flex:0 0 auto;
-}
-.nc-search input{
-  width:100%;
-  font-size:12px;
-  padding:6px 10px;
-  background:var(--bg-input);
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  color:var(--text-primary);
-}
-.nc-search input:focus{
-  border-color:var(--neon-blue);
-  box-shadow:0 0 0 2px rgba(68,170,255,.15);
-  outline:none;
-}
-
-.nc-city-list{
-  flex:1 1 auto;
-  overflow-y:auto;
-  padding:4px;
-  -webkit-overflow-scrolling:touch;
-  scrollbar-width:thin;
-  scrollbar-color:#2a3a52 transparent;
-}
-.nc-city-list::-webkit-scrollbar{width:6px;}
-.nc-city-list::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:3px;}
-
-.nc-city-item{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  padding:8px 10px;
-  margin-bottom:3px;
-  background:#060a10;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  cursor:pointer;
-  transition:all .12s;
-  font-size:12px;
-}
-.nc-city-item:hover{
-  border-color:var(--neon-blue);
-  background:rgba(68,170,255,.06);
-}
-.nc-city-item.selected{
-  border-color:var(--neon-blue);
-  background:rgba(68,170,255,.14);
-  box-shadow:0 0 12px rgba(68,170,255,.25);
-}
-.nc-city-item.done{
-  border-color:rgba(34,255,136,.35);
-}
-.nc-city-item.done .nc-city-name{
-  color:var(--text-dim);
-}
-.nc-city-name{
-  font-weight:600;
-  color:var(--text-primary);
-  flex:1;
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-.nc-city-code{
-  font-family:"SF Mono","Consolas",monospace;
-  font-size:10px;
-  color:var(--neon-blue);
-  margin-left:4px;
-}
-.nc-city-status{
-  flex:0 0 auto;
-  font-size:14px;
-}
-.nc-city-coords{
-  font-family:"SF Mono","Consolas",monospace;
-  font-size:9px;
-  color:var(--text-dim);
-  margin-top:2px;
-}
-
-.nc-actions{
-  padding:8px 10px;
-  border-top:1px solid var(--border);
-  background:#0f1a2a;
-  display:flex;
-  gap:6px;
-  justify-content:flex-end;
-  flex:0 0 auto;
-}
-
-.nc-canvas-wrap{
-  position:relative;
-  background:#060a10;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  overflow:auto;
-  min-height:0;
-  -webkit-overflow-scrolling:touch;
-  cursor:crosshair;
-}
-.nc-canvas-wrap::-webkit-scrollbar{width:8px;height:8px;}
-.nc-canvas-wrap::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:4px;}
-
-#nc_canvas{
-  display:block;
-  background:#0a0e17;
-}
-
-.nc-canvas-hint{
-  position:absolute;
-  top:12px;
-  left:50%;
-  transform:translateX(-50%);
-  padding:6px 14px;
-  background:rgba(10,14,23,.92);
-  border:1px solid var(--neon-blue);
-  border-radius:14px;
-  font-size:11px;
-  color:var(--neon-blue);
-  font-weight:600;
-  pointer-events:none;
-  white-space:nowrap;
-  z-index:5;
-  box-shadow:0 4px 12px rgba(0,0,0,.5);
-}
-
-@media (max-width:768px){
-  .nc-layout{
-    grid-template-columns:1fr;
-    grid-template-rows:200px 1fr;
-    height:calc(95vh - 80px);
-  }
-  .nc-canvas-hint{font-size:10px;padding:4px 10px;}
-}
-
-/* ============================================================
-   模糊匹配候選 Modal
-   ============================================================ */
-.fm-candidates{
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  max-height:50vh;
-  overflow-y:auto;
-  padding:2px;
-}
-.fm-candidate{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:10px 12px;
-  background:#0a101a;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  cursor:pointer;
-  transition:all .15s;
-}
-.fm-candidate:hover{
-  border-color:var(--neon-blue);
-  background:rgba(68,170,255,.06);
-}
-.fm-candidate.selected{
-  border-color:var(--neon-blue);
-  background:rgba(68,170,255,.12);
-  box-shadow:0 0 12px rgba(68,170,255,.2);
-}
-.fm-candidate input[type=radio]{
-  width:16px;
-  height:16px;
-  flex:0 0 16px;
-  accent-color:var(--neon-blue);
-  cursor:pointer;
-}
-.fm-candidate-body{
-  flex:1;
-  min-width:0;
-}
-.fm-candidate-name{
-  font-size:13px;
-  font-weight:700;
-  color:var(--text-primary);
-}
-.fm-candidate-code{
-  font-family:"SF Mono","Consolas",monospace;
-  font-size:10px;
-  color:var(--neon-blue);
-  margin-left:6px;
-}
-.fm-candidate-meta{
-  font-size:10px;
-  color:var(--text-dim);
-  margin-top:2px;
-}
-.fm-score{
-  flex:0 0 auto;
-  font-family:"SF Mono","Consolas",monospace;
-  font-size:12px;
-  font-weight:700;
-  padding:3px 8px;
-  border-radius:10px;
-  background:rgba(68,170,255,.1);
-  border:1px solid rgba(68,170,255,.3);
-  color:var(--neon-blue);
-}
-.fm-score.high{
-  background:rgba(34,255,136,.1);
-  border-color:rgba(34,255,136,.3);
-  color:var(--neon-green);
-}
-.fm-score.low{
-  background:rgba(255,204,0,.1);
-  border-color:rgba(255,204,0,.3);
-  color:var(--neon-yellow);
-}
-.fm-candidate.skip{
-  border-style:dashed;
-  color:var(--text-dim);
-}
-.fm-candidate.skip .fm-candidate-name{
-  color:var(--text-secondary);
-  font-weight:600;
-}
-
-/* ============================================================
-   地圖並排畫廊（Gallery）
-   ============================================================ */
-.map-gallery-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
-  gap:14px;
-  padding:4px;
-}
-
-.map-gallery-card{
-  background:var(--bg-card);
-  border:1px solid var(--border);
-  border-radius:var(--radius);
-  overflow:hidden;
-  cursor:pointer;
-  transition:all .18s;
-  display:flex;
-  flex-direction:column;
-}
-.map-gallery-card:hover{
-  border-color:var(--neon-blue);
-  transform:translateY(-2px);
-  box-shadow:0 6px 24px rgba(68,170,255,.18);
-}
-.map-gallery-card.active{
-  border-color:var(--neon-green);
-  box-shadow:0 0 20px rgba(34,255,136,.2);
-}
-
-.map-gallery-thumb{
-  width:100%;
-  aspect-ratio:16/10;
-  background:#060a10;
-  overflow:hidden;
-  position:relative;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-.map-gallery-thumb img{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  display:block;
-  transition:transform .3s;
-}
-.map-gallery-card:hover .map-gallery-thumb img{
-  transform:scale(1.03);
-}
-.map-gallery-thumb-placeholder{
-  font-size:48px;
-  color:var(--text-dim);
-  opacity:.4;
-}
-.map-gallery-thumb-badge{
-  position:absolute;
-  top:8px;
-  right:8px;
-  padding:3px 8px;
-  background:rgba(10,14,23,.88);
-  border:1px solid var(--neon-green);
-  border-radius:10px;
-  font-size:10px;
-  font-weight:700;
-  color:var(--neon-green);
-  font-family:"SF Mono","Consolas",monospace;
-}
-.map-gallery-thumb-badge.warn{
-  border-color:var(--neon-yellow);
-  color:var(--neon-yellow);
-}
-
-.map-gallery-body{
-  padding:10px 12px;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  flex:1 1 auto;
-}
-.map-gallery-name{
-  font-size:13px;
-  font-weight:700;
-  color:var(--text-primary);
-  display:flex;
-  align-items:center;
-  gap:6px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-.map-gallery-name .active-mark{
-  color:var(--neon-green);
-  font-size:10px;
-  flex:0 0 auto;
-}
-.map-gallery-meta{
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  font-size:10px;
-  color:var(--text-dim);
-}
-.map-gallery-meta .item{
-  display:inline-flex;
-  align-items:center;
-  gap:3px;
-}
-.map-gallery-meta b{
-  color:var(--text-secondary);
-  font-family:"SF Mono","Consolas",monospace;
-}
-.map-gallery-actions{
-  display:flex;
-  gap:4px;
-  margin-top:auto;
-  padding-top:6px;
-  border-top:1px solid var(--border);
-}
-.map-gallery-actions .btn{
-  flex:1;
-  font-size:10px;
-  padding:4px 6px;
-  white-space:nowrap;
-}
-
-.map-gallery-empty{
-  grid-column:1 / -1;
-  padding:40px 20px;
-  text-align:center;
-  background:#0a101a;
-  border:1px dashed var(--border);
-  border-radius:var(--radius-sm);
-  color:var(--text-dim);
-}
-.map-gallery-empty .icon{
-  font-size:40px;
-  margin-bottom:10px;
-  opacity:.4;
-}
-.map-gallery-empty .text{
-  font-size:12px;
-  line-height:1.6;
-}
-
-@media (max-width:600px){
-  .map-gallery-grid{
-    grid-template-columns:1fr;
-  }
-  .map-gallery-thumb{
-    aspect-ratio:16/9;
-  }
-}
-
-/* ============================================================
-   v8.8.0：地圖庫權限鎖定樣式
-   ============================================================ */
-.map-lib-locked{
-  position:relative;
-  opacity:.5;
-  pointer-events:none;
-}
-.map-lib-locked::after{
-  content:'🔒';
-  position:absolute;
-  right:6px;
-  top:50%;
-  transform:translateY(-50%);
-  font-size:12px;
-  pointer-events:none;
-}
-
-.nc-canvas-wrap.calibrating::before{
-  content:'';
-  position:absolute;
-  top:0;left:0;right:0;bottom:0;
-  border:2px dashed rgba(68,170,255,.6);
-  pointer-events:none;
-  z-index:4;
-  animation:ncPulse 1.6s ease-in-out infinite;
-}
-@keyframes ncPulse{
-  0%,100%{opacity:.6;}
-  50%{opacity:.2;}
-}
-
-.nc-marker-label{
-  position:absolute;
-  padding:2px 6px;
-  background:rgba(34,255,136,.95);
-  color:#000;
-  font-size:10px;
-  font-weight:700;
-  border-radius:8px;
-  pointer-events:none;
-  white-space:nowrap;
-  transform:translate(-50%,-140%);
-  box-shadow:0 2px 8px rgba(0,0,0,.5);
-}
-
-/* ============================================================
-   v8.9.0：節點校準 v2（菱形偵測 + 智慧命名）
-   ============================================================ */
-
-.nc-mode-badge{
-  display:inline-flex;
-  align-items:center;
-  padding:3px 10px;
-  border-radius:10px;
-  font-size:11px;
-  font-weight:700;
-  font-family:"SF Mono","Consolas",monospace;
-  letter-spacing:.3px;
-  background:rgba(68,170,255,.12);
-  border:1px solid rgba(68,170,255,.4);
-  color:var(--neon-blue);
-  white-space:nowrap;
-}
-.nc-mode-badge.scanning{
-  background:rgba(255,204,0,.12);
-  border-color:rgba(255,204,0,.4);
-  color:var(--neon-yellow);
-  animation:ncBadgePulse 1.4s ease-in-out infinite;
-}
-.nc-mode-badge.success{
-  background:rgba(34,255,136,.12);
-  border-color:rgba(34,255,136,.4);
-  color:var(--neon-green);
-}
-.nc-mode-badge.manual{
-  background:rgba(170,102,255,.12);
-  border-color:rgba(170,102,255,.4);
-  color:var(--neon-purple);
-}
-@keyframes ncBadgePulse{
-  0%,100%{opacity:1;}
-  50%{opacity:.5;}
-}
-
-.nc-layout-v2{
-  display:grid;
-  grid-template-columns:340px 1fr;
-  gap:12px;
-  flex:1 1 auto;
-  min-height:0;
-  height:calc(95vh - 100px);
-  max-height:calc(95vh - 100px);
-}
-
-.nc-sidebar-v2{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  min-height:0;
-  overflow:hidden;
-}
-
-.nc-scan-panel{
-  background:linear-gradient(135deg, rgba(255,204,0,.08), rgba(255,153,0,.04));
-  border:1px solid rgba(255,204,0,.4);
-  border-radius:var(--radius-sm);
-  padding:14px 16px;
-  flex:0 0 auto;
-}
-.nc-scan-title{
-  font-size:13px;
-  font-weight:700;
-  color:var(--neon-yellow);
-  margin-bottom:10px;
-  letter-spacing:.3px;
-}
-.nc-scan-progress{
-  width:100%;
-  height:8px;
-  background:#0a101a;
-  border-radius:4px;
-  overflow:hidden;
-  margin-bottom:8px;
-}
-.nc-scan-progress-bar{
-  height:100%;
-  width:0;
-  background:linear-gradient(90deg,#ffcc00,#ff8833);
-  border-radius:4px;
-  transition:width .25s ease-out;
-}
-.nc-scan-hint{
-  font-size:11px;
-  color:var(--text-dim);
-  font-family:"SF Mono","Consolas",monospace;
-  line-height:1.5;
-}
-
-.nc-stats-panel{
-  background:#0a101a;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  padding:10px 12px;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  flex:0 0 auto;
-}
-.nc-stat-row{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  font-size:12px;
-}
-.nc-stat-label{
-  color:var(--text-secondary);
-}
-.nc-stat-value{
-  font-family:"SF Mono","Consolas",monospace;
-  font-weight:700;
-  font-size:14px;
-  color:var(--text-primary);
-}
-.nc-stat-value.nc-stat-ok{ color:var(--neon-green); }
-.nc-stat-value.nc-stat-warn{ color:var(--neon-red); }
-.nc-stat-value.nc-stat-manual{ color:var(--neon-purple); }
-
-.nc-filter-bar{
-  display:flex;
-  gap:4px;
-  background:#0a101a;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  padding:4px;
-  flex:0 0 auto;
-}
-.nc-filter-btn{
-  flex:1;
-  background:transparent;
-  color:var(--text-secondary);
-  border:none;
-  border-radius:4px;
-  padding:6px 4px;
-  font-size:10.5px;
-  font-weight:600;
-  cursor:pointer;
-  font-family:inherit;
-  transition:all .15s;
-  white-space:nowrap;
-  letter-spacing:.2px;
-}
-.nc-filter-btn:hover{
-  color:var(--text-primary);
-  background:rgba(68,170,255,.06);
-}
-.nc-filter-btn.active{
-  background:linear-gradient(135deg,#1e3a5f,#2a4a6f);
-  color:var(--neon-blue);
-  box-shadow:0 0 8px rgba(68,170,255,.2);
-}
-
-.nc-candidate-list{
-  flex:1 1 auto;
-  min-height:0;
-  overflow-y:auto;
-  background:#0a101a;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  padding:4px;
-  scrollbar-width:thin;
-  scrollbar-color:#2a3a52 transparent;
-  -webkit-overflow-scrolling:touch;
-}
-.nc-candidate-list::-webkit-scrollbar{width:6px;}
-.nc-candidate-list::-webkit-scrollbar-thumb{
-  background:#2a3a52;
-  border-radius:3px;
-}
-
-.nc-candidate-item{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:8px 10px;
-  margin-bottom:2px;
-  background:#060a10;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  cursor:pointer;
-  transition:all .12s;
-  font-size:12px;
-}
-.nc-candidate-item:hover{
-  border-color:var(--neon-blue);
-  background:rgba(68,170,255,.06);
-}
-.nc-candidate-item.selected{
-  border-color:var(--neon-blue);
-  background:rgba(68,170,255,.14);
-  box-shadow:0 0 12px rgba(68,170,255,.25);
-}
-.nc-candidate-item.named{
-  border-color:rgba(34,255,136,.35);
-  background:rgba(34,255,136,.04);
-}
-.nc-candidate-item.manual{
-  border-color:rgba(170,102,255,.35);
-}
-
-.nc-candidate-icon{
-  flex:0 0 auto;
-  width:22px;
-  height:22px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:14px;
-  border-radius:4px;
-  background:rgba(255,255,255,.04);
-}
-.nc-candidate-item.named .nc-candidate-icon{
-  color:var(--neon-green);
-}
-.nc-candidate-item:not(.named) .nc-candidate-icon{
-  color:var(--neon-red);
-}
-.nc-candidate-item.manual .nc-candidate-icon{
-  color:var(--neon-purple);
-}
-
-.nc-candidate-info{
-  flex:1 1 auto;
-  min-width:0;
-}
-.nc-candidate-name{
-  font-weight:600;
-  color:var(--text-primary);
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:12px;
-}
-.nc-candidate-name.unnamed{
-  color:var(--text-dim);
-  font-style:italic;
-}
-.nc-candidate-meta{
-  font-family:"SF Mono","Consolas",monospace;
-  font-size:9.5px;
-  color:var(--text-dim);
-  margin-top:2px;
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-}
-.nc-candidate-score{
-  display:inline-flex;
-  align-items:center;
-  padding:1px 5px;
-  border-radius:8px;
-  font-weight:700;
-  font-size:9.5px;
-  background:rgba(68,170,255,.1);
-  color:var(--neon-blue);
-}
-.nc-candidate-score.high{
-  background:rgba(34,255,136,.1);
-  color:var(--neon-green);
-}
-.nc-candidate-score.low{
-  background:rgba(255,204,0,.1);
-  color:var(--neon-yellow);
-}
-
-.nc-candidate-status{
-  flex:0 0 auto;
-  font-size:14px;
-}
-
-.nc-actions-v2{
-  display:flex;
-  gap:4px;
-  padding-top:4px;
-  border-top:1px solid var(--border);
-  flex:0 0 auto;
-  flex-wrap:wrap;
-}
-.nc-actions-v2 .btn{
-  flex:1;
-  min-width:0;
-  white-space:nowrap;
-  font-size:11px;
-  padding:6px 8px;
-}
-.nc-actions-v2 .btn-ghost,
-.nc-actions-v2 .btn-warning{
-  flex:0 0 auto;
-  min-width:60px;
-}
-
-.nc-canvas-wrap-v2{
-  position:relative;
-  background:#060a10;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  overflow:auto;
-  min-height:0;
-  -webkit-overflow-scrolling:touch;
-  cursor:crosshair;
-}
-.nc-canvas-wrap-v2::-webkit-scrollbar{width:8px;height:8px;}
-.nc-canvas-wrap-v2::-webkit-scrollbar-thumb{
-  background:#2a3a52;
-  border-radius:4px;
-}
-.nc-canvas-wrap-v2.manual-mode{
-  cursor:cell;
-  border-color:var(--neon-purple);
-  box-shadow:inset 0 0 30px rgba(170,102,255,.15);
-}
-
-#nc_canvas{
-  display:block;
-  background:#0a0e17;
-}
-
-.nc-canvas-hint-v2{
-  position:absolute;
-  top:12px;
-  left:50%;
-  transform:translateX(-50%);
-  padding:6px 14px;
-  background:rgba(10,14,23,.92);
-  border:1px solid var(--neon-blue);
-  border-radius:14px;
-  font-size:11px;
-  color:var(--neon-blue);
-  font-weight:600;
-  pointer-events:none;
-  white-space:nowrap;
-  z-index:5;
-  box-shadow:0 4px 12px rgba(0,0,0,.5);
-  transition:all .2s;
-}
-.nc-canvas-wrap-v2.manual-mode .nc-canvas-hint-v2{
-  border-color:var(--neon-purple);
-  color:var(--neon-purple);
-  background:rgba(20,10,30,.95);
-  box-shadow:0 4px 12px rgba(170,102,255,.35);
-}
-
-.nc-naming-popup{
-  position:absolute;
-  width:280px;
-  max-height:420px;
-  background:rgba(26,35,50,.98);
-  border:1px solid var(--neon-blue);
-  border-radius:var(--radius);
-  box-shadow:0 12px 40px rgba(0,0,0,.6), 0 0 24px rgba(68,170,255,.2);
-  backdrop-filter:blur(12px);
-  z-index:10;
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-  animation:ncPopupIn .18s ease-out;
-}
-.nc-naming-popup.hidden{ display:none; }
-@keyframes ncPopupIn{
-  from{opacity:0; transform:translateY(-6px);}
-  to{opacity:1; transform:translateY(0);}
-}
-
-.nc-naming-header{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:10px 12px;
-  background:#0f1a2a;
-  border-bottom:1px solid var(--border);
-  font-size:12px;
-  font-weight:700;
-  color:var(--neon-blue);
-  flex:0 0 auto;
-}
-.nc-naming-close{
-  background:transparent;
-  border:none;
-  color:var(--text-dim);
-  font-size:14px;
-  cursor:pointer;
-  padding:0 4px;
-  font-family:inherit;
-}
-.nc-naming-close:hover{ color:var(--neon-red); }
-
-.nc-naming-body{
-  padding:8px 10px;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  flex:1 1 auto;
-  min-height:0;
-}
-.nc-naming-body input{
-  width:100%;
-  font-size:12px;
-  padding:6px 10px;
-  background:var(--bg-input);
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  color:var(--text-primary);
-}
-.nc-naming-body input:focus{
-  border-color:var(--neon-blue);
-  box-shadow:0 0 0 2px rgba(68,170,255,.15);
-  outline:none;
-}
-
-.nc-naming-list{
-  flex:1 1 auto;
-  min-height:0;
-  max-height:240px;
-  overflow-y:auto;
-  scrollbar-width:thin;
-  scrollbar-color:#2a3a52 transparent;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  background:#0a101a;
-  padding:2px;
-}
-.nc-naming-list::-webkit-scrollbar{ width:5px; }
-.nc-naming-list::-webkit-scrollbar-thumb{ background:#2a3a52; border-radius:3px; }
-
-.nc-naming-option{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  padding:7px 10px;
-  border-radius:4px;
-  cursor:pointer;
-  font-size:12px;
-  transition:background .12s;
-  border:1px solid transparent;
-}
-.nc-naming-option:hover{
-  background:rgba(68,170,255,.08);
-  border-color:rgba(68,170,255,.3);
-}
-.nc-naming-option.used{
-  opacity:.45;
-}
-.nc-naming-option.used::after{
-  content:'✓ 已用';
-  font-size:9px;
-  color:var(--neon-red);
-  padding:1px 6px;
-  border:1px solid rgba(255,68,102,.4);
-  border-radius:6px;
-  background:rgba(255,68,102,.08);
-}
-.nc-naming-option-name{
-  font-weight:600;
-  color:var(--text-primary);
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  flex:1;
-  min-width:0;
-}
-.nc-naming-option-code{
-  font-family:"SF Mono","Consolas",monospace;
-  font-size:10px;
-  color:var(--neon-blue);
-  flex:0 0 auto;
-  margin-left:4px;
-}
-.nc-naming-option-dist{
-  font-family:"SF Mono","Consolas",monospace;
-  font-size:9.5px;
-  color:var(--text-dim);
-  flex:0 0 auto;
-}
-
-.nc-naming-footer{
-  display:flex;
-  gap:6px;
-  padding:8px 10px;
-  border-top:1px solid var(--border);
-  background:#0f1a2a;
-  flex:0 0 auto;
-}
-.nc-naming-footer .btn{
-  flex:1;
-  font-size:11px;
-}
-
-@media (max-width:900px){
-  .nc-layout-v2{
-    grid-template-columns:1fr;
-    grid-template-rows:auto 1fr;
-    height:calc(95vh - 80px);
-    max-height:calc(95vh - 80px);
-  }
-  .nc-sidebar-v2{
-    max-height:220px;
-  }
-  .nc-naming-popup{
-    width:calc(100vw - 40px);
-    max-width:340px;
-  }
-}
-
-@media (max-width:600px){
-  .nc-mode-badge{
-    font-size:9.5px;
-    padding:2px 8px;
-  }
-  .nc-filter-btn{
-    font-size:10px;
-    padding:5px 3px;
-  }
-  .nc-actions-v2 .btn{
-    font-size:10px;
-    padding:5px 6px;
-  }
-  .nc-naming-popup{
-    max-height:70vh;
-  }
-}
-
-.nc-canvas-wrap-v2.manual-mode::before{
-  content:'';
-  position:absolute;
-  top:0;left:0;right:0;bottom:0;
-  border:2px dashed rgba(170,102,255,.5);
-  pointer-events:none;
-  z-index:4;
-  animation:ncManualPulse 1.6s ease-in-out infinite;
-}
-@keyframes ncManualPulse{
-  0%,100%{opacity:.5;}
-  50%{opacity:.15;}
-}
-
-/* ============================================================
-   v8.9.1：節點校準 v3（AI 辨識 + 縮放 + 混合模式）
-   ============================================================ */
-
 .nc-progress-inline{
   font-size:12px;
   font-weight:700;
@@ -3543,6 +2490,13 @@ tr.tier-edit-row td{
 .nc-item-v3.manual{
   border-color:rgba(170,102,255,.4);
 }
+.nc-item-v3.orphan{
+  border-color:rgba(255,204,0,.5);
+  background:rgba(255,204,0,.05);
+}
+.nc-item-v3.orphan .nc-item-icon{
+  color:var(--neon-yellow);
+}
 
 .nc-item-icon{
   flex:0 0 auto;
@@ -3598,6 +2552,25 @@ tr.tier-edit-row td{
   flex:0 0 auto;
   font-size:13px;
 }
+.nc-item-delete {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(255, 68, 102, 0.3);
+  color: rgba(255, 68, 102, 0.6);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  line-height: 1.4;
+  margin-left: 4px;
+}
+.nc-item-delete:hover {
+  border-color: var(--neon-red);
+  color: #fff;
+  background: rgba(255, 68, 102, 0.3);
+}
 
 .nc-actions-v3{
   display:flex;
@@ -3632,13 +2605,16 @@ tr.tier-edit-row td{
 }
 .nc-canvas-wrap-v3::-webkit-scrollbar-thumb:hover{ background:#3b82f6; }
 
-.nc-canvas-wrap-v3.dragging{
-  cursor:grabbing;
-}
+.nc-canvas-wrap-v3.dragging{ cursor:grabbing; }
 .nc-canvas-wrap-v3.manual-mode{
   cursor:cell;
   border-color:var(--neon-purple);
   box-shadow:inset 0 0 30px rgba(170,102,255,.15);
+}
+.nc-canvas-wrap-v3.fixed-point-mode {
+  cursor: crosshair;
+  border-color: var(--neon-green);
+  box-shadow: inset 0 0 30px rgba(34, 255, 136, 0.12);
 }
 
 #nc_canvas{
@@ -3673,6 +2649,12 @@ tr.tier-edit-row td{
   background:rgba(20,10,30,.95);
   box-shadow:0 4px 12px rgba(170,102,255,.35);
 }
+.nc-canvas-wrap-v3.fixed-point-mode .nc-canvas-hint-v3 {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+  background: rgba(10, 30, 20, 0.95);
+  box-shadow: 0 4px 12px rgba(34, 255, 136, 0.3);
+}
 
 .nc-ai-progress{
   position:absolute;
@@ -3685,9 +2667,7 @@ tr.tier-edit-row td{
   z-index:20;
   animation:ncAiFadeIn .25s ease-out;
 }
-@keyframes ncAiFadeIn{
-  from{opacity:0;} to{opacity:1;}
-}
+@keyframes ncAiFadeIn{ from{opacity:0;} to{opacity:1;} }
 .nc-ai-progress-inner{
   background:rgba(26,35,50,.98);
   border:1px solid var(--neon-blue);
@@ -3946,15 +2926,437 @@ tr.tier-edit-row td{
   z-index:3;
   animation:ncManualPulse 1.6s ease-in-out infinite;
 }
+.nc-canvas-wrap-v3.fixed-point-mode::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border: 2px dashed rgba(34, 255, 136, 0.5);
+  pointer-events: none;
+  z-index: 3;
+  animation: ncFixedPulse 1.6s ease-in-out infinite;
+}
 @keyframes ncManualPulse{
   0%,100%{ opacity:.5; }
   50%{ opacity:.15; }
 }
+@keyframes ncFixedPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.15; }
+}
+
+#nc_btnFixedPoint.active {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  border-color: #22ff88;
+  box-shadow: 0 0 16px rgba(34, 255, 136, 0.4);
+}
+
+.nc-item-v3.fixed-selected {
+  border-color: var(--neon-green) !important;
+  background: rgba(34, 255, 136, 0.12) !important;
+  box-shadow: 0 0 16px rgba(34, 255, 136, 0.3);
+}
+
+.nc-canvas-wrap-v3.dragging-node {
+  cursor: grabbing;
+}
+
+.nc-node-drag-glow {
+  position: absolute;
+  pointer-events: none;
+  z-index: 6;
+  border: 2px solid var(--neon-blue);
+  border-radius: 50%;
+  box-shadow: 0 0 20px rgba(68, 170, 255, 0.6);
+  transform: translate(-50%, -50%);
+  animation: ncDragGlow 0.8s ease-in-out infinite;
+}
+@keyframes ncDragGlow {
+  0%, 100% { box-shadow: 0 0 12px rgba(68, 170, 255, 0.4); }
+  50% { box-shadow: 0 0 28px rgba(68, 170, 255, 0.9); }
+}
+
+.nc-node-legend {
+  display: flex;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #0a101a;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+.nc-node-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nc-node-legend .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.nc-node-legend .dot.ai { background: #ffcc00; }
+.nc-node-legend .dot.manual { background: #3b82f6; }
+.nc-node-legend .dot.selected { background: #ffffff; border-color: #22ff88; }
+
+#btnMapBaseMap.active {
+  background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
+  color: var(--neon-blue);
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 12px rgba(68, 170, 255, 0.3);
+}
+
+.game-map-outer.base-map-off .game-map-container {
+  background: #0a0e17;
+}
+.game-map-outer.base-map-off::after {
+  content: '🖼️ 底圖已關閉';
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: rgba(10, 14, 23, 0.85);
+  padding: 3px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.map-war-hint {
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .map-war-hint {
+    font-size: 12px;
+    padding: 8px 16px;
+    white-space: normal;
+    max-width: 90vw;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .nc-item-delete {
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  #nc_btnFixedPoint,
+  #nc_btnManualAdd {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+  .map-war-hint {
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+}
 
 /* ============================================================
-   v8.9.2：地圖主頁面 - 右側懸浮按鈕 + 宣戰模式
+   三模式互斥 + 統一提示條 + 路線刪除確認 Modal
    ============================================================ */
 
+/* 模式按鈕 active 狀態 */
+#btnMapRouteMode.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(59, 130, 246, 0.05));
+  color: var(--neon-blue);
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 14px rgba(68, 170, 255, 0.35);
+}
+#btnMapWarMode.active {
+  background: linear-gradient(135deg, rgba(255, 68, 102, 0.25), rgba(255, 68, 102, 0.05));
+  color: var(--neon-red);
+  border-color: var(--neon-red);
+  box-shadow: 0 0 14px rgba(255, 68, 102, 0.35);
+}
+#btnMapCityMode.active {
+  background: linear-gradient(135deg, rgba(34, 255, 136, 0.2), rgba(34, 255, 136, 0.05));
+  color: var(--neon-green);
+  border-color: var(--neon-green);
+  box-shadow: 0 0 14px rgba(34, 255, 136, 0.35);
+}
+
+.game-map-outer.route-mode .game-map-container {
+  cursor: crosshair;
+  border-color: var(--neon-blue);
+  box-shadow: inset 0 0 40px rgba(68, 170, 255, 0.12);
+}
+.game-map-outer.war-mode .game-map-container {
+  cursor: crosshair;
+  border-color: var(--neon-red);
+  box-shadow: inset 0 0 40px rgba(255, 68, 102, 0.12);
+}
+.game-map-outer.city-mode .game-map-container {
+  cursor: crosshair;
+  border-color: var(--neon-green);
+  box-shadow: inset 0 0 40px rgba(34, 255, 136, 0.12);
+}
+
+.map-mode-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 18px;
+  border: 2px solid;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  z-index: 25;
+  pointer-events: none;
+  animation: modeHintPulse 1.6s ease-in-out infinite;
+  white-space: nowrap;
+}
+.map-mode-hint.hidden {
+  display: none;
+}
+.map-mode-hint {
+  background: rgba(30, 58, 95, 0.92);
+  border-color: rgba(68, 170, 255, 0.8);
+  color: #9ed2ff;
+  box-shadow: 0 4px 16px rgba(68, 170, 255, 0.5);
+}
+.map-mode-hint.mode-route {
+  background: rgba(30, 58, 95, 0.92);
+  border-color: rgba(68, 170, 255, 0.9);
+  color: #9ed2ff;
+  box-shadow: 0 4px 16px rgba(68, 170, 255, 0.5);
+}
+.map-mode-hint.mode-war {
+  background: rgba(255, 68, 102, 0.92);
+  border-color: rgba(255, 204, 0, 0.8);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(255, 68, 102, 0.5);
+}
+.map-mode-hint.mode-city {
+  background: rgba(5, 80, 55, 0.92);
+  border-color: rgba(34, 255, 136, 0.9);
+  color: #a7ffcf;
+  box-shadow: 0 4px 16px rgba(34, 255, 136, 0.5);
+}
+
+@keyframes modeHintPulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50%      { transform: translateX(-50%) scale(1.02); }
+}
+
+#routeDeleteConfirmModal .modal-box {
+  border-color: rgba(255, 68, 102, 0.5);
+}
+#routeDeleteConfirmModal h3 {
+  color: var(--neon-red);
+}
+
+#btnCreateBackupNow {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  font-size: 12px;
+  padding: 8px 14px;
+}
+#btnCreateBackupNow:hover {
+  box-shadow: 0 4px 16px rgba(34, 255, 136, 0.4);
+}
+#btnCreateBackupNow:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#cm_coordsHint {
+  padding: 6px 10px;
+  background: rgba(34, 255, 136, 0.08);
+  border: 1px dashed rgba(34, 255, 136, 0.4);
+  border-radius: var(--radius-sm);
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .map-mode-hint {
+    font-size: 12px;
+    padding: 8px 16px;
+    max-width: 90vw;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.4;
+  }
+}
+
+@media (max-width: 600px) {
+  #btnMapRouteMode,
+  #btnMapWarMode,
+  #btnMapCityMode {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .map-mode-hint {
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+}
+
+/* ============================================================
+   地圖全螢幕模式
+   ============================================================ */
+.game-map-outer.fullscreen-mode{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: #0a0e17;
+  border-radius: 0;
+  border: none;
+}
+
+.game-map-outer.fullscreen-mode .game-map-container{
+  width: 100vw;
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+}
+
+body.map-fullscreen .app-layout > .sidebar,
+body.map-fullscreen .app-layout > .main-content > .mobile-header,
+body.map-fullscreen .app-layout > .main-content > .mode-bar,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-library-toolbar,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-toolbar,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-view-tabs,
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .card-title{
+  display: none !important;
+}
+
+body.map-fullscreen .app-layout > .main-content > .main-container{
+  padding: 0;
+  max-width: none;
+}
+
+body.map-fullscreen .app-layout > .main-content > .main-container > section > .card{
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+
+body.map-fullscreen #tab-map .card > .map-view-tabs,
+body.map-fullscreen #tab-map .map-library-toolbar,
+body.map-fullscreen #tab-map .map-toolbar{
+  display: none !important;
+}
+
+.map-fullscreen-exit{
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 10001;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  border: 2px solid #fff;
+  border-radius: 20px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 4px 16px rgba(255, 68, 102, 0.5);
+  display: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.15s;
+  letter-spacing: 0.5px;
+}
+.map-fullscreen-exit:hover{
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(255, 68, 102, 0.7);
+}
+.map-fullscreen-exit:active{
+  transform: scale(0.95);
+}
+
+body.map-fullscreen .map-fullscreen-exit{
+  display: flex;
+}
+
+body.map-fullscreen .map-float-btns{
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+}
+
+body.map-fullscreen .map-mode-hint{
+  top: 14px;
+}
+
+@media (max-width: 1024px){
+  .game-map-outer{
+    height: calc(100vh - 320px);
+    min-height: 360px;
+  }
+}
+
+@media (max-width: 768px){
+  .game-map-outer{
+    height: calc(100vh - 260px);
+    min-height: 340px;
+  }
+  .map-fullscreen-exit{
+    top: 10px;
+    right: 10px;
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px){
+  .game-map-outer{
+    height: calc(100vh - 240px);
+    min-height: 300px;
+  }
+  .map-fullscreen-exit{
+    top: 8px;
+    right: 8px;
+    padding: 7px 12px;
+    font-size: 11px;
+  }
+}
+
+body.map-fullscreen .game-map-outer,
+body.map-fullscreen .game-map-outer.fullscreen-mode{
+  height: 100vh !important;
+  min-height: 100vh !important;
+}
+
+#btnMapFullscreen.active{
+  background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
+  color: var(--neon-blue);
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 12px rgba(68, 170, 255, 0.3);
+}
+
+body.map-fullscreen{
+  overflow: hidden !important;
+}
+
+/* ============================================================
+   v8.9.8：地圖主頁面 - 右側懸浮按鈕 + 宣戰模式
+   ============================================================ */
 .game-map-outer{
   position:relative;
   width:100%;
@@ -4103,9 +3505,8 @@ tr.tier-edit-row td{
 }
 
 /* ============================================================
-   v8.9.2：宣戰快速面板
+   宣戰快速面板
    ============================================================ */
-
 .war-quick-route{
   display:flex;
   align-items:center;
@@ -4243,10 +3644,8 @@ tr.tier-edit-row td{
 }
 
 /* ============================================================
-   v8.9.6.1：右側懸浮按鈕尺寸優化（手機版縮小）
+   右側懸浮按鈕尺寸優化（手機版縮小）
    ============================================================ */
-
-/* 平板（≤1024px） */
 @media (max-width: 1024px){
   .map-float-btn{
     width: 46px;
@@ -4260,7 +3659,6 @@ tr.tier-edit-row td{
   }
 }
 
-/* 手機（≤768px） */
 @media (max-width: 768px){
   .map-float-btn{
     width: 42px;
@@ -4287,7 +3685,6 @@ tr.tier-edit-row td{
   }
 }
 
-/* 小手機（≤480px） */
 @media (max-width: 480px){
   .map-float-btn{
     width: 38px;
@@ -4310,510 +3707,57 @@ tr.tier-edit-row td{
 }
 
 /* ============================================================
-   v8.9.3：NodeCalibration 定點模式 + 拖曳 + 刪除按鈕
+   v8.9.9：城池清單地圖欄位樣式
    ============================================================ */
-
-#nc_btnFixedPoint.active {
-  background: linear-gradient(135deg, #059669, #10b981);
-  color: #fff;
-  border-color: #22ff88;
-  box-shadow: 0 0 16px rgba(34, 255, 136, 0.4);
+.city-table .city-map-cell{
+  font-family:inherit;
+  font-size:10px;
+  color:var(--neon-blue);
+  font-weight:700;
+  white-space:nowrap;
 }
-
-.nc-canvas-wrap-v3.fixed-point-mode {
-  cursor: crosshair;
-  border-color: var(--neon-green);
-  box-shadow: inset 0 0 30px rgba(34, 255, 136, 0.12);
+.city-table .city-map-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:1px 6px;
+  border-radius:8px;
+  background:rgba(68,170,255,.1);
+  border:1px solid rgba(68,170,255,.3);
+  color:var(--neon-blue);
+  font-size:10px;
+  font-weight:700;
+  max-width:120px;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
-
-.nc-canvas-wrap-v3.fixed-point-mode .nc-canvas-hint-v3 {
-  border-color: var(--neon-green);
-  color: var(--neon-green);
-  background: rgba(10, 30, 20, 0.95);
-  box-shadow: 0 4px 12px rgba(34, 255, 136, 0.3);
+.city-table .city-code-chip{
+  display:inline-flex;
+  align-items:center;
+  padding:1px 6px;
+  border-radius:8px;
+  background:rgba(68,170,255,.08);
+  border:1px solid rgba(68,170,255,.25);
+  color:var(--neon-blue);
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;
+  font-weight:700;
 }
-
-.nc-canvas-wrap-v3.fixed-point-mode::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  border: 2px dashed rgba(34, 255, 136, 0.5);
-  pointer-events: none;
-  z-index: 3;
-  animation: ncFixedPulse 1.6s ease-in-out infinite;
-}
-@keyframes ncFixedPulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.15; }
-}
-
-.nc-item-v3.fixed-selected {
-  border-color: var(--neon-green) !important;
-  background: rgba(34, 255, 136, 0.12) !important;
-  box-shadow: 0 0 16px rgba(34, 255, 136, 0.3);
-}
-
-.nc-item-delete {
-  flex: 0 0 auto;
-  background: transparent;
-  border: 1px solid rgba(255, 68, 102, 0.3);
-  color: rgba(255, 68, 102, 0.6);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.15s;
-  line-height: 1.4;
-  margin-left: 4px;
-}
-.nc-item-delete:hover {
-  border-color: var(--neon-red);
-  color: #fff;
-  background: rgba(255, 68, 102, 0.3);
-}
-
-.nc-canvas-wrap-v3.dragging-node {
-  cursor: grabbing;
-}
-
-.nc-node-drag-glow {
-  position: absolute;
-  pointer-events: none;
-  z-index: 6;
-  border: 2px solid var(--neon-blue);
-  border-radius: 50%;
-  box-shadow: 0 0 20px rgba(68, 170, 255, 0.6);
-  transform: translate(-50%, -50%);
-  animation: ncDragGlow 0.8s ease-in-out infinite;
-}
-@keyframes ncDragGlow {
-  0%, 100% { box-shadow: 0 0 12px rgba(68, 170, 255, 0.4); }
-  50% { box-shadow: 0 0 28px rgba(68, 170, 255, 0.9); }
-}
-
-.nc-node-legend {
-  display: flex;
-  gap: 12px;
-  padding: 6px 10px;
-  background: #0a101a;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 10px;
-  color: var(--text-dim);
-  flex-wrap: wrap;
-  flex: 0 0 auto;
-}
-.nc-node-legend .legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.nc-node-legend .dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-.nc-node-legend .dot.ai { background: #ffcc00; }
-.nc-node-legend .dot.manual { background: #3b82f6; }
-.nc-node-legend .dot.selected { background: #ffffff; border-color: #22ff88; }
-
-#btnMapBaseMap.active {
-  background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
-  color: var(--neon-blue);
-  border-color: var(--neon-blue);
-  box-shadow: 0 0 12px rgba(68, 170, 255, 0.3);
-}
-
-.game-map-outer.base-map-off .game-map-container {
-  background: #0a0e17;
-}
-.game-map-outer.base-map-off::after {
-  content: '🖼️ 底圖已關閉';
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 10px;
-  color: var(--text-dim);
-  background: rgba(10, 14, 23, 0.85);
-  padding: 3px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  pointer-events: none;
-  z-index: 5;
-}
-
-.map-war-hint {
-  pointer-events: none;
-}
-
-@media (max-width: 768px) {
-  .map-war-hint {
-    font-size: 12px;
-    padding: 8px 16px;
-    white-space: normal;
-    max-width: 90vw;
-    text-align: center;
-    line-height: 1.4;
-  }
-  .nc-item-delete {
-    padding: 4px 10px;
-    font-size: 13px;
-  }
-}
-
-@media (max-width: 480px) {
-  #nc_btnFixedPoint,
-  #nc_btnManualAdd {
-    font-size: 10px;
-    padding: 5px 8px;
-  }
-  .map-war-hint {
-    font-size: 11px;
-    padding: 6px 12px;
-  }
+.city-table .city-code-cell{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:11px;
+  color:var(--neon-blue);
+  font-weight:700;
+  white-space:nowrap;
 }
 
 /* ============================================================
-   v8.9.4：三模式互斥 + 統一提示條 + 路線刪除確認 Modal
+   v8.9.9：地圖關聯規則區塊
    ============================================================ */
-
-/* 模式按鈕 active 狀態（三模式共用底色） */
-#btnMapRouteMode.active {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(59, 130, 246, 0.05));
-  color: var(--neon-blue);
-  border-color: var(--neon-blue);
-  box-shadow: 0 0 14px rgba(68, 170, 255, 0.35);
+#globalRouteRequireSameMap,
+#globalWarRequireSameMap{
+  cursor:pointer;
 }
-#btnMapWarMode.active {
-  background: linear-gradient(135deg, rgba(255, 68, 102, 0.25), rgba(255, 68, 102, 0.05));
-  color: var(--neon-red);
-  border-color: var(--neon-red);
-  box-shadow: 0 0 14px rgba(255, 68, 102, 0.35);
-}
-#btnMapCityMode.active {
-  background: linear-gradient(135deg, rgba(34, 255, 136, 0.2), rgba(34, 255, 136, 0.05));
-  color: var(--neon-green);
-  border-color: var(--neon-green);
-  box-shadow: 0 0 14px rgba(34, 255, 136, 0.35);
-}
-
-/* ── 三模式畫布邊框 ── */
-.game-map-outer.route-mode .game-map-container {
-  cursor: crosshair;
-  border-color: var(--neon-blue);
-  box-shadow: inset 0 0 40px rgba(68, 170, 255, 0.12);
-}
-.game-map-outer.war-mode .game-map-container {
-  cursor: crosshair;
-  border-color: var(--neon-red);
-  box-shadow: inset 0 0 40px rgba(255, 68, 102, 0.12);
-}
-.game-map-outer.city-mode .game-map-container {
-  cursor: crosshair;
-  border-color: var(--neon-green);
-  box-shadow: inset 0 0 40px rgba(34, 255, 136, 0.12);
-}
-
-/* ── 統一模式提示條 ── */
-.map-mode-hint {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 8px 18px;
-  border: 2px solid;
-  border-radius: 16px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  z-index: 25;
-  pointer-events: none;
-  animation: modeHintPulse 1.6s ease-in-out infinite;
-  white-space: nowrap;
-}
-.map-mode-hint.hidden {
-  display: none;
-}
-
-/* 預設樣式（未啟用模式時不顯示，但以防萬一） */
-.map-mode-hint {
-  background: rgba(30, 58, 95, 0.92);
-  border-color: rgba(68, 170, 255, 0.8);
-  color: #9ed2ff;
-  box-shadow: 0 4px 16px rgba(68, 170, 255, 0.5);
-}
-
-/* 路線模式（藍色） */
-.map-mode-hint.mode-route {
-  background: rgba(30, 58, 95, 0.92);
-  border-color: rgba(68, 170, 255, 0.9);
-  color: #9ed2ff;
-  box-shadow: 0 4px 16px rgba(68, 170, 255, 0.5);
-}
-
-/* 宣戰模式（紅色） */
-.map-mode-hint.mode-war {
-  background: rgba(255, 68, 102, 0.92);
-  border-color: rgba(255, 204, 0, 0.8);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(255, 68, 102, 0.5);
-}
-
-/* 城池編輯模式（綠色） */
-.map-mode-hint.mode-city {
-  background: rgba(5, 80, 55, 0.92);
-  border-color: rgba(34, 255, 136, 0.9);
-  color: #a7ffcf;
-  box-shadow: 0 4px 16px rgba(34, 255, 136, 0.5);
-}
-
-@keyframes modeHintPulse {
-  0%, 100% { transform: translateX(-50%) scale(1); }
-  50%      { transform: translateX(-50%) scale(1.02); }
-}
-
-/* ── 路線刪除確認 Modal ── */
-#routeDeleteConfirmModal .modal-box {
-  border-color: rgba(255, 68, 102, 0.5);
-}
-#routeDeleteConfirmModal h3 {
-  color: var(--neon-red);
-}
-
-/* ── History Modal 手動備份按鈕 ── */
-#btnCreateBackupNow {
-  background: linear-gradient(135deg, #059669, #10b981);
-  color: #fff;
-  font-size: 12px;
-  padding: 8px 14px;
-}
-#btnCreateBackupNow:hover {
-  box-shadow: 0 4px 16px rgba(34, 255, 136, 0.4);
-}
-#btnCreateBackupNow:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ── 城池 Modal 座標提示 ── */
-#cm_coordsHint {
-  padding: 6px 10px;
-  background: rgba(34, 255, 136, 0.08);
-  border: 1px dashed rgba(34, 255, 136, 0.4);
-  border-radius: var(--radius-sm);
-  font-family: "SF Mono", "Consolas", monospace;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/* ── 響應式（三模式 & 提示條） ── */
-@media (max-width: 768px) {
-  .map-mode-hint {
-    font-size: 12px;
-    padding: 8px 16px;
-    max-width: 90vw;
-    white-space: normal;
-    text-align: center;
-    line-height: 1.4;
-  }
-}
-
-@media (max-width: 600px) {
-  #btnMapRouteMode,
-  #btnMapWarMode,
-  #btnMapCityMode {
-    font-size: 11px;
-    padding: 5px 10px;
-  }
-}
-
-@media (max-width: 480px) {
-  .map-mode-hint {
-    font-size: 11px;
-    padding: 6px 12px;
-  }
-}
-/* ============================================================
-   v8.9.6：地圖全螢幕模式
-   ============================================================ */
-
-/* 全螢幕地圖容器 */
-.game-map-outer.fullscreen-mode{
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 9999;
-  background: #0a0e17;
-  border-radius: 0;
-  border: none;
-}
-
-/* 全螢幕模式下，地圖容器也滿版 */
-.game-map-outer.fullscreen-mode .game-map-container{
-  width: 100vw;
-  height: 100vh;
-  border: none;
-  border-radius: 0;
-}
-
-/* 全螢幕模式：隱藏其他 UI */
-body.map-fullscreen .app-layout > .sidebar,
-body.map-fullscreen .app-layout > .main-content > .mobile-header,
-body.map-fullscreen .app-layout > .main-content > .mode-bar,
-body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-library-toolbar,
-body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-toolbar,
-body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .map-view-tabs,
-body.map-fullscreen .app-layout > .main-content > .main-container > section > .card > .card-title{
-  display: none !important;
-}
-
-/* 全螢幕模式：容器不限制寬度 */
-body.map-fullscreen .app-layout > .main-content > .main-container{
-  padding: 0;
-  max-width: none;
-}
-
-/* 全螢幕模式：卡片去邊框 */
-body.map-fullscreen .app-layout > .main-content > .main-container > section > .card{
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-}
-
-/* 全螢幕模式：隱藏其他 Tab 內容 */
-body.map-fullscreen #tab-map .card > .map-view-tabs,
-body.map-fullscreen #tab-map .map-library-toolbar,
-body.map-fullscreen #tab-map .map-toolbar{
-  display: none !important;
-}
-
-/* ============================================================
-   全螢幕退出按鈕
-   ============================================================ */
-.map-fullscreen-exit{
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  z-index: 10001;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, #dc2626, #ef4444);
-  border: 2px solid #fff;
-  border-radius: 20px;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
-  box-shadow: 0 4px 16px rgba(255, 68, 102, 0.5);
-  display: none;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  transition: all 0.15s;
-  letter-spacing: 0.5px;
-}
-.map-fullscreen-exit:hover{
-  transform: scale(1.05);
-  box-shadow: 0 6px 20px rgba(255, 68, 102, 0.7);
-}
-.map-fullscreen-exit:active{
-  transform: scale(0.95);
-}
-
-/* 全螢幕模式啟動時，顯示退出按鈕 */
-body.map-fullscreen .map-fullscreen-exit{
-  display: flex;
-}
-
-/* 全螢幕模式下，右側浮動按鈕置中 */
-body.map-fullscreen .map-float-btns{
-  top: 50%;
-  right: 14px;
-  transform: translateY(-50%);
-}
-
-/* 全螢幕模式下，模式提示條置頂 */
-body.map-fullscreen .map-mode-hint{
-  top: 14px;
-}
-
-/* ============================================================
-   方案 C：手機版地圖高度改善
-   ============================================================ */
-
-/* 平板（≤1024px） */
-@media (max-width: 1024px){
-  .game-map-outer{
-    height: calc(100vh - 320px);
-    min-height: 360px;
-  }
-}
-
-/* 手機（≤768px） */
-@media (max-width: 768px){
-  .game-map-outer{
-    height: calc(100vh - 260px);
-    min-height: 340px;
-  }
-  .map-fullscreen-exit{
-    top: 10px;
-    right: 10px;
-    padding: 8px 14px;
-    font-size: 12px;
-  }
-}
-
-/* 小手機（≤480px） */
-@media (max-width: 480px){
-  .game-map-outer{
-    height: calc(100vh - 240px);
-    min-height: 300px;
-  }
-  .map-fullscreen-exit{
-    top: 8px;
-    right: 8px;
-    padding: 7px 12px;
-    font-size: 11px;
-  }
-}
-
-/* 全螢幕模式下，不受媒體查詢高度限制 */
-body.map-fullscreen .game-map-outer,
-body.map-fullscreen .game-map-outer.fullscreen-mode{
-  height: 100vh !important;
-  min-height: 100vh !important;
-}
-
-/* ============================================================
-   全螢幕按鈕 active 狀態
-   ============================================================ */
-#btnMapFullscreen.active{
-  background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
-  color: var(--neon-blue);
-  border-color: var(--neon-blue);
-  box-shadow: 0 0 12px rgba(68, 170, 255, 0.3);
-}
-
-/* ============================================================
-   全螢幕模式下，避免 body 滾動
-   ============================================================ */
-body.map-fullscreen{
-  overflow: hidden !important;
-}
-/* v8.9.7：孤兒節點樣式 */
-.nc-item-v3.orphan {
-  border-color: rgba(255, 204, 0, 0.5);
-  background: rgba(255, 204, 0, 0.05);
-}
-.nc-item-v3.orphan .nc-item-icon {
-  color: var(--neon-yellow);
+.param-section:has(#globalRouteRequireSameMap) .param-section-title{
+  color:var(--neon-blue);
 }

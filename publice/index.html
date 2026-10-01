@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.6</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v8.9.9</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -34,13 +34,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.6</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.9</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.6</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v8.9.9</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -93,7 +93,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v8.9.6</span>
+      <span class="sidebar-version">v8.9.9</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -362,6 +362,26 @@
             </div>
           </div>
         </div>
+
+        <!-- v8.9.9：地圖關聯規則 -->
+        <div class="param-section">
+          <div class="param-section-title">🗺️ 地圖關聯規則</div>
+          <div class="param-item">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+              <input type="checkbox" id="globalRouteRequireSameMap" style="width:auto;accent-color:#44aaff;transform:scale(1.2);" checked>
+              <span>路線限制同地圖</span>
+            </label>
+            <div class="param-hint">勾選後，只能在地圖內建立兩城之間的路線。</div>
+          </div>
+          <div class="param-item">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+              <input type="checkbox" id="globalWarRequireSameMap" style="width:auto;accent-color:#44aaff;transform:scale(1.2);" checked>
+              <span>宣戰限制同地圖</span>
+            </label>
+            <div class="param-hint">勾選後，只能對同地圖的城池宣戰。</div>
+          </div>
+        </div>
+
         <div class="param-section">
           <div class="param-section-title">🎯 宣戰規則</div>
           <div class="param-item">
@@ -547,13 +567,23 @@
         <div class="card">
           <div class="card-title">🗺️ 戰區管理</div>
           <div class="text-dim" style="margin-bottom:8px;">
-            ＊戰區用於分組城池，影響推演範圍選擇。<br>
+            ＊戰區隸屬於地圖，影響推演範圍選擇。<br>
             ＊點 ✏️ 可編輯名稱，點 ✕ 可刪除。
           </div>
           <div id="zoneList" class="flex-row"></div>
           <div class="form-row mt-8">
-            <input type="text" id="newZoneName" placeholder="新戰區名稱">
-            <button class="btn btn-primary btn-sm" id="btnAddZone">＋ 新增戰區</button>
+            <div style="flex:1;">
+              <label>所屬地圖 <span style="color:var(--neon-red);">*</span></label>
+              <select id="newZoneMap"><option value="">請選擇地圖...</option></select>
+            </div>
+            <div style="flex:1;">
+              <label>戰區名稱</label>
+              <input type="text" id="newZoneName" placeholder="新戰區名稱">
+            </div>
+            <div style="flex:0 0 auto;">
+              <label>&nbsp;</label>
+              <button class="btn btn-primary btn-sm" id="btnAddZone">＋ 新增戰區</button>
+            </div>
           </div>
         </div>
       </div>
@@ -568,7 +598,15 @@
             </div>
           </div>
 
+          <!-- v8.9.9：新增地圖篩選 + 排序 -->
           <div class="city-list-filter">
+            <div>
+              <label>地圖</label>
+              <select id="cityFilterMap">
+                <option value="active">🌐 當前地圖</option>
+                <option value="all">📚 全部地圖</option>
+              </select>
+            </div>
             <div><label>戰區</label><select id="cityFilterZone"><option value="all">全部</option></select></div>
             <div><label>所屬盟</label><select id="cityFilterAlliance"><option value="all">全部</option></select></div>
             <div><label>陣營</label>
@@ -581,7 +619,19 @@
                 <option value="npc">NPC</option>
               </select>
             </div>
-            <div style="flex:2;"><label>搜尋</label><input type="text" id="citySearchInput" placeholder="城池名稱..."></div>
+            <div><label>排序</label>
+              <select id="citySortBy">
+                <option value="default">預設</option>
+                <option value="map">地圖</option>
+                <option value="zone">戰區</option>
+                <option value="alliance">盟</option>
+                <option value="name">名稱</option>
+                <option value="code">編號</option>
+                <option value="level">等級</option>
+                <option value="power">戰力</option>
+              </select>
+            </div>
+            <div style="flex:2;"><label>搜尋</label><input type="text" id="citySearchInput" placeholder="城池名稱 / 編號..."></div>
           </div>
 
           <div class="city-batch-bar" id="cityBatchBar" style="display:none;">
@@ -609,11 +659,13 @@
               <thead>
                 <tr>
                   <th style="width:32px;"><input type="checkbox" id="citySelectAll"></th>
-                  <th>城池名稱</th>
-                  <th>等級</th>
+                  <th>🗺️ 地圖</th>
                   <th>戰區</th>
                   <th>所屬盟</th>
                   <th>陣營</th>
+                  <th>城池編號</th>
+                  <th>城池名稱</th>
+                  <th>等級</th>
                   <th class="col-num">人數</th>
                   <th class="col-num">總戰力</th>
                   <th class="col-num">總隊數</th>
@@ -622,7 +674,7 @@
                 </tr>
               </thead>
               <tbody id="cityTableBody">
-                <tr><td colspan="11" class="city-table-empty">尚無城池資料</td></tr>
+                <tr><td colspan="13" class="city-table-empty">尚無城池資料</td></tr>
               </tbody>
             </table>
           </div>
@@ -663,7 +715,7 @@
             ＊定義「誰打誰」與「誰協防誰」。<br>
             ＊進攻：需要指定「開始時間」= 目標城的防守開始時間。<br>
             ＊協防：目標城需與出兵城同一盟、且路線上必須有接觸。<br>
-            ＊<span style="color:var(--neon-purple);">預設只能同戰區宣戰（可於 ⚙️ 參數設定開啟跨戰區）。</span>
+            ＊<span style="color:var(--neon-purple);">可於 ⚙️ 參數設定開啟「宣戰限制同地圖」開關。</span>
           </div>
 
           <div class="list-toolbar">
@@ -679,6 +731,7 @@
               <label>分組</label>
               <select id="warGroupSelect">
                 <option value="none">無</option>
+                <option value="map">🗺️ 地圖</option>
                 <option value="city">🏰 城</option>
                 <option value="type">⚔️ 類型</option>
                 <option value="alliance">🤝 盟</option>
@@ -739,6 +792,7 @@
               <label>分組</label>
               <select id="deployGroupSelect">
                 <option value="none">無</option>
+                <option value="map">🗺️ 地圖</option>
                 <option value="city">🏰 城</option>
                 <option value="type">⚔️ 類型</option>
                 <option value="alliance">🤝 盟</option>
@@ -787,7 +841,8 @@
           <div class="card-title">🛣️ 地圖路線管理</div>
           <div class="text-dim" style="margin-bottom:10px;">
             ＊定義兩城之間是否有「接觸」。無向圖（A-B 等同 B-A）。<br>
-            ＊也可以到「🗺️ 地圖」Tab 用點擊方式快速建立。
+            ＊也可以到「🗺️ 地圖」Tab 用點擊方式快速建立。<br>
+            ＊<span style="color:var(--neon-purple);">可於 ⚙️ 參數設定開啟「路線限制同地圖」開關。</span>
           </div>
 
           <div class="route-quick-add">
@@ -926,30 +981,29 @@
                 <option value="all">🌐 全部</option>
               </select>
 
-              <!-- v8.9.6：三模式互斥按鈕 -->
               <button class="btn btn-ghost btn-sm" id="btnMapRouteMode">🛣️ 路線：關</button>
               <button class="btn btn-ghost btn-sm" id="btnMapWarMode">⚔️ 宣戰：關</button>
               <button class="btn btn-ghost btn-sm" id="btnMapCityMode">🏙️ 城池編輯：關</button>
 
               <button class="btn btn-ghost btn-sm" id="btnMapBaseMap">🖼️ 底圖：開</button>
               <button class="btn btn-ghost btn-sm" id="btnMapSyncNodes" title="把所有節點座標同步到地圖庫">🔄 同步節點</button>
-<button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapReconcile" title="比對並修復節點、路線、宣戰、戰區資料">🩺 修復資料</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapRelayout">🔄 重新佈局</button>
               <button class="btn btn-ghost btn-sm" id="btnMapFit">⛶ 適合視窗</button>
-<button class="btn btn-ghost btn-sm" id="btnMapFullscreen">🖥️ 全螢幕</button>
+              <button class="btn btn-ghost btn-sm" id="btnMapFullscreen">🖥️ 全螢幕</button>
               <button class="btn btn-ghost btn-sm" id="btnMapClearHighlight">✖️ 清除高亮</button>
               <button class="btn btn-ghost btn-sm" id="btnMapExportPDF">📄 匯出 PDF</button>
               <span class="text-dim">＊滾輪縮放、拖曳平移、拖曳節點</span>
             </div>
 
-            <<div class="game-map-outer" id="gameMapOuter">
-  <div class="game-map-container" id="gameMapContainer">
-    <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
-  </div>
+            <div class="game-map-outer" id="gameMapOuter">
+              <div class="game-map-container" id="gameMapContainer">
+                <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
+              </div>
 
-  <!-- v8.9.6：退出全螢幕按鈕 -->
-  <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
-    ✖️ 退出全螢幕
-  </button>
+              <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
+                ✖️ 退出全螢幕
+              </button>
 
               <div class="map-float-btns" id="mapFloatBtns">
                 <button class="map-float-btn" id="btnMapZoomIn" title="放大">＋</button>
@@ -963,17 +1017,14 @@
                 <button class="map-float-btn" id="btnMapPanDown" title="向下平移">▼</button>
               </div>
 
-              <!-- v8.9.6：統一模式提示條（取代舊的 mapWarHint） -->
               <div class="map-mode-hint hidden" id="mapModeHint">
                 <span id="mapModeHintText">—</span>
               </div>
 
-              <!-- 路線模式：儲存按鈕（路線變更需儲存） -->
               <button class="map-war-save-btn hidden" id="mapRouteSaveBtn" title="儲存路線變更">
                 💾 儲存路線 <span class="map-war-save-count" id="mapRouteSaveCount">0</span>
               </button>
 
-              <!-- 宣戰模式：儲存按鈕 -->
               <button class="map-war-save-btn hidden" id="mapWarSaveBtn" title="儲存宣戰變更">
                 💾 儲存宣戰 <span class="map-war-save-count" id="mapWarSaveCount">0</span>
               </button>
@@ -1219,27 +1270,33 @@
 
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v8.9.6）</div>
+        <div class="card-title">📖 城戰計算規則（v8.9.9）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
+            <b>地圖（Map）</b>：底圖 + 節點座標。所有戰區與城池隸屬於某張地圖。<br>
+            <b>戰區（Zone）</b>：隸屬於地圖，用於分組城池。<br>
             <b>盟（Alliance）</b>：固定總戰力、固定總人數。<br>
-            <b>城（City）</b>：輸入人數、總戰力、總隊數、等級；平均戰力自動計算。<br>
-            <b>盟餘下戰力</b> = 總戰力 − 該盟所有城池總戰力。<br>
+            <b>城（City）</b>：輸入人數、總戰力、總隊數、等級、編號；平均戰力自動計算。<br>
             <b>地圖路線</b>：兩城之間的「接觸」（無向圖）。
           </div>
           <h2>二、戰力單位</h2>
           <div class="rule-card warn">
             <b>輸入單位</b>：億（例：輸入 <code>2</code> = 2 億）<br>
             <b>顯示單位</b>：<br>
-            ・盟 / 城總戰力：億（2 位小數，如 <code>2.00 億</code>）<br>
-            ・平均戰力：萬（無小數，如 <code>150 萬</code>）<br>
-            <b>儲存</b>：完整數字（億 × 10⁸）
+            ・盟 / 城總戰力：億（2 位小數）<br>
+            ・平均戰力：萬（無小數）
           </div>
-          <h2>三、對戰節奏</h2>
-          <div class="rule-card ok">
-            <b>每 30 秒結算一次對撞</b>，每分鐘抽取一次消耗值。<br>
-            <b>消耗抽取</b>：每條路線獨立，在 <code>[最小, 最大]</code> 之間抽取。
+          <h2>三、地圖關聯（v8.9.9 新增）</h2>
+          <div class="rule-card title">
+            <b>地圖 → 戰區 → 城池</b><br>
+            ・每個戰區必須隸屬於一張地圖<br>
+            ・每個城池透過戰區與節點綁定地圖<br>
+            ・一城只屬一張地圖<br>
+            <br>
+            <b>限制開關（⚙️ 參數設定）</b>：<br>
+            ・路線限制同地圖（預設開啟）<br>
+            ・宣戰限制同地圖（預設開啟）
           </div>
           <h2>四、隊數分級</h2>
           <div class="rule-card title">
@@ -1252,34 +1309,26 @@
           </div>
           <h2>五、地圖庫與 AI 節點校準</h2>
           <div class="rule-card title">
-            <b>🗺️ 地圖庫</b>：底圖存 Cloudinary，座標存 Firebase（獨立雲端資料庫）<br>
-            <b>🤖 AI 全圖辨識</b>：地圖切 3×3，智譜 GLM 辨識城池 + 路線<br>
-            <b>🎯 定點模式</b>：點左側城池名稱 → 高亮 → 點地圖正確位置 → 記錄座標<br>
+            <b>🗺️ 地圖庫</b>：底圖存 Cloudinary，座標存 Firebase<br>
+            <b>🤖 AI 全圖辨識</b>：地圖切 3×3，智譜 GLM 辨識<br>
+            <b>🎯 定點模式</b>：點城池名 → 點圖上位置 → 記錄座標<br>
             <b>🖱️ 拖曳節點</b>：直接拖曳畫布上的節點微調位置<br>
-            <b>🗑️ 刪除標記</b>：清單中點 🗑️ 可刪除該城池標記<br>
-            <b>🔍 縮放平移</b>：滾輪 / 捏合 / 拖曳 / 右側按鈕<br>
-            <b>✅ 自動去重</b>：切片邊界的重複路線自動合併
+            <b>🗑️ 長按刪除</b>：長按 500ms → 刪除節點（含城池）<br>
+            <b>🩺 修復資料</b>：一鍵修復節點、路線、宣戰、戰區不一致
           </div>
-          <h2>六、地圖互動模式（v8.9.6）</h2>
+          <h2>六、地圖互動模式</h2>
           <div class="rule-card title">
             <b>三模式互斥</b>：<br>
             ・🛣️ <b>路線模式</b>（藍框）：點第一城 → 點第二城 → 連線<br>
             　再點同對城 → 詢問刪除<br>
             ・⚔️ <b>宣戰模式</b>（紅框）：點出兵城 → 點目標城 → 建立宣戰<br>
-            ・🏙️ <b>城池編輯模式</b>（綠框）：點城池 → 編輯；點空白 → 新增<br>
-            <br>
-            <b>箭頭顏色</b>：<br>
-            ・🔴 紅色 = 進攻<br>
-            ・🟢 綠色 = 協防<br>
-            <br>
-            <b>路線樣式</b>：5px 標準寬（縮小時等比變細，放大不變粗）<br>
-            白色外框 + 黑色虛線主線
+            ・🏙️ <b>城池編輯模式</b>（綠框）：點城池 → 編輯；點空白 → 新增
           </div>
           <h2>七、宣戰清單</h2>
           <ul>
             <li><b>進攻</b>：需指定「開始時間」= 目標城防守開始時間。</li>
             <li><b>協防</b>：需與出兵城同一盟、且路線上必須有接觸。</li>
-            <li><b>跨戰區限制</b>：預設只能同戰區宣戰。</li>
+            <li><b>跨圖限制</b>：預設只能同地圖宣戰（可於參數設定關閉）。</li>
           </ul>
           <h2>八、Excel 匯入模式</h2>
           <div class="rule-card title">
@@ -1296,9 +1345,8 @@
           <ul>
             <li><b>超級管理員</b>：最高權限</li>
             <li><b>管理員</b>：可停用帳號、修改 extraPerms</li>
-            <li><b>幹部</b>：可創建房間、執行推演、編輯地圖庫（需授權）</li>
+            <li><b>幹部</b>：可創建房間、執行推演、編輯地圖庫</li>
             <li><b>成員</b>：本機推演、加入房間</li>
-            <li><b>v8.9.6：地圖庫</b>：所有登入使用者皆可編輯</li>
           </ul>
           <h2>十一、安全架構</h2>
           <div class="rule-card warn">
@@ -1347,7 +1395,7 @@
   </div>
 </div>
 
-<!-- 節點校準 Modal（v8.9.3 保持） -->
+<!-- 節點校準 Modal -->
 <div class="modal-overlay" id="nodeCalibrationModal">
   <div class="modal-box modal-lg" style="max-width:1400px;max-height:95vh;">
     <h3 style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
@@ -1491,7 +1539,7 @@
   </div>
 </div>
 
-<!-- 其他 Modal -->
+<!-- 確認 Modal -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box">
     <h3 id="modalTitle">⚠️ 確認操作</h3>
@@ -1503,6 +1551,7 @@
   </div>
 </div>
 
+<!-- 登出確認 Modal -->
 <div class="modal-overlay" id="logoutConfirmModal">
   <div class="modal-box" style="max-width:400px;">
     <h3>🚪 登出帳號</h3>
@@ -1517,14 +1566,14 @@
   </div>
 </div>
 
-<!-- v8.9.6：雲端歷史版本 Modal（加入手動備份按鈕） -->
+<!-- 雲端歷史版本 Modal -->
 <div class="modal-overlay" id="historyModal">
   <div class="modal-box modal-lg">
     <h3>📜 雲端歷史版本</h3>
     <div class="text-dim" style="margin-bottom:10px;">
       ＊每次上傳前會自動備份前一版，最多保留 20 筆。<br>
       ＊點「↩️ 還原」可將指定版本載入到本機。<br>
-      ＊<b style="color:var(--neon-yellow);">v8.9.6：若無歷史，可按下方「手動建立備份」。</b>
+      ＊<b style="color:var(--neon-yellow);">若無歷史，可按下方「手動建立備份」。</b>
     </div>
     <div class="history-list" id="historyList">
       <div class="text-dim" style="padding:20px;text-align:center;">載入中...</div>
@@ -1538,6 +1587,7 @@
   </div>
 </div>
 
+<!-- 離開房間 Modal -->
 <div class="modal-overlay" id="exitRoomModal">
   <div class="modal-box" style="max-width:420px;">
     <h3>🚪 離開房間</h3>
@@ -1564,6 +1614,7 @@
   </div>
 </div>
 
+<!-- 編輯權限申請審核 Modal -->
 <div class="modal-overlay" id="editRequestReviewModal">
   <div class="modal-box modal-lg">
     <h3>📝 編輯權限申請審核</h3>
@@ -1575,6 +1626,7 @@
   </div>
 </div>
 
+<!-- 房間尚無沙盤提示 Modal -->
 <div class="modal-overlay" id="roomEmptyPromptModal">
   <div class="modal-box" style="max-width:460px;">
     <h3>📡 房間尚無沙盤</h3>
@@ -1608,6 +1660,7 @@
   </div>
 </div>
 
+<!-- 沙盤選擇 Modal -->
 <div class="modal-overlay" id="sandboxPickerModal">
   <div class="modal-box modal-lg">
     <h3>📁 選擇要上載到房間的沙盤</h3>
@@ -1628,6 +1681,7 @@
   </div>
 </div>
 
+<!-- 路線編輯 Modal -->
 <div class="modal-overlay" id="routeEditModal">
   <div class="modal-box" style="max-width:420px;">
     <h3 id="routeEditTitle">🛣️ 編輯路線</h3>
@@ -1644,6 +1698,7 @@
   </div>
 </div>
 
+<!-- Excel 匯入 Modal -->
 <div class="modal-overlay" id="excelImportModal">
   <div class="modal-box modal-lg">
     <h3>📊 匯入資料</h3>
@@ -1727,13 +1782,18 @@
   </div>
 </div>
 
+<!-- 城池 Modal -->
 <div class="modal-overlay" id="cityModal">
   <div class="modal-box modal-lg">
     <h3 id="cityModalTitle">🏰 新增城池</h3>
     <div class="modal-scroll">
       <div class="form-row">
-        <div><label>所屬戰區（可留空）</label><select id="cm_zone"></select></div>
+        <div><label>所屬地圖 <span style="color:var(--neon-red);">*</span></label><select id="cm_map"></select></div>
+        <div><label>所屬戰區</label><select id="cm_zone"></select></div>
+      </div>
+      <div class="form-row">
         <div><label>城池名稱 <span style="color:var(--neon-red);">*</span></label><input type="text" id="cm_name" placeholder="必填" maxlength="20"></div>
+        <div><label>城池編號</label><input type="text" id="cm_code" placeholder="例：L98" maxlength="20"></div>
       </div>
       <div class="form-row">
         <div><label>所屬盟</label><select id="cm_alliance"></select></div>
@@ -1798,7 +1858,6 @@
           </label>
         </div>
       </div>
-      <!-- v8.9.6：新增城池時顯示座標 -->
       <div class="text-dim mt-8" id="cm_coordsHint" style="display:none;color:var(--neon-green);">
         📍 座標：（—, —）
       </div>
@@ -1813,6 +1872,7 @@
   </div>
 </div>
 
+<!-- 帳號編輯 Modal -->
 <div class="modal-overlay" id="accountEditModal">
   <div class="modal-box modal-lg">
     <h3 id="accountEditTitle">✏️ 編輯帳號</h3>
@@ -1858,6 +1918,7 @@
 <script src="js/circleDetect.js"></script>
 <script src="js/simulation.js"></script>
 <script src="js/core.js"></script>
+<script src="js/dataSync.js"></script>
 <script src="js/firebase.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/data.js"></script>
