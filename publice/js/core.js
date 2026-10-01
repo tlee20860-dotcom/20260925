@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI、網路監控、同步
- * v8.8.0：地圖庫狀態 + 模糊比對工具
+ * v8.9.9：新增 zone.mapId、地圖關聯工具、routeRequireSameMap / warRequireSameMap
  * ========================================================================== */
 (function(){
 'use strict';
@@ -35,7 +35,6 @@ const POWER_YI = 1e8;
 const POWER_WAN = 1e4;
 const POWER_MIGRATE_THRESHOLD = 1e6;
 
-/* v8.6.9：隊數分級預設 */
 const DEFAULT_TROOP_TIERS = {
   tiers: [
     { maxLevel: 17, teamsPerPlayer: 3 },
@@ -89,7 +88,6 @@ const EVT = {
   ROOM_SNAPSHOT_UPDATED:'room:snapshot', ROUTES_UPDATED:'routes:updated',
   DISTANCE_HIGHLIGHT:'distance:highlight', DISTANCE_CLEAR:'distance:clear',
   NETWORK:'network', SYNC_STATE:'sync:state', TROOP_TIERS:'troop:tiers',
-  /* v8.8.0：地圖庫 */
   MAP_LIBRARY_UPDATED:'map:library',
   MAP_MATCH_RESULT:'map:match',
 };
@@ -163,15 +161,8 @@ function getAvailableAllianceIcons(excludeId){
 }
 
 /* ============================================================
-   v8.6.9：隊數分級工具
+   隊數分級工具
    ============================================================ */
-
-/**
- * 依分級計算總人數與總隊數
- * @param {Object} tierCounts - { tier1, tier2, tier3, tier4 }
- * @param {Array} customTiers - 可選，自訂分級陣列
- * @returns {Object} { totalMembers, totalTeams, breakdown }
- */
 function calcTeamsFromTiers(tierCounts, customTiers){
   const tiers = customTiers || state.troopTiers.tiers || DEFAULT_TROOP_TIERS.tiers;
   const counts = [
@@ -375,7 +366,11 @@ const state = {
   settings:{
     timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
     siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
-    attackRequireRoute: false, crossZoneWarAllowed: false,
+    attackRequireRoute: false,
+    crossZoneWarAllowed: false,
+    /* v8.9.9：地圖關聯規則 */
+    routeRequireSameMap: true,
+    warRequireSameMap: true,
   },
   alliances:[], zones:[], cities:[], routes: [],
   lamport:0, settingsRev:0,
@@ -411,22 +406,20 @@ const state = {
       beforeUnloadSync: true,
     },
   },
-  /* v8.6.9：隊數分級 */
   troopTiers: {
     tiers: DEFAULT_TROOP_TIERS.tiers.map(t => ({ ...t })),
     autoCalcOnImport: DEFAULT_TROOP_TIERS.autoCalcOnImport,
     preserveOldTotal: DEFAULT_TROOP_TIERS.preserveOldTotal,
   },
-  /* v8.8.0：地圖庫（獨立於沙盤，雲端專屬） */
+  /* 地圖庫（獨立於沙盤，雲端專屬） */
   mapLibrary: {
-    index: {},           // { mapId: { name, updatedAt, imageWidth, imageHeight, imageUrl } }
-    loaded: {},          // { mapId: { ...meta, imageEl, nodes:{} } }（含已載入底圖）
-    activeMapId: '',     // 目前選取的地圖
-    viewMode: 'single',  // 'single' | 'gallery'
+    index: {},
+    loaded: {},
+    activeMapId: '',
+    viewMode: 'single',
     loading: false,
     lastError: '',
   },
-  /* v8.8.0：模糊匹配設定 */
   mapMatching: {
     autoAcceptThreshold: 0.95,
     candidatesThreshold: 0.5,
@@ -434,7 +427,6 @@ const state = {
   },
 };
 
-/* ====== 中場休息：第 1/2 段結束 ====== */
 /* ============================================================
    事件匯流排
    ============================================================ */
@@ -490,7 +482,7 @@ function initNetworkWatcher(){
 }
 
 /* ============================================================
-   v8.6.9：雲端同步管理（含 Promise 上傳鎖）
+   雲端同步管理（含 Promise 上傳鎖）
    ============================================================ */
 let cloudSyncFn = null;
 let cloudSyncTimer = null;
@@ -558,10 +550,6 @@ function scheduleUpload(delayMs, reason){
   }, delayMs || SANDBOX_SYNC_DEBOUNCE);
 }
 
-/**
- * v8.6.9：執行雲端上傳（Promise 鎖）
- * 若已有上傳進行中，直接回傳同一個 Promise
- */
 async function performCloudUpload(reason){
   if(!state.auth.signedIn) return false;
   if(!isOnline()) return false;
@@ -569,8 +557,6 @@ async function performCloudUpload(reason){
     console.warn('[sync] 雲端尚未載入，跳過上傳');
     return false;
   }
-
-  /* ★ Promise 鎖：避免並發重複觸發 */
   if(uploadPromise){
     console.log(`[sync] 已有上傳進行中，沿用既有 Promise（${reason}）`);
     return uploadPromise;
@@ -702,7 +688,6 @@ function saveState(reason){
         autoCalcOnImport: state.troopTiers.autoCalcOnImport,
         preserveOldTotal: state.troopTiers.preserveOldTotal,
       },
-      /* v8.8.0：地圖庫偏好（地圖本身在雲端，只存偏好） */
       mapLibrary: {
         activeMapId: state.mapLibrary.activeMapId,
         viewMode: state.mapLibrary.viewMode,
@@ -775,6 +760,9 @@ function loadState(){
     if(typeof state.settings.marchTimeSec !== 'number') state.settings.marchTimeSec = 0;
     if(typeof state.settings.attackRequireRoute !== 'boolean') state.settings.attackRequireRoute = false;
     if(typeof state.settings.crossZoneWarAllowed !== 'boolean') state.settings.crossZoneWarAllowed = false;
+    /* v8.9.9：地圖關聯規則 */
+    if(typeof state.settings.routeRequireSameMap !== 'boolean') state.settings.routeRequireSameMap = true;
+    if(typeof state.settings.warRequireSameMap !== 'boolean') state.settings.warRequireSameMap = true;
     if(d.entityRev) state.entityRev = d.entityRev;
 
     if(d.troopTiers && Array.isArray(d.troopTiers.tiers) && d.troopTiers.tiers.length === 4){
@@ -837,7 +825,6 @@ function loadState(){
     if(Array.isArray(d.chatMessages)) state.chatMessages = d.chatMessages.slice(-200);
     if(d.listPrefs) state.listPrefs = Object.assign(state.listPrefs, d.listPrefs);
 
-    /* v8.8.0：地圖庫偏好（只存 activeMapId / viewMode，地圖本身在雲端） */
     if(d.mapLibrary){
       if(typeof d.mapLibrary.activeMapId === 'string') state.mapLibrary.activeMapId = d.mapLibrary.activeMapId;
       if(d.mapLibrary.viewMode === 'gallery' || d.mapLibrary.viewMode === 'single') state.mapLibrary.viewMode = d.mapLibrary.viewMode;
@@ -850,6 +837,10 @@ function loadState(){
 
     migratePowerInState();
     migrateAllianceOrder();
+    /* v8.9.9：遷移舊 zone 補 mapId */
+    if(typeof window.SLG.migrateZonesForMap === 'function'){
+      try{ window.SLG.migrateZonesForMap(); }catch(e){ console.warn('遷移 zone.mapId 失敗', e); }
+    }
   }catch(e){ console.warn('讀取失敗', e); }
 }
 
@@ -1022,8 +1013,14 @@ function applyFullSnapshot(snap){
   }
   tickLamport(snap.lamport || 0);
   if(typeof state.settings.crossZoneWarAllowed !== 'boolean') state.settings.crossZoneWarAllowed = false;
+  if(typeof state.settings.routeRequireSameMap !== 'boolean') state.settings.routeRequireSameMap = true;
+  if(typeof state.settings.warRequireSameMap !== 'boolean') state.settings.warRequireSameMap = true;
   migratePowerInState();
   migrateAllianceOrder();
+  /* v8.9.9：遷移 zone.mapId */
+  if(typeof window.SLG.migrateZonesForMap === 'function'){
+    try{ window.SLG.migrateZonesForMap(); }catch(e){}
+  }
   return true;
 }
 
@@ -1050,6 +1047,8 @@ function applySandboxData(data){
   if(data.settings) Object.assign(state.settings, data.settings);
   if(typeof state.settings.attackRequireRoute !== 'boolean') state.settings.attackRequireRoute = false;
   if(typeof state.settings.crossZoneWarAllowed !== 'boolean') state.settings.crossZoneWarAllowed = false;
+  if(typeof state.settings.routeRequireSameMap !== 'boolean') state.settings.routeRequireSameMap = true;
+  if(typeof state.settings.warRequireSameMap !== 'boolean') state.settings.warRequireSameMap = true;
   state.alliances = JSON.parse(JSON.stringify(data.alliances || []));
   state.zones     = JSON.parse(JSON.stringify(data.zones     || []));
   state.cities    = JSON.parse(JSON.stringify(data.cities    || []));
@@ -1068,6 +1067,10 @@ function applySandboxData(data){
   }
   migratePowerInState();
   migrateAllianceOrder();
+  /* v8.9.9：遷移 zone.mapId */
+  if(typeof window.SLG.migrateZonesForMap === 'function'){
+    try{ window.SLG.migrateZonesForMap(); }catch(e){}
+  }
   return true;
 }
 
@@ -1188,6 +1191,32 @@ function computeDefStartTimes(cities){
       if(!city.defStartTime) city.defStartTime = '19:00';
     }
   }
+}
+
+/* ============================================================
+   v8.9.9：地圖關聯工具
+   ============================================================ */
+function getZoneById(zoneId){
+  return state.zones.find(z => z.id === zoneId) || null;
+}
+function getZonesByMap(mapId){
+  if(!mapId) return state.zones.slice();
+  return state.zones.filter(z => z.mapId === mapId);
+}
+function getCityMapId(city){
+  if(!city) return '';
+  if(city.mapNode && city.mapNode.mapId) return city.mapNode.mapId;
+  const zone = getZoneById(city.zoneId);
+  return zone && zone.mapId ? zone.mapId : '';
+}
+function citiesOnSameMap(cityA, cityB){
+  const ma = getCityMapId(cityA);
+  const mb = getCityMapId(cityB);
+  if(!ma || !mb) return true;  /* 未綁定時不限制 */
+  return ma === mb;
+}
+function getAllMapIds(){
+  return Object.keys(state.mapLibrary.index || {});
 }
 
 /* ============================================================
@@ -1440,7 +1469,7 @@ function readAIParamsFromUI(){
 }
 
 /* ============================================================
-   v8.6.9：分級參數 UI 同步
+   分級參數 UI 同步
    ============================================================ */
 function syncTroopTiersToUI(){
   const t = state.troopTiers;
@@ -1499,14 +1528,10 @@ loadSyncPrefs();
 loadTroopTiers();
 
 /* ============================================================
-   v8.8.0：地圖庫工具（新增）
+   地圖庫工具
    ============================================================ */
-
 const MAP_LIBRARY_LS_KEY = 'slg_map_library_prefs';
 
-/* ============================================================
-   名稱正規化
-   ============================================================ */
 function normalizeCityName(name){
   if(!name) return '';
   return String(name)
@@ -1514,14 +1539,10 @@ function normalizeCityName(name){
     .replace(/\uFEFF/g, '')
     .replace(/[（）()【】\[\]「」『』《》<>]/g, '')
     .replace(/\s+/g, '')
-    /* 去掉常見後綴（由長到短，避免「水寨」被誤切） */
     .replace(/(水寨|要塞|關卡|城池|城堡|營寨|港口|小城|大城|新村|古鎮|山寨|城|關|寨|村|鎮|港|島|營)$/g, '')
     .toLowerCase();
 }
 
-/* ============================================================
-   編輯距離
-   ============================================================ */
 function levenshtein(a, b){
   if(!a) return b ? b.length : 0;
   if(!b) return a.length;
@@ -1544,9 +1565,6 @@ function levenshtein(a, b){
   return prev[n];
 }
 
-/* ============================================================
-   相似度計算（0~1）
-   ============================================================ */
 function calcSimilarity(a, b){
   if(!a || !b) return 0;
   const rawA = String(a).trim();
@@ -1558,7 +1576,6 @@ function calcSimilarity(a, b){
   if(!na || !nb) return 0;
   if(na === nb) return 0.95;
 
-  /* 包含關係 */
   const containsBonus = (() => {
     if(na.includes(nb) || nb.includes(na)){
       const minLen = Math.min(na.length, nb.length);
@@ -1568,12 +1585,10 @@ function calcSimilarity(a, b){
     return 0;
   })();
 
-  /* 編輯距離相似度 */
   const dist = levenshtein(na, nb);
   const maxLen = Math.max(na.length, nb.length);
   const editSim = maxLen > 0 ? Math.max(0, 1 - dist / maxLen) : 0;
 
-  /* 共同前綴加分（最多 +0.1） */
   let prefixBonus = 0;
   const minPrefix = Math.min(na.length, nb.length, 5);
   for(let i = 0; i < minPrefix; i++){
@@ -1584,13 +1599,6 @@ function calcSimilarity(a, b){
   return Math.min(1, Math.max(containsBonus, editSim + prefixBonus));
 }
 
-/* ============================================================
-   單城匹配
-   @param {Object} input - { name, code } 或只有 name
-   @param {Object} nodes - { nodeId: { name, code, x, y } }
-   @param {Object} opts  - { autoAccept, candidatesMin, maxCandidates }
-   @returns {Object} { nodeId, node, score, method, candidates, needsUserChoice, autoAccepted }
-   ============================================================ */
 function matchCityToMapNode(input, nodes, opts){
   opts = opts || {};
   const autoAccept = opts.autoAccept !== undefined ? opts.autoAccept : (state.mapMatching.autoAcceptThreshold || 0.95);
@@ -1609,8 +1617,7 @@ function matchCityToMapNode(input, nodes, opts){
 
   if(!input || !nodes) return result;
   const nodeEntries = Object.entries(nodes);
-  
-  /* 2. 名稱精確匹配 */
+
   const name = (input.name || '').trim();
   if(name){
     for(const [nid, n] of nodeEntries){
@@ -1625,7 +1632,6 @@ function matchCityToMapNode(input, nodes, opts){
     }
   }
 
-  /* 3. 正規化名稱匹配（去掉後綴 + 小寫） */
   if(name){
     const nName = normalizeCityName(name);
     if(nName){
@@ -1642,7 +1648,6 @@ function matchCityToMapNode(input, nodes, opts){
     }
   }
 
-  /* 4. 模糊匹配 → 收集候選 */
   if(name){
     const candidates = [];
     for(const [nid, n] of nodeEntries){
@@ -1660,7 +1665,6 @@ function matchCityToMapNode(input, nodes, opts){
     }
 
     const best = candidates[0];
-    /* 若最佳 ≥ autoAccept 且領先第二 0.1 以上 → 自動採用 */
     if(best.score >= autoAccept){
       const secondScore = candidates[1] ? candidates[1].score : 0;
       if(best.score - secondScore >= 0.1){
@@ -1673,7 +1677,6 @@ function matchCityToMapNode(input, nodes, opts){
       }
     }
 
-    /* 否則：需要使用者選擇 */
     result.nodeId = best.nodeId;
     result.node = best.node;
     result.score = best.score;
@@ -1685,12 +1688,6 @@ function matchCityToMapNode(input, nodes, opts){
   return result;
 }
 
-/* ============================================================
-   批次匹配（匯入城池時用）
-   @param {Array} cities - 系統城池 [{ id, name, code? }]
-   @param {Object} nodes  - 地圖節點
-   @returns {Array} [{ city, result }]
-   ============================================================ */
 function matchCitiesToMap(cities, nodes){
   const out = [];
   if(!Array.isArray(cities)) return out;
@@ -1702,9 +1699,6 @@ function matchCitiesToMap(cities, nodes){
   return out;
 }
 
-/* ============================================================
-   地圖庫偏好持久化（本機）
-   ============================================================ */
 function loadMapLibraryPrefs(){
   try{
     const raw = localStorage.getItem(MAP_LIBRARY_LS_KEY);
@@ -1723,9 +1717,6 @@ function saveMapLibraryPrefs(){
   }catch(e){ /* ignore */ }
 }
 
-/* ============================================================
-   地圖庫存取（簡易 API，讓其他模組用）
-   ============================================================ */
 function getMapMeta(mapId){
   return state.mapLibrary.index[mapId] || null;
 }
@@ -1751,14 +1742,10 @@ function setMapViewMode(mode){
   emit(EVT.MAP_LIBRARY_UPDATED, { type: 'viewmode-changed', mode });
 }
 
-/* ============================================================
-   v8.8.0：初始化
-   ============================================================ */
 function initMapLibrary(){
   loadMapLibraryPrefs();
 }
 
-/* 立即初始化（core.js 載入時） */
 initMapLibrary();
 
 /* ============================================================
@@ -1784,7 +1771,6 @@ Object.assign(window.SLG, {
   formatPower, formatAvgPower, parsePowerInput, migratePower, powerToYiInput,
   getAllianceIcons, isAllianceIconUsed, getAvailableAllianceIcons,
 
-  /* v8.6.9：分級工具 */
   calcTeamsFromTiers, getTroopTiers, setTroopTiers, resetTroopTiers,
   loadTroopTiers, saveTroopTiers,
   syncTroopTiersToUI, readTroopTiersFromUI,
@@ -1832,7 +1818,9 @@ Object.assign(window.SLG, {
   isNpcCity, isSrcAllianceCity, bfsPath, computeCityDistance,
   setDistanceHighlight, clearDistanceHighlight,
 
-  /* v8.8.0：地圖庫工具 */
+  /* v8.9.9：地圖關聯工具 */
+  getZoneById, getZonesByMap, getCityMapId, citiesOnSameMap, getAllMapIds,
+
   MAP_LIBRARY_LS_KEY,
   normalizeCityName, levenshtein, calcSimilarity,
   matchCityToMapNode, matchCitiesToMap,

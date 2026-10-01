@@ -1,6 +1,6 @@
 /* ============================================================================
  * data.js — Excel/CSV 匯入匯出
- * v8.8.0：新增城池編號欄位 + 匯入後自動觸發地圖節點匹配
+ * v8.9.9：Excel 匯入地圖選擇彈窗 + 匯出加地圖欄 + 城池綁定 mapNode
  * ========================================================================== */
 (function(){
 'use strict';
@@ -20,9 +20,9 @@ const {
   POWER_YI, POWER_WAN,
   parsePowerInput, migratePower, getAlliancesSorted,
   calcTeamsFromTiers,
-  /* v8.8.0：模糊比對 */
   matchCityToMapNode,
   getActiveMap,
+  getCityMapId,
 } = window.SLG;
 
 /* ============================================================
@@ -68,7 +68,7 @@ function findFieldIndex(headers, aliases){
 }
 
 /* ============================================================
-   v8.6.8：匯入模式工具
+   匯入模式工具
    ============================================================ */
 const IMPORT_MODE_LABELS = {
   merge: '🔄 合併',
@@ -107,7 +107,6 @@ const ALLIANCE_FIELD_ALIASES = {
   order:       ['順序','排序','order','sort'],
 };
 
-/* v8.8.0：新增 code 欄位（城池編號） */
 const CITY_FIELD_ALIASES = {
   name:        ['城池名稱','城池','城名','名稱','name','cityname','city'],
   code:        ['城池編號','編號','城編號','代碼','code','citycode','id'],
@@ -123,7 +122,6 @@ const CITY_FIELD_ALIASES = {
   isCapital:   ['首都','盟首都','主城','iscapital','capital'],
 };
 
-/* v8.6.9：分級欄位別名 */
 const TIER_FIELD_ALIASES = {
   tier1: ['人≤17','人(≤17)','低階','人17以下','tier1','人小於17','人小於等於17','人17以下'],
   tier2: ['人18-20','人(18-20)','中階','人18到20','tier2','人18至20'],
@@ -241,7 +239,7 @@ function parseAlliancesTable(rows){
 }
 
 /* ============================================================
-   v8.8.0：解析城池表（支援編號 + 分級）
+   解析：城池表
    ============================================================ */
 function parseCitiesTable(rows){
   if(!rows || rows.length < 2) return { cities: [], errors: ['城池表至少需要表頭 + 1 筆資料'] };
@@ -275,11 +273,8 @@ function parseCitiesTable(rows){
       return v !== '' ? v : def;
     };
 
-    /* v8.8.0：城池編號 + v8.8.1：從名稱自動拆分編號 */
     let code = (idx.code >= 0) ? String(r[idx.code] || '').trim() : '';
     let cleanName = name;
-    /* 只匹配「(英文開頭的編號)」→ (L98)、(M28)、(N2) 等
-       不會拆「(待確認)」這種中文內容 */
     const nameM = name.match(/^(.+?)\s*[（(]\s*([A-Za-z][A-Za-z0-9_\-]*)\s*[)）]\s*$/);
     if(nameM){
       cleanName = nameM[1].trim();
@@ -325,7 +320,7 @@ function parseCitiesTable(rows){
     }
 
     cities.push({
-      name: cleanName,   /* ★ 改用拆分後的乾淨名稱 */
+      name: cleanName,
       code,
       zoneName, allianceName, side,
       level, memberCount, totalPower, totalTeams,
@@ -407,7 +402,6 @@ function parseMapRoutesTable(text){
   return { routes, errors };
 }
 
-/* ====== 中場休息：第 1/2 段結束 ====== */
 /* ============================================================
    Excel 匯入 UI
    ============================================================ */
@@ -624,73 +618,61 @@ function doImportAlliances(){
 }
 
 /* ============================================================
-   v8.8.0：匯入後自動觸發地圖節點匹配
+   v8.9.9：Excel 匯入地圖選擇彈窗
    ============================================================ */
-/**
- * 嘗試把系統城池與當前地圖節點自動匹配
- * - 精確（編號 / 名稱 / 正規化）→ 自動套用
- * - 模糊多候選 → 交給 UI 彈 Modal 讓使用者選
- * - 完全無候選 → 列入 unmatched
- * @param {Array} cities - 匯入的城池（含 code）
- * @returns {Object} { matched, fuzzyAuto, needChoice:[{cityId, cityName, candidates}], unmatched:[{cityId, cityName}] }
- */
-function tryAutoMatchCitiesToMap(cities){
-  const result = {
-    matched: 0,
-    fuzzyAuto: 0,
-    needChoice: [],
-    unmatched: [],
-    skipped: 0,
-  };
+function askImportMapId(){
+  const mapIdx = state.mapLibrary.index || {};
+  const mapIds = Object.keys(mapIdx);
+  const activeMapId = state.mapLibrary.activeMapId || '';
 
-  /* 若無啟用中的地圖，跳過 */
-  const activeMap = getActiveMap ? getActiveMap() : null;
-  if(!activeMap || !activeMap.nodes || Object.keys(activeMap.nodes).length === 0){
-    result.skipped = cities.length;
-    return result;
+  /* 若無地圖，回傳空字串（不綁定） */
+  if(mapIds.length === 0){
+    return { mapId: '' };
   }
 
-  const nodes = activeMap.nodes;
+  /* 組裝選項文字 */
+  const activeMapName = activeMapId
+    ? (mapIdx[activeMapId]?.name || '未命名')
+    : '（尚未選擇）';
 
-  for(const city of cities){
-    const r = matchCityToMapNode({ name: city.name, code: city.code || '' }, nodes);
-    if(r.autoAccepted && r.node){
-      /* 精確 / 正規化 / 模糊自動 → 寫入 city.mapNode */
-      city.mapNode = {
-        nodeId: r.nodeId,
-        x: r.node.x,
-        y: r.node.y,
-        method: r.method,
-      };
-      if(r.method === 'fuzzy-auto') result.fuzzyAuto++;
-      else result.matched++;
-    } else if(r.needsUserChoice && r.candidates && r.candidates.length > 0){
-      result.needChoice.push({
-        cityId: city.id,
-        cityName: city.name,
-        cityCode: city.code || '',
-        candidates: r.candidates,
-      });
-    } else {
-      result.unmatched.push({ cityId: city.id, cityName: city.name, cityCode: city.code || '' });
+  let msg = '請選擇匯入城池要綁定的地圖：\n\n';
+  msg += `[1] 綁定當前使用中的地圖（${activeMapName}）\n`;
+  msg += '[2] 指定其他地圖\n';
+  msg += '[3] 不綁定地圖（稍後手動指定）\n\n';
+  msg += '輸入 1 / 2 / 3：';
+
+  const answer = prompt(msg, '1');
+  if(answer === null) return null;  /* 取消 */
+
+  if(answer === '1'){
+    if(!activeMapId){
+      alert('⚠️ 目前沒有使用中的地圖，請改用 [2] 指定或 [3] 不綁定');
+      return askImportMapId();
     }
+    return { mapId: activeMapId };
   }
-
-  return result;
-}
-
-/**
- * 在城池陣列中，依 mapNode 資訊寫入地圖節點對應（存回 entity）
- */
-function applyMapNodeToCity(city, nodeId, x, y, method){
-  if(!city) return;
-  city.mapNode = { nodeId, x, y, method: method || 'manual' };
-  state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
-  markDirty('city', city.id);
+  if(answer === '2'){
+    const listMsg = mapIds.map((id, i) =>
+      `[${i + 1}] ${mapIdx[id].name || '未命名'}`
+    ).join('\n');
+    const pick = prompt(`請選擇地圖編號：\n\n${listMsg}`, '1');
+    if(pick === null) return null;
+    const idx = parseInt(pick, 10) - 1;
+    if(isNaN(idx) || idx < 0 || idx >= mapIds.length){
+      alert('❌ 無效的編號，請重新選擇');
+      return askImportMapId();
+    }
+    return { mapId: mapIds[idx] };
+  }
+  if(answer === '3'){
+    return { mapId: '' };
+  }
+  alert('❌ 無效的選項，請重新輸入');
+  return askImportMapId();
 }
 
 /* ============================================================
-   ② 匯入城池表（v8.8.0：支援編號 + 地圖節點匹配）
+   ② 匯入城池表
    ============================================================ */
 function doImportCities(){
   const text = document.getElementById('excelCitiesText')?.value.trim() || '';
@@ -702,16 +684,33 @@ function doImportCities(){
   const mode = getImportMode('excelCitiesMode');
   if(!confirmImport(mode, result.cities.length, '城池')) return;
 
+  /* v8.9.9：彈窗讓使用者選擇要綁定的地圖 */
+  const mapChoice = askImportMapId();
+  if(mapChoice === null) return;  /* 取消匯入 */
+  const targetMapId = mapChoice.mapId;
+
   const zoneMap = new Map();
-  for(const z of state.zones) zoneMap.set(z.name, z.id);
+  for(const z of state.zones){
+    /* v8.9.9：同名戰區可能有多個（不同地圖），需依 mapId 分別記錄 */
+    const key = `${z.name}::${z.mapId || ''}`;
+    zoneMap.set(key, z.id);
+    /* 也保留舊 key（無 mapId）以向後相容 */
+    if(!z.mapId) zoneMap.set(z.name, z.id);
+  }
+
   const ensureZone = (name) => {
     if(!name) name = '未分配';
-    if(zoneMap.has(name)) return zoneMap.get(name);
+    /* v8.9.9：先用 (name + mapId) 找 */
+    const compositeKey = `${name}::${targetMapId}`;
+    if(zoneMap.has(compositeKey)) return zoneMap.get(compositeKey);
+    /* 若無指定地圖，用舊 key */
+    if(!targetMapId && zoneMap.has(name)) return zoneMap.get(name);
+    /* 建立新戰區（含 mapId） */
     const id = uid();
-    state.zones.push({ id, name });
+    state.zones.push({ id, name, mapId: targetMapId || '' });
     state.entityRev.zone[id] = (state.entityRev.zone[id] || 0) + 1;
     markDirty('zone', id);
-    zoneMap.set(name, id);
+    zoneMap.set(compositeKey, id);
     return id;
   };
 
@@ -737,7 +736,6 @@ function doImportCities(){
   const preserveOld = !!state.troopTiers.preserveOldTotal;
   const autoCalc = !!state.troopTiers.autoCalcOnImport;
 
-  /* v8.8.0：記錄本次匯入涉及的城池物件（用於地圖節點匹配） */
   const touchedCities = [];
 
   for(const cd of result.cities){
@@ -785,17 +783,17 @@ function doImportCities(){
       existing.cooldownMin = cd.cooldownMin;
       existing.wallMin = cd.wallMin;
       existing.isCapital = cd.isCapital;
-      /* v8.8.0：儲存編號 */
       if(cd.code) existing.code = cd.code;
       if(cd.tierCounts) existing.tierCounts = cd.tierCounts;
       state.entityRev.city[existing.id] = (state.entityRev.city[existing.id] || 0) + 1;
       markDirty('city', existing.id);
-      touchedCities.push(existing);
+      touchedCities.push({ city: existing, importMapId: targetMapId });
       updated++;
     } else {
       const id = uid();
       const entity = {
-        id, name: cd.name, zoneId, allianceId, side,
+        id, name: cd.name, code: cd.code || '',
+        zoneId, allianceId, side,
         level: cd.level, memberCount: finalMemberCount,
         totalPower: cd.totalPower, totalTeams: finalTotalTeams,
         avgPower: finalTotalTeams > 0 ? Math.floor(cd.totalPower / finalTotalTeams) : 0,
@@ -803,14 +801,12 @@ function doImportCities(){
         defStartTime: '19:00', isCapital: cd.isCapital,
         attackTargets: [], defendTargets: [],
       };
-      /* v8.8.0：儲存編號 */
-      if(cd.code) entity.code = cd.code;
       if(cd.tierCounts) entity.tierCounts = cd.tierCounts;
       state.cities.push(entity);
       cityByName.set(cd.name, entity);
       state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
       markDirty('city', id);
-      touchedCities.push(entity);
+      touchedCities.push({ city: entity, importMapId: targetMapId });
       added++;
     }
   }
@@ -832,37 +828,104 @@ function doImportCities(){
 
   let msg = `✅ ${summary}`;
   if(result.hasTierFields) msg += '\n\n📊 已使用分級欄位自動計算總隊數';
+  if(targetMapId){
+    const mapName = state.mapLibrary.index[targetMapId]?.name || '未命名';
+    msg += `\n\n🗺️ 已綁定地圖：${mapName}`;
+  } else {
+    msg += '\n\n⚠️ 未綁定地圖（可稍後手動指定）';
+  }
 
-  /* v8.8.0：自動觸發地圖節點匹配 */
-  const matchResult = tryAutoMatchCitiesToMap(touchedCities);
-  if(matchResult.skipped === touchedCities.length && touchedCities.length > 0){
-    msg += '\n\n🗺️ 未設定使用中的地圖，跳過節點匹配。';
-  } else if(matchResult.matched > 0 || matchResult.fuzzyAuto > 0 || matchResult.needChoice.length > 0 || matchResult.unmatched.length > 0){
-    const parts = [];
-    if(matchResult.matched > 0) parts.push(`✅ 精確匹配 ${matchResult.matched}`);
-    if(matchResult.fuzzyAuto > 0) parts.push(`🔍 模糊自動 ${matchResult.fuzzyAuto}`);
-    if(matchResult.needChoice.length > 0) parts.push(`❓ 待確認 ${matchResult.needChoice.length}`);
-    if(matchResult.unmatched.length > 0) parts.push(`⚠️ 未匹配 ${matchResult.unmatched.length}`);
-    msg += '\n\n🗺️ 地圖節點匹配：' + parts.join(' · ');
-
-    if(matchResult.needChoice.length > 0 || matchResult.unmatched.length > 0){
-      msg += '\n（將開啟匹配確認視窗）';
+  /* 地圖節點匹配（僅在有指定地圖時） */
+  let matchResult = { skipped: touchedCities.length, matched: 0, fuzzyAuto: 0, needChoice: [], unmatched: [] };
+  if(targetMapId){
+    matchResult = tryAutoMatchCitiesToMap(touchedCities.map(t => t.city), targetMapId);
+    if(matchResult.matched > 0 || matchResult.fuzzyAuto > 0 || matchResult.needChoice.length > 0 || matchResult.unmatched.length > 0){
+      const parts = [];
+      if(matchResult.matched > 0) parts.push(`✅ 精確匹配 ${matchResult.matched}`);
+      if(matchResult.fuzzyAuto > 0) parts.push(`🔍 模糊自動 ${matchResult.fuzzyAuto}`);
+      if(matchResult.needChoice.length > 0) parts.push(`❓ 待確認 ${matchResult.needChoice.length}`);
+      if(matchResult.unmatched.length > 0) parts.push(`⚠️ 未匹配 ${matchResult.unmatched.length}`);
+      msg += '\n\n🗺️ 地圖節點匹配：' + parts.join(' · ');
+      if(matchResult.needChoice.length > 0 || matchResult.unmatched.length > 0){
+        msg += '\n（將開啟匹配確認視窗）';
+      }
     }
   }
 
   alert(msg);
   logSystem(`📥 城池表匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
 
-  /* 保存結果供後續 UI 處理 */
+  /* 呼叫 UI 層的匹配處理 */
   if(window.SLG.onCityImportMatched){
     try{
       window.SLG.onCityImportMatched({
-        touchedCities,
+        touchedCities: touchedCities.map(t => t.city),
         matchResult,
         mode,
       });
     }catch(e){ console.warn('[匯入] 節點匹配後處理失敗', e); }
   }
+}
+
+/* ============================================================
+   v8.9.9：匹配函式（含 mapId 參數）
+   ============================================================ */
+function tryAutoMatchCitiesToMap(cities, mapId){
+  const result = {
+    matched: 0,
+    fuzzyAuto: 0,
+    needChoice: [],
+    unmatched: [],
+    skipped: 0,
+  };
+
+  const targetMapId = mapId || state.mapLibrary.activeMapId || '';
+  if(!targetMapId){
+    result.skipped = cities.length;
+    return result;
+  }
+
+  const map = state.mapLibrary.loaded[targetMapId];
+  if(!map || !map.nodes || Object.keys(map.nodes).length === 0){
+    result.skipped = cities.length;
+    return result;
+  }
+
+  const nodes = map.nodes;
+
+  for(const city of cities){
+    const r = matchCityToMapNode({ name: city.name, code: city.code || '' }, nodes);
+    if(r.autoAccepted && r.node){
+      city.mapNode = {
+        mapId: targetMapId,
+        nodeId: r.nodeId,
+        x: r.node.x,
+        y: r.node.y,
+        method: r.method,
+      };
+      if(r.method === 'fuzzy-auto') result.fuzzyAuto++;
+      else result.matched++;
+    } else if(r.needsUserChoice && r.candidates && r.candidates.length > 0){
+      result.needChoice.push({
+        cityId: city.id,
+        cityName: city.name,
+        cityCode: city.code || '',
+        candidates: r.candidates,
+      });
+    } else {
+      result.unmatched.push({ cityId: city.id, cityName: city.name, cityCode: city.code || '' });
+    }
+  }
+
+  return result;
+}
+
+function applyMapNodeToCity(city, nodeId, x, y, method){
+  if(!city) return;
+  const mapId = state.mapLibrary.activeMapId || '';
+  city.mapNode = { mapId, nodeId, x, y, method: method || 'manual' };
+  state.entityRev.city[city.id] = (state.entityRev.city[city.id] || 0) + 1;
+  markDirty('city', city.id);
 }
 
 /* ============================================================
@@ -880,7 +943,8 @@ function doImportMapRoutes(){
   const cityByName = new Map();
   for(const c of state.cities) cityByName.set(c.name, c.id);
 
-  let added = 0, skipped = 0, notFound = 0;
+  const requireSameMap = !!state.settings.routeRequireSameMap;
+  let added = 0, skipped = 0, notFound = 0, crossMapSkipped = 0;
   if(mode === 'overwrite') state.routes.length = 0;
 
   for(const r of result.routes){
@@ -889,6 +953,16 @@ function doImportMapRoutes(){
     if(!aId || !bId){ notFound++; continue; }
     if(aId === bId){ skipped++; continue; }
     if(findRoute(aId, bId)){ skipped++; continue; }
+
+    /* v8.9.9：跨圖檢查 */
+    if(requireSameMap){
+      const a = state.cities.find(c => c.id === aId);
+      const b = state.cities.find(c => c.id === bId);
+      const ma = getCityMapId ? getCityMapId(a) : '';
+      const mb = getCityMapId ? getCityMapId(b) : '';
+      if(ma && mb && ma !== mb){ crossMapSkipped++; continue; }
+    }
+
     addRoute(aId, bId);
     added++;
   }
@@ -898,10 +972,15 @@ function doImportMapRoutes(){
   if(window.SLG.GameMap) window.SLG.GameMap.render();
   if(window.SLG.renderOverview) window.SLG.renderOverview();
 
-  const summary = mode === 'overwrite'
+  let summary = mode === 'overwrite'
     ? `已覆蓋：${added} 條`
     : `新增完成：新增 ${added}${skipped > 0 ? `，跳過 ${skipped}` : ''}${notFound > 0 ? `，找不到城池 ${notFound}` : ''}`;
-  alert(`✅ ${summary}`);
+
+  let msg = `✅ ${summary}`;
+  if(crossMapSkipped > 0){
+    msg += `\n\n⚠️ 跨圖限制：略過 ${crossMapSkipped} 條\n（可至 ⚙️ 參數設定關閉「路線限制同地圖」）`;
+  }
+  alert(msg);
   logSystem(`📥 地圖路線匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
 }
 
@@ -931,9 +1010,11 @@ function doImportRoutes(){
   for(const c of state.cities) cityByName.set(c.name, c.id);
 
   const allowCrossZone = !!state.settings.crossZoneWarAllowed;
+  const requireSameMap = !!state.settings.warRequireSameMap;
 
-  let added = 0, updated = 0, skipped = 0, crossZoneSkipped = 0, notFound = 0;
+  let added = 0, updated = 0, skipped = 0, crossZoneSkipped = 0, crossMapSkipped = 0, notFound = 0;
   const crossZoneList = [];
+  const crossMapList = [];
 
   for(const route of result.routes){
     const srcCityId = cityByName.get(route.srcName);
@@ -951,6 +1032,17 @@ function doImportRoutes(){
         const srcZoneName = state.zones.find(z => z.id === srcZone)?.name || '未分配';
         const tgtZoneName = state.zones.find(z => z.id === tgtZone)?.name || '未分配';
         crossZoneList.push(`${srcCity.name}(${srcZoneName}) → ${tgtCity.name}(${tgtZoneName})`);
+        continue;
+      }
+    }
+
+    /* v8.9.9：跨圖檢查 */
+    if(requireSameMap){
+      const sm = getCityMapId ? getCityMapId(srcCity) : '';
+      const tm = getCityMapId ? getCityMapId(tgtCity) : '';
+      if(sm && tm && sm !== tm){
+        crossMapSkipped++;
+        crossMapList.push(`${srcCity.name}(${sm.slice(0,10)}) → ${tgtCity.name}(${tm.slice(0,10)})`);
         continue;
       }
     }
@@ -1000,9 +1092,15 @@ function doImportRoutes(){
   let msg = `✅ ${summary}`;
   if(crossZoneSkipped > 0){
     msg += `\n\n⚠️ 跨戰區限制：略過 ${crossZoneSkipped} 條`;
-    msg += `\n${crossZoneList.slice(0, 8).join('\n')}`;
-    if(crossZoneList.length > 8) msg += `\n…及其他 ${crossZoneList.length - 8} 條`;
+    msg += `\n${crossZoneList.slice(0, 5).join('\n')}`;
+    if(crossZoneList.length > 5) msg += `\n…及其他 ${crossZoneList.length - 5} 條`;
     msg += `\n\n（可至 ⚙️ 參數設定 → 🎯 宣戰規則 → 勾選「允許跨戰區宣戰」）`;
+  }
+  if(crossMapSkipped > 0){
+    msg += `\n\n⚠️ 跨圖限制：略過 ${crossMapSkipped} 條`;
+    msg += `\n${crossMapList.slice(0, 5).join('\n')}`;
+    if(crossMapList.length > 5) msg += `\n…及其他 ${crossMapList.length - 5} 條`;
+    msg += `\n\n（可至 ⚙️ 參數設定 → 🗺️ 地圖關聯規則 → 取消勾選「宣戰限制同地圖」）`;
   }
   alert(msg);
   logSystem(`📥 宣戰表匯入完成（${IMPORT_MODE_LABELS[mode]}）：${summary}`);
@@ -1021,16 +1119,20 @@ function downloadCSV(csv, filename){
   URL.revokeObjectURL(url);
 }
 
-/* v8.8.0：匯出城池表（含編號 + 分級欄位） */
+/* v8.9.9：匯出城池表（加地圖欄位） */
 function exportCitiesCSV(){
   if(state.cities.length === 0){ alert('目前沒有任何城池'); return; }
-  const headers = ['城池名稱','城池編號','戰區','同盟','陣營','等級','人≤17','人18-20','人21-24','人≥25','總戰力（億）','均戰（萬）','總隊數','冷卻','城牆','首都'];
+  const headers = ['地圖','城池名稱','城池編號','戰區','同盟','陣營','等級','人≤17','人18-20','人21-24','人≥25','總戰力（億）','均戰（萬）','總隊數','冷卻','城牆','首都'];
   const rows = state.cities.map(c => {
     const zone = state.zones.find(z => z.id === c.zoneId);
+    const mapId = (c.mapNode && c.mapNode.mapId) || (zone && zone.mapId) || '';
+    const mapMeta = state.mapLibrary.index?.[mapId];
+    const mapName = mapMeta?.name || (mapId ? '（未知）' : '');
     const alliance = state.alliances.find(a => a.id === c.allianceId);
     const avgPower = c.totalTeams > 0 ? Math.floor((Number(c.totalPower) || 0) / c.totalTeams) : 0;
     const tc = c.tierCounts || { tier1:'', tier2:'', tier3:'', tier4:'' };
     return [
+      mapName,
       c.name, c.code || '', zone ? zone.name : '', alliance ? alliance.name : '',
       SIDE_LABELS[c.side] || c.side,
       c.level || 1,
@@ -1098,14 +1200,15 @@ function exportRoutesCSV(){
 }
 
 function downloadExcelTemplate(){
-  const template = `【v8.8.0：城池表欄位說明】
+  const template = `【v8.9.9：城池表欄位說明】
 城池表支援兩種格式 + 編號欄位：
 
 【格式 A - 分級模式（推薦）】
-城池名稱,城池編號,戰區,同盟,陣營,等級,人≤17,人18-20,人21-24,人≥25,總戰力（億）,冷卻,城牆,首都
-南秦,L98,南中,帝盟,敵方,10,50,30,20,10,10.00,5,30,是
-句町,L75,南中,秦盟,敵方,9,40,20,10,5,8.00,5,20,
+地圖,城池名稱,城池編號,戰區,同盟,陣營,等級,人≤17,人18-20,人21-24,人≥25,總戰力（億）,冷卻,城牆,首都
+全地圖v1,南秦,L98,南中,帝盟,敵方,10,50,30,20,10,10.00,5,30,是
+全地圖v1,句町,L75,南中,秦盟,敵方,9,40,20,10,5,8.00,5,20,
 
+■ 地圖欄位為選填；若未填，匯入時會彈窗讓您選擇綁定的地圖
 ■ 只需填各級人數，系統自動算總隊數
 ■ 分級規則（可在參數設定自訂）：
   ・≤17 級：每人 3 隊
@@ -1115,8 +1218,8 @@ function downloadExcelTemplate(){
 ■ 城池編號欄位別名：城池編號 / 編號 / 城編號 / 代碼 / code
 
 【格式 B - 傳統模式（相容）】
-城池名稱,城池編號,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都
-南秦,L98,南中,帝盟,敵方,10,100,10.00,100,5,30,是
+地圖,城池名稱,城池編號,戰區,同盟,陣營,等級,人數,總戰力（億）,總隊數,冷卻,城牆,首都
+全地圖v1,南秦,L98,南中,帝盟,敵方,10,100,10.00,100,5,30,是
 
 ─────────────────────────────────────────────
 
@@ -1146,23 +1249,31 @@ function downloadExcelTemplate(){
 南秦西,南秦,協防,30,30,1,
 ■ 開始時間 = 目標城防守開始時間
 ■ 協防的開始時間留空
-■ 跨戰區預設略過
+■ 跨戰區預設略過（可於 ⚙️ 參數設定開啟）
+■ 跨地圖預設略過（可於 ⚙️ 參數設定關閉「宣戰限制同地圖」）
 
 ─────────────────────────────────────────────
 
-【v8.8.0 地圖節點自動匹配】
-匯入城池表後，若已設定使用中的地圖：
-1. 系統優先以「城池編號」精確匹配
-2. 次以「城池名稱」精確匹配
-3. 再以「正規化名稱」匹配（去掉城/關/寨等後綴）
-4. 最後以模糊比對（相似度 ≥ 0.5 列出候選讓你選）
-5. 完全無匹配 → 列入未匹配清單
+【v8.9.9 地圖關聯規則】
+匯入城池表時，若已設定使用中的地圖：
+1. 系統會彈窗詢問要綁定哪張地圖
+2. 選擇綁定後，自動分配座標
+3. 系統優先以「城池編號」精確匹配
+4. 次以「城池名稱」精確匹配
+5. 再以「正規化名稱」匹配（去掉城/關/寨等後綴）
+6. 最後以模糊比對（相似度 ≥ 0.5 列出候選讓你選）
+7. 完全無匹配 → 列入未匹配清單
+
+【v8.9.9 參數開關】
+⚙️ 參數設定 → 🗺️ 地圖關聯規則：
+・☑ 路線限制同地圖（預設開啟）
+・☑ 宣戰限制同地圖（預設開啟）
 `;
   const blob = new Blob(['\uFEFF' + template], {type:'text/plain;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'Excel匯入說明.txt';
+  a.download = 'Excel匯入說明_v8.9.9.txt';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
@@ -1186,7 +1297,7 @@ Object.assign(window.SLG, {
   IMPORT_MODE_LABELS, IMPORT_MODE_HINTS,
   TIER_FIELD_ALIASES,
 
-  /* v8.8.0：地圖節點匹配 */
+  askImportMapId,
   tryAutoMatchCitiesToMap,
   applyMapNodeToCity,
 });

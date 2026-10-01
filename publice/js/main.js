@@ -1,6 +1,6 @@
 /* ============================================================================
  * main.js — 權限、對話框、事件綁定、模擬調度、啟動
- * v8.9.4：路線更新不重置視圖 + 手動備份綁定 + 地圖庫所有人可編輯
+ * v8.9.9：地圖關聯參數 + 一鍵修復綁定 + 清單刪城連動
  * ========================================================================== */
 (function(){
 'use strict';
@@ -84,7 +84,6 @@ function effectiveCanImportExcel(){
   if(window.SLG.isInRoom()) return window.SLG.getEffectiveImportExcelPermission();
   return Auth() && Auth().canImportExcel();
 }
-/* v8.9.4：地圖庫所有人皆可編輯（只需登入） */
 function effectiveCanEditMapLibrary(){
   return !!(Auth() && Auth().isSignedIn());
 }
@@ -136,6 +135,8 @@ function applyPermissions(){
     'globalTimeLimit','globalMarchTimeSec','globalConsumeMinPerMin','globalConsumeMaxPerMin',
     'globalSiegeEfficiency','globalMaxLossRatio','globalMinLossRatio',
     'globalAttackRequireRoute','globalCrossZoneWar',
+    /* v8.9.9：地圖關聯規則 */
+    'globalRouteRequireSameMap','globalWarRequireSameMap',
     'aiR25','aiR20','aiR15','aiR12','aiR10','aiR08','aiR06','aiR00',
     'aiTeamFactor','aiWallFactor1','aiWallFactor2','aiDefendFactor','aiMinPct'
   ], !canEditSettings);
@@ -159,6 +160,9 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnSimulate'), Auth() && Auth().canRunSim(), '請先登入');
   const newZoneNameEl = document.getElementById('newZoneName');
   if(newZoneNameEl) newZoneNameEl.disabled = !canEditData;
+  /* v8.9.9：戰區的地圖下拉 */
+  const newZoneMapEl = document.getElementById('newZoneMap');
+  if(newZoneMapEl) newZoneMapEl.disabled = !canEditData;
 
   const cityBatchZoneEl = document.getElementById('cityBatchZone');
   if(cityBatchZoneEl) cityBatchZoneEl.disabled = !canEditData;
@@ -178,16 +182,14 @@ function applyPermissions(){
   togglePerm(document.getElementById('btnMapRelayout'), true, '');
   togglePerm(document.getElementById('btnMapFit'), true, '');
   togglePerm(document.getElementById('btnMapClearHighlight'), true, '');
+  /* v8.9.9：修復資料按鈕（僅登入可用） */
+  togglePerm(document.getElementById('btnMapReconcile'), signedIn, '請先登入');
 
-  /* v8.9.4：三模式按鈕權限 */
   togglePerm(document.getElementById('btnMapRouteMode'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnMapWarMode'), canEditData, '需要編輯資料權限');
   togglePerm(document.getElementById('btnMapCityMode'), canEditData, '需要編輯資料權限');
-
-  /* v8.9.4：底圖開關（純瀏覽用） */
   togglePerm(document.getElementById('btnMapBaseMap'), true, '');
 
-  /* v8.9.4：右側懸浮按鈕（僅瀏覽用） */
   ['btnMapZoomIn','btnMapZoomOut','btnMapZoomFitBtn','btnMapZoomReset',
    'btnMapPanLeft','btnMapPanRight','btnMapPanUp','btnMapPanDown'].forEach(id => {
     togglePerm(document.getElementById(id), true, '');
@@ -213,11 +215,11 @@ function applyPermissions(){
   const chatInputEl = document.getElementById('chatInput');
   if(chatInputEl) chatInputEl.disabled = !signedIn;
 
-  /* v8.9.4：地圖庫按鈕權限（僅需登入） */
   const canEditMapLib = effectiveCanEditMapLibrary();
   togglePerm(document.getElementById('btnMapUpload'), canEditMapLib, '請先登入');
   togglePerm(document.getElementById('btnMapCalibrate'), canEditMapLib, '請先登入');
   togglePerm(document.getElementById('btnMapExportCoords'), signedIn, '請先登入');
+  togglePerm(document.getElementById('btnMapSyncNodes'), signedIn, '請先登入');
   const mapLibViewModeEl = document.getElementById('mapLibraryViewMode');
   if(mapLibViewModeEl) mapLibViewModeEl.disabled = !signedIn;
   const mapLibSelectEl = document.getElementById('mapLibrarySelect');
@@ -515,11 +517,17 @@ function executeSimulation(zoneId){
   const attackRequireRoute = attackRequireRouteEl ? !!attackRequireRouteEl.checked : false;
   const crossZoneWarEl = document.getElementById('globalCrossZoneWar');
   const crossZoneWarAllowed = crossZoneWarEl ? !!crossZoneWarEl.checked : false;
+  /* v8.9.9：地圖關聯規則 */
+  const routeRequireSameMapEl = document.getElementById('globalRouteRequireSameMap');
+  const routeRequireSameMap = routeRequireSameMapEl ? !!routeRequireSameMapEl.checked : true;
+  const warRequireSameMapEl = document.getElementById('globalWarRequireSameMap');
+  const warRequireSameMap = warRequireSameMapEl ? !!warRequireSameMapEl.checked : true;
 
   Object.assign(state.settings, {
     timeLimitMin, consumeMinPerMin, consumeMaxPerMin,
     siegeEfficiency, marchTimeSec, maxLossRatio, minLossRatio,
     attackRequireRoute, crossZoneWarAllowed,
+    routeRequireSameMap, warRequireSameMap,
   });
   state.settingsRev++;
   saveState();
@@ -908,16 +916,16 @@ function initListPrefs(){
    ============================================================ */
 function bindMapLibraryUI(){
   if(typeof window.SLG.detectFullMap !== 'function'){
-    console.warn('[v8.9.4] geminiOcr.js 未載入，AI 辨識功能無法使用');
+    console.warn('[v8.9.9] geminiOcr.js 未載入，AI 辨識功能無法使用');
   } else {
     console.log('%c[Gemini OCR] 已就緒（端點：' + (window.SLG.GEMINI_OCR_ENDPOINT || '/api/ocr') + '）',
                 'color:#22ff88;font-size:11px');
   }
   if(typeof window.SLG.detectFromImage !== 'function'){
-    console.warn('[v8.9.4] circleDetect.js 未載入（此為選用，不影響 AI 辨識）');
+    console.warn('[v8.9.9] circleDetect.js 未載入（此為選用，不影響 AI 辨識）');
   }
   if(typeof window.SLG.WarQuickPanel !== 'object'){
-    console.warn('[v8.9.4] WarQuickPanel 未載入，地圖宣戰模式將無法使用');
+    console.warn('[v8.9.9] WarQuickPanel 未載入，地圖宣戰模式將無法使用');
   } else {
     console.log('%c[宣戰模式] WarQuickPanel 已就緒', 'color:#22ff88;font-size:11px');
   }
@@ -930,12 +938,11 @@ function bindMapLibraryUI(){
 }
 
 /* ============================================================
-   v8.9.4：路線刪除確認 Modal 綁定
+   路線刪除確認 Modal 綁定
    ============================================================ */
 function bindRouteDeleteModal(){
   const modal = document.getElementById('routeDeleteConfirmModal');
   if(!modal) return;
-  /* 點擊背景關閉 */
   modal.addEventListener('click', (e) => {
     if(e.target === modal){
       modal.classList.remove('show');
@@ -944,7 +951,7 @@ function bindRouteDeleteModal(){
 }
 
 /* ============================================================
-   v8.9.4：手動建立備份按鈕綁定
+   手動建立備份按鈕綁定
    ============================================================ */
 function bindBackupNowButton(){
   const btn = document.getElementById('btnCreateBackupNow');
@@ -957,6 +964,50 @@ function bindBackupNowButton(){
     }
     await window.SLG.createManualBackup();
   });
+}
+
+/* ============================================================
+   v8.9.9：地圖關聯規則 UI 綁定
+   ============================================================ */
+function bindMapRelationUI(){
+  const routeEl = document.getElementById('globalRouteRequireSameMap');
+  const warEl = document.getElementById('globalWarRequireSameMap');
+
+  /* 同步 state → UI */
+  if(routeEl) routeEl.checked = !!state.settings.routeRequireSameMap;
+  if(warEl) warEl.checked = !!state.settings.warRequireSameMap;
+
+  /* 綁定變更事件（即時儲存） */
+  if(routeEl && !routeEl.dataset.bound){
+    routeEl.dataset.bound = '1';
+    routeEl.addEventListener('change', function(){
+      if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改地圖關聯規則')) {
+        this.checked = !!state.settings.routeRequireSameMap;
+        return;
+      }
+      window.SLG.updateSettings({ routeRequireSameMap: !!this.checked });
+      saveState();
+      logSystem(`🗺️ 路線限制同地圖：${this.checked ? '開' : '關'}`);
+      /* 立即重繪路線清單 */
+      if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+    });
+  }
+  if(warEl && !warEl.dataset.bound){
+    warEl.dataset.bound = '1';
+    warEl.addEventListener('change', function(){
+      if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改地圖關聯規則')) {
+        this.checked = !!state.settings.warRequireSameMap;
+        return;
+      }
+      window.SLG.updateSettings({ warRequireSameMap: !!this.checked });
+      saveState();
+      logSystem(`🗺️ 宣戰限制同地圖：${this.checked ? '開' : '關'}`);
+      if(window.SLG.WarManager) window.SLG.WarManager.render();
+      if(window.SLG.WarManager && window.SLG.WarManager.updateAddTargetOptions) {
+        window.SLG.WarManager.updateAddTargetOptions();
+      }
+    });
+  }
 }
 
 /* ============================================================
@@ -989,7 +1040,15 @@ function bindUI(){
       if(tabId === 'tab-dyn'){ DYN().setRows(state.dynRows); DYN().populateCityFilters(); }
       if(tabId === 'tab-narrative'){ R().renderNarrative(state.narrativeLines); }
       if(tabId === 'tab-map'){ switchMapView(currentMapView); }
-      if(tabId === 'tab-params'){ syncAIParamsToUI(); syncTroopTiersToUI(); }
+      if(tabId === 'tab-params'){
+        syncAIParamsToUI();
+        syncTroopTiersToUI();
+        /* v8.9.9：同步地圖關聯規則 checkbox */
+        const routeEl = document.getElementById('globalRouteRequireSameMap');
+        if(routeEl) routeEl.checked = !!state.settings.routeRequireSameMap;
+        const warEl = document.getElementById('globalWarRequireSameMap');
+        if(warEl) warEl.checked = !!state.settings.warRequireSameMap;
+      }
       if(tabId === 'tab-summary'){
         if(window.SLG.Summary) window.SLG.Summary.render(window.SLG.Summary.getLast());
       }
@@ -1079,8 +1138,9 @@ function bindUI(){
   bindSyncSettingsUI();
   bindTroopTierUI();
   bindMapLibraryUI();
-  bindRouteDeleteModal();       /* v8.9.4 */
-  bindBackupNowButton();        /* v8.9.4 */
+  bindRouteDeleteModal();
+  bindBackupNowButton();
+  bindMapRelationUI();
 
   const btnLogout = document.getElementById('btnLogout');
   if(btnLogout && !btnLogout.dataset.bound){
@@ -1257,6 +1317,9 @@ function bindUI(){
     if(!requirePerm(() => Auth() && Auth().canEditSettings(), '修改戰鬥參數')) return;
     const attackRequireRouteEl = document.getElementById('globalAttackRequireRoute');
     const crossZoneWarEl = document.getElementById('globalCrossZoneWar');
+    /* v8.9.9：地圖關聯規則 */
+    const routeReqMapEl = document.getElementById('globalRouteRequireSameMap');
+    const warReqMapEl = document.getElementById('globalWarRequireSameMap');
     window.SLG.updateSettings({
       timeLimitMin: parseInt(document.getElementById('globalTimeLimit').value) || 120,
       consumeMinPerMin: parseFloat(document.getElementById('globalConsumeMinPerMin').value) || 10,
@@ -1267,10 +1330,13 @@ function bindUI(){
       minLossRatio: (parseFloat(document.getElementById('globalMinLossRatio').value) || 10) / 100,
       attackRequireRoute: attackRequireRouteEl ? !!attackRequireRouteEl.checked : false,
       crossZoneWarAllowed: crossZoneWarEl ? !!crossZoneWarEl.checked : false,
+      routeRequireSameMap: routeReqMapEl ? !!routeReqMapEl.checked : true,
+      warRequireSameMap: warReqMapEl ? !!warReqMapEl.checked : true,
     });
     if(R().renderMatrix) R().renderMatrix();
     if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.WarManager) window.SLG.WarManager.render();
+    if(window.SLG.RouteManager) window.SLG.RouteManager.render();
     if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
       window.SLG.GameMap.refreshZoneSelector();
     }
@@ -1290,6 +1356,7 @@ function bindUI(){
             timeLimitMin:120, consumeMinPerMin:10, consumeMaxPerMin:30,
             siegeEfficiency:1, marchTimeSec:0, maxLossRatio:0.9, minLossRatio:0.1,
             attackRequireRoute: false, crossZoneWarAllowed: false,
+            routeRequireSameMap: true, warRequireSameMap: true,
           };
           state.alliances = []; state.zones = []; state.cities = []; state.routes = [];
           await window.SLG.saveMySandbox();
@@ -1406,12 +1473,20 @@ function bindUI(){
     }
   });
 
+  /* v8.9.9：新增戰區（必須選地圖） */
   const btnAddZone = document.getElementById('btnAddZone');
   if(btnAddZone) btnAddZone.addEventListener('click', () => {
     if(!requirePerm(() => effectiveCanEditData(), '新增戰區')) return;
     const name = document.getElementById('newZoneName').value.trim();
-    if(!name) return;
-    window.SLG.upsertEntity('zone', { id: uid(), name });
+    if(!name){ alert('請輸入戰區名稱'); return; }
+    const mapSel = document.getElementById('newZoneMap');
+    const mapId = mapSel ? mapSel.value : '';
+    if(!mapId){ alert('⚠️ 請先選擇所屬地圖'); return; }
+    if(state.zones.some(z => z.name === name && z.mapId === mapId)){
+      alert('⚠️ 該地圖已有同名戰區，請改用其他名稱');
+      return;
+    }
+    window.SLG.upsertEntity('zone', { id: uid(), name, mapId });
     document.getElementById('newZoneName').value = '';
     R().renderZones(); R().renderCities();
     if(R().populateCityMatrixFilters) R().populateCityMatrixFilters();
@@ -1421,6 +1496,7 @@ function bindUI(){
       window.SLG.GameMap.refreshZoneSelector();
     }
     saveState();
+    logSystem(`✅ 已新增戰區：${name}（地圖 ${mapId.slice(0,10)}）`);
   });
 
   const zoneListEl = document.getElementById('zoneList');
@@ -1436,8 +1512,8 @@ function bindUI(){
       if(!trimmed){ alert('戰區名稱不能為空'); return; }
       if(trimmed.length > 20){ alert('戰區名稱最多 20 字'); return; }
       if(trimmed === zone.name) return;
-      if(state.zones.some(z => z.name === trimmed && z.id !== zone.id)){
-        alert('已有同名戰區，請改用其他名稱'); return;
+      if(state.zones.some(z => z.name === trimmed && z.id !== zone.id && z.mapId === zone.mapId)){
+        alert('⚠️ 該地圖已有同名戰區，請改用其他名稱'); return;
       }
       const oldName = zone.name;
       zone.name = trimmed;
@@ -1451,7 +1527,6 @@ function bindUI(){
       if(window.SLG.GameMap && window.SLG.GameMap.refreshZoneSelector){
         window.SLG.GameMap.refreshZoneSelector();
       }
-      if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
       saveState();
       logSystem(`✏️ 戰區已更名：${oldName} → ${trimmed}`);
       return;
@@ -1490,20 +1565,30 @@ function bindUI(){
     }
     if(delBtn){
       if(!requirePerm(() => effectiveCanEditData(), '刪除城池')) return;
-      showConfirm('刪除城池', '確定刪除？', () => {
-        window.SLG.deleteEntity('city', delBtn.dataset.id);
-        if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-        R().renderCities();
-        if(window.SLG.CityManager) window.SLG.CityManager.render();
-        if(R().renderCityMatrix) R().renderCityMatrix();
-        if(window.SLG.renderOverview) window.SLG.renderOverview();
-        /* v8.9.4：刪除城池 → 失效佈局 */
-        if(window.SLG.GameMap && window.SLG.GameMap.invalidateLayout){
-          window.SLG.GameMap.invalidateLayout();
-        }
-        if(window.SLG.GameMap) window.SLG.GameMap.render();
-        saveState();
-      });
+      const id = delBtn.dataset.id;
+      const c = state.cities.find(x => x.id === id);
+      if(!c) return;
+      showConfirm('刪除城池',
+        `確定刪除「${c.name}」？\n\n將連動刪除：節點、相關路線、宣戰指示。`,
+        async () => {
+          if(window.SLG.DataSyncManager){
+            await window.SLG.DataSyncManager.deleteCityCascade(id);
+          } else {
+            window.SLG.deleteEntity('city', id);
+          }
+          if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+          R().renderCities();
+          if(window.SLG.CityManager) window.SLG.CityManager.render();
+          if(R().renderCityMatrix) R().renderCityMatrix();
+          if(window.SLG.renderOverview) window.SLG.renderOverview();
+          if(window.SLG.RouteManager) window.SLG.RouteManager.render();
+          if(window.SLG.WarManager) window.SLG.WarManager.render();
+          if(window.SLG.GameMap && window.SLG.GameMap.invalidateLayout){
+            window.SLG.GameMap.invalidateLayout();
+          }
+          if(window.SLG.GameMap) window.SLG.GameMap.render();
+          saveState();
+        });
     }
   });
 
@@ -1767,7 +1852,6 @@ function bindEvents(){
     if(R().renderCityMatrix) R().renderCityMatrix();
     if(window.SLG.renderOverview) window.SLG.renderOverview();
     if(window.SLG.GameMap){
-      /* v8.9.4：資料變更 → 失效佈局（可能需要重新計算節點位置） */
       if(window.SLG.GameMap.invalidateLayout) window.SLG.GameMap.invalidateLayout();
       if(window.SLG.GameMap.refreshZoneSelector){ window.SLG.GameMap.refreshZoneSelector(); }
       const mapTab = document.getElementById('tab-map');
@@ -1794,6 +1878,11 @@ function bindEvents(){
     if(garr) garr.checked = !!state.settings.attackRequireRoute;
     const gczwEv = document.getElementById('globalCrossZoneWar');
     if(gczwEv) gczwEv.checked = !!state.settings.crossZoneWarAllowed;
+    /* v8.9.9：地圖關聯規則 */
+    const grr = document.getElementById('globalRouteRequireSameMap');
+    if(grr) grr.checked = !!state.settings.routeRequireSameMap;
+    const gwr = document.getElementById('globalWarRequireSameMap');
+    if(gwr) gwr.checked = !!state.settings.warRequireSameMap;
 
     if (document.getElementById('tab-deploy').classList.contains('active')) DEPLOY().render();
     if(window.SLG.renderSandboxData) window.SLG.renderSandboxData();
@@ -1801,13 +1890,9 @@ function bindEvents(){
 
   on(EVT.DYN_RESULT, () => { DYN().setRows(state.dynRows); DYN().populateCityFilters(); });
 
-  /* ══════════════════════════════════════════════════════
-     v8.9.4：路線更新 → 只重繪，不重置視圖
-     ══════════════════════════════════════════════════════ */
   on(EVT.ROUTES_UPDATED, () => {
     if(window.SLG.RouteManager) window.SLG.RouteManager.render();
     if(window.SLG.GameMap){
-      /* ★ 關鍵修改：只 render()，不 reset() */
       window.SLG.GameMap.render();
     }
     if(window.SLG.renderOverview) window.SLG.renderOverview();
@@ -1895,6 +1980,11 @@ function boot(){
   if(garr) garr.checked = !!state.settings.attackRequireRoute;
   const gczw = document.getElementById('globalCrossZoneWar');
   if(gczw) gczw.checked = !!state.settings.crossZoneWarAllowed;
+  /* v8.9.9：地圖關聯規則 */
+  const grr = document.getElementById('globalRouteRequireSameMap');
+  if(grr) grr.checked = !!state.settings.routeRequireSameMap;
+  const gwr = document.getElementById('globalWarRequireSameMap');
+  if(gwr) gwr.checked = !!state.settings.warRequireSameMap;
   syncAIParamsToUI();
   syncTroopTiersToUI();
 
@@ -2005,17 +2095,12 @@ function boot(){
     }
   })();
 
-  /* v8.9.4：啟動訊息 */
-  console.log('%c[沙盤 v8.9.4] 三模式 + 虛線路線 + 點擊連線就緒', 'color:#22ff88;font-weight:bold;font-size:14px');
-  console.log('%c  · Cloudinary 上傳：' + (typeof window.SLG.uploadMapImageToCloudinary === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · Gemini AI 辨識：' + (typeof window.SLG.detectFullMap === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · AI 端點：' + (window.SLG.GEMINI_OCR_ENDPOINT || '/api/ocr'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · 節點校準：' + (typeof window.SLG.NodeCalibration === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · 模糊匹配：' + (typeof window.SLG.FuzzyMatch === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · 宣戰模式：' + (typeof window.SLG.WarQuickPanel === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · 路線模式：' + (typeof window.SLG.GameMap === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · 城池編輯模式：' + (typeof window.SLG.GameMap === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
-  console.log('%c  · 手動備份：' + (typeof window.SLG.createSandboxBackup === 'function' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  /* v8.9.9：啟動訊息 */
+  console.log('%c[沙盤 v8.9.9] 地圖關聯重構 + 統一同步就緒', 'color:#22ff88;font-weight:bold;font-size:14px');
+  console.log('%c  · 地圖關聯：' + (typeof window.SLG.DataSyncManager === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  console.log('%c  · 一鍵修復：' + (document.getElementById('btnMapReconcile') ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  console.log('%c  · 三模式互斥：' + (typeof window.SLG.GameMap === 'object' ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
+  console.log('%c  · 城池清單地圖欄：' + (document.getElementById('cityFilterMap') ? '✅' : '❌'), 'color:#94a3b8;font-size:12px');
 }
 
 /* ============================================================
@@ -2048,8 +2133,9 @@ Object.assign(window.SLG, {
   showSyncOverlay, hideSyncOverlay,
   bindSyncWatchers, bindSyncSettingsUI, bindTroopTierUI,
   bindMapLibraryUI,
-  bindRouteDeleteModal,       /* v8.9.4 */
-  bindBackupNowButton,        /* v8.9.4 */
+  bindRouteDeleteModal,
+  bindBackupNowButton,
+  bindMapRelationUI,      /* v8.9.9：地圖關聯規則 UI 綁定 */
   refreshMapLibraryIndex,
 });
 
@@ -2060,3 +2146,6 @@ if(document.readyState === 'loading'){
 }
 
 })();
+/* ============================================================================
+ * main.js 結束（v8.9.9）
+ * ========================================================================== */
